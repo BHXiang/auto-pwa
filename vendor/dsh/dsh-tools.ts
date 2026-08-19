@@ -94,6 +94,31 @@ export type InferArgs<S extends ParameterSchemaSpec | undefined> = S extends Par
 /** A rendered model-visible content block. */
 export type ContentBlock = { type: 'text'; text: string }
 
+/** Minimal agent shape (the real one carries sessionId + lifecycle methods). */
+export interface AgentLike {
+  id?: string
+  sessionId?: string
+}
+
+/**
+ * Tool execution context handed to `execute(args, exec)`: the calling agent
+ * (session fence / job owner), the root call id (spill provenance) and the
+ * caller-owned cancellation signal.
+ */
+export interface ToolExecution {
+  name: string
+  arguments: unknown
+  agent?: AgentLike
+  rootCallId?: string
+  signal: AbortSignal
+}
+
+/**
+ * Monotonic tool guard: return a reason string to DENY an execution; return
+ * undefined to leave it unchanged. Guards never force-allow.
+ */
+export type ToolGuard = (exec: ToolExecution) => string | undefined
+
 export interface DefineToolOptions<S extends ParameterSchemaSpec | undefined, Out> {
   name: string
   description: string
@@ -106,9 +131,10 @@ export interface DefineToolOptions<S extends ParameterSchemaSpec | undefined, Ou
   }
   // args is `any` in the stub on purpose: the plugin declares explicit
   // parameter types, and the real dsh-tools infers them from the schema.
-  execute(args: any, exec: { signal: AbortSignal; agent?: { id: string } }): Promise<Out>
+  execute(args: any, exec: ToolExecution): Promise<Out>
   presentCall?: unknown
   presentResult?: unknown
+  finalizeContent?: unknown
 }
 
 export interface ToolDefinition {

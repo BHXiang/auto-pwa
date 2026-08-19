@@ -37,7 +37,11 @@ export class IterationLog {
     const fromLog = this.readAll().map((r) => r.iter)
     const fromDirs = listIterations(this.rootDir)
       .map((d) => {
-        const m = /iter-(\d+)/.exec(d)
+        // Parse the DIR NAME, not the full path: the root may itself contain
+        // "iter-<digits>" (e.g. mkdtemp prefixes like dsh-pwa-iter-6kNkyr)
+        // and /iter-(\d+)/ on the full path would match the suffix.
+        const base = d.split(/[\\/]/).pop() ?? d
+        const m = /^iter-(\d+)$/.exec(base)
         return m ? Number(m[1]) : -1
       })
       .filter((n) => n >= 0)

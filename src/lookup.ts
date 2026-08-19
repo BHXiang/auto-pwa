@@ -28,6 +28,12 @@ function matchesJp(entry: ResonanceEntry, jp: { j: number; p: number }): boolean
   return entry.jp.j === jp.j && entry.jp.p === jp.p
 }
 
+function matchesJpc(entry: ResonanceEntry, jpc: { j: number; p: number; c?: number }): boolean {
+  if (entry.jp.j !== jpc.j || entry.jp.p !== jpc.p) return false
+  // A C-specific query never matches entries without a defined C.
+  return jpc.c === undefined || entry.c === jpc.c
+}
+
 function matchesMass(entry: ResonanceEntry, range: [number, number]): boolean {
   return entry.mass >= range[0] && entry.mass <= range[1]
 }
@@ -48,9 +54,18 @@ export function lookupResonance(db: ResonanceDb, query: LookupQuery): ResonanceE
   const hits = db.resonances.filter((entry) => {
     if (query.name !== undefined && !matchesName(entry, query.name)) return false
     if (query.jp !== undefined && !matchesJp(entry, query.jp)) return false
+    if (query.jpc !== undefined && !matchesJpc(entry, query.jpc)) return false
     if (query.massRange !== undefined && !matchesMass(entry, query.massRange)) return false
     if (query.decayTo !== undefined && !matchesDecayTo(entry, query.decayTo)) return false
     return true
   })
   return hits.sort((a, b) => a.mass - b.mass)
+}
+
+/**
+ * Charge conjugation of a particle by name (self-conjugate states only).
+ * @returns +1/-1, or undefined when the name is unknown or C is not defined.
+ */
+export function lookupC(db: ResonanceDb, name: string): 1 | -1 | undefined {
+  return lookupResonance(db, { name })[0]?.c
 }

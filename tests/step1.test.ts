@@ -70,6 +70,12 @@ Resonances:
     model: BWR
     parameters: [1.430, 0.09]
     tex: ["K_{2}", "(1430)"]
+  phi1680:
+    J: 1
+    P: -1
+    model: BWR
+    parameters: [1.68, 0.15]
+    tex: ["\\\\phi(1680)"]
 `
 
 function config() {
@@ -91,7 +97,9 @@ const omega1420: ResonanceProposal = {
   tex: '\\omega(1420)',
 }
 
-/** f1(1285): 1+ into a NEW R_KK [1+] group (reachable via L=0). */
+/** f1(1285): 1+ — reachable from J/psi -> eta + R via L=0, but 1+ is
+ * forbidden at the R_KK -> K+ K- decay vertex (P = (-1)^L forces P = -1 for
+ * J = L with S = 0). Used below as the rule-10 rejection case. */
 const f1_1285: ResonanceProposal = {
   name: 'f1_1285',
   chain: 'R_KK',
@@ -99,6 +107,17 @@ const f1_1285: ResonanceProposal = {
   model: 'BWR',
   parameters: [1.2818, 0.023],
   tex: 'f_{1}(1285)',
+}
+
+/** omega3(1670): 3- — allowed at both vertices of R_KK and C-consistent
+ * (C(R_KK) = C(J/psi)*C(eta) = -1). A NEW [3-] group for R_KK. */
+const omega3_1670: ResonanceProposal = {
+  name: 'omega3_1670',
+  chain: 'R_KK',
+  jpGroup: { j: 3, p: -1 },
+  model: 'BWR',
+  parameters: [1.67, 0.165],
+  tex: '\\omega_{3}(1670)',
 }
 
 describe('parseConfig', () => {
@@ -193,10 +212,19 @@ describe('validateResonanceAddition', () => {
   })
 
   it('warns and permits a physically allowed NEW J^P group', () => {
-    // 1+ is reachable (L=0) but R_KK has no [1+] group yet.
-    const r = validateResonanceAddition(defaultDb, config(), f1_1285)
+    // 3- is reachable (L=3) AND allowed at the K+K- decay vertex, but R_KK
+    // has no [3-] group yet.
+    const r = validateResonanceAddition(defaultDb, config(), omega3_1670)
     expect(r.ok).toBe(true)
     expect(r.warnings.map((w) => w.code)).toContain('new-jp-group')
+  })
+
+  it('rejects a J^P that is forbidden at the decay vertex (rule 10)', () => {
+    // f1(1285) 1+: reachable from production (L=0), but K+K- (S=0, P=(-1)^L)
+    // cannot realize 1+ — the wave would be identically zero.
+    const r = validateResonanceAddition(defaultDb, config(), f1_1285)
+    expect(r.ok).toBe(false)
+    expect(r.errors.map((e) => e.code)).toContain('decay-vertex-forbidden')
   })
 
   it('rejects wrong parameter arity per model', () => {
@@ -359,36 +387,35 @@ describe('attach already-defined resonance', () => {
 
   it('allows attaching an existing resonance under its defined J^P', () => {
     const c = cfg()
-    // K2_1430 is defined (2+) but not referenced in R_KK groups.
+    // phi1680 is defined (1-) but not referenced in any intermediates group.
     const r = validateResonanceAddition(defaultDb, c, {
-      name: 'K2_1430',
+      name: 'phi1680',
       chain: 'R_KK',
-      jpGroup: { j: 2, p: 1 },
+      jpGroup: { j: 1, p: -1 },
       model: 'BWR',
-      parameters: [1.43, 0.09],
+      parameters: [1.68, 0.15],
     })
     expect(r.ok).toBe(true)
     expect(r.warnings.map((w) => w.code)).toContain('already-defined')
     const ap = applyResonanceAddition(c, {
-      name: 'K2_1430',
+      name: 'phi1680',
       chain: 'R_KK',
-      jpGroup: { j: 2, p: 1 },
+      jpGroup: { j: 1, p: -1 },
       model: 'BWR',
-      parameters: [1.43, 0.09],
+      parameters: [1.68, 0.15],
     })
     expect(ap.errors).toEqual([])
     const rkk = ap.config.decayChains.decay1.intermediates.R_KK
-    const g = rkk.groups.find((x) => x.jp.j === 2 && x.jp.p === 1)
-    expect(g?.names).toContain('K2_1430')
+    expect(rkk.groups[0].names).toContain('phi1680')
   })
 
   it('rejects attaching under a conflicting J^P', () => {
     const r = validateResonanceAddition(defaultDb, cfg(), {
-      name: 'K2_1430', // defined 2+
+      name: 'phi1680', // defined 1-
       chain: 'R_KK',
-      jpGroup: { j: 1, p: -1 },
+      jpGroup: { j: 2, p: 1 },
       model: 'BWR',
-      parameters: [1.43, 0.09],
+      parameters: [1.68, 0.15],
     })
     expect(r.ok).toBe(false)
     expect(r.errors.map((e) => e.code)).toContain('jpc-conflict')

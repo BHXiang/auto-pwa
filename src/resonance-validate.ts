@@ -16,15 +16,28 @@
  *      double vector — wrong length crashes the fit).
  *   8. Mass agrees with PDG within tolerance.
  *   9. free/free_range structure legal; initial values inside ranges.
+ *  10. Decay-vertex gate: the proposed J^P must be in the pairJPC set of the
+ *      intermediate's decay step (R -> d1 + d2: S from daughter spins,
+ *      J = L (x) S, P = P1*P2*(-1)^L, identical selection rule, maxL).
+ *  11. C conservation at the production vertex: when A, B and the pair all
+ *      have defined C, C(A) = C(R)*C(B) must hold (the pair's C comes from
+ *      pairJPC: conjugate pairs and identical groups only).
+ *  12. Identical selection rule is enforced inside pairJPC (rule 10) via
+ *      Constraints.identical groups; a step with same-named daughters that
+ *      is NOT declared identical gets a warning (the engine will not
+ *      symmetrize without the declaration).
  *
  * Pure function; no I/O.
  */
-import { normalizeName } from './lookup.js'
+import { normalizeName, lookupC } from './lookup.js'
 import { hasDecayTo, allowedIntermediateJP } from './decay-check.js'
+import { pairJPC, pairKind, jpcLabel } from './jpc.js'
 import type {
   ChainKinematics,
+  DecayStep,
   JP,
   PwaConfig,
+  PwaConstraints,
   ResonanceDb,
   ResonanceModel,
   ResonanceProposal,
@@ -67,9 +80,11 @@ export interface ValidateOptions {
 
 /** The config surface validation reads (PwaConfig subset). */
 export interface ValidationConfig {
+  particles: Record<string, { j: number; p: 1 | -1; mass: number }>
   resonances: Record<string, { j: number; p: 1 | -1; parameters: number[] }>
   decayChains?: PwaConfig['decayChains']
   kinematics: Record<string, ChainKinematics>
+  constraints?: PwaConstraints
 }
 
 const err = (code: string, message: string): ValidationIssue => ({ code, message })
@@ -261,18 +276,20 @@ export function validateResonanceAddition(
 
   // --- 6. chain & J^P group membership -------------------------------------
   const chainGroup = findGroup(config, proposal.chain, proposal.jpGroup)
+  // maxL resolution: explicit option > config Constraints.maxL > plugin default 4.
+  const maxL = options.maxL ?? config.constraints?.maxL ?? 4
   if (kin) {
     // Physics gate: the J^P must be reachable from A -> R + B (angular
     // momentum + parity conservation, up to maxL). This embeds auto_pwa_decay_check
     // so an impossible wave can never be written into the config.
-    const allowed = allowedIntermediateJP(kin.mother, kin.daughter, options.maxL ?? 4)
+    const allowed = allowedIntermediateJP(kin.mother, kin.daughter, maxL)
     if (!allowed.some((a) => sameJp(a.jp, proposal.jpGroup))) {
       errors.push(
         err(
           'jp-not-allowed',
           `[${jpLabel(proposal.jpGroup)}] is not reachable for ${proposal.chain} ` +
             `(A=${kin.mother.j}${kin.mother.p > 0 ? '+' : '-'} -> R + B=${kin.daughter.j}${kin.daughter.p > 0 ? '+' : '-'}, ` +
-            `maxL=${options.maxL ?? 4}); allowed: ${allowed.map((a) => jpLabel(a.jp)).join(', ')}`,
+            `maxL=${maxL}); allowed: ${allowed.map((a) => jpLabel(a.jp)).join(', ')}`,
         ),
       )
     } else if (!chainGroup) {
@@ -283,6 +300,105 @@ export function validateResonanceAddition(
             `(existing groups: ${groupLabels(config, proposal.chain)})`,
         ),
       )
+    }
+  }
+
+  // --- 10/11/12. decay-vertex J^PC + C conservation + identical selection --
+  // The intermediate's decay steps tell us R -> d1 + d2 (from the config).
+  // pairJPC reproduces the engine's (S, L) enumeration (Amp2BD::ComSL +
+  // identical detection), so a J^P that cannot realize any wave at the decay
+  // vertex would fit with an identically-zero amplitude.
+  const steps = decayStepsOf(config, proposal.chain)
+  if (kin && steps.length === 0) {
+    warnings.push(
+      warn(
+        'no-decay-step',
+        `no decay step found for ${proposal.chain} in the config — decay-vertex J^PC and C checks skipped`,
+      ),
+    )
+  } else if (kin) {
+    const identicalGroups = config.constraints?.identical
+    // J^P union over all modes + C-constrained JPC per matching wave.
+    const jpUnion = new Set<string>()
+    const stepJpcs: { jpc: JP & { c?: 1 | -1 }; pair: [string, string]; sl: [number, number][] }[] = []
+    const pairSummaries: string[] = []
+    for (const step of steps) {
+      const d1 = config.particles[step.daughters[0]]
+      const d2 = config.particles[step.daughters[1]]
+      if (!d1 || !d2) {
+        warnings.push(
+          warn(
+            'decay-daughter-unknown',
+            `step ${step.mother} -> ${step.daughters.join(' + ')} references particles missing from the Particles section`,
+          ),
+        )
+        continue
+      }
+      // Name-aware copies: pair detection (conjugate pairs / identical
+      // groups) needs the config names, which Particle itself does not carry.
+      const namedD1 = { ...d1, name: step.daughters[0] }
+      const namedD2 = { ...d2, name: step.daughters[1] }
+      const waves = pairJPC(namedD1, namedD2, { maxL, identicalGroups, slFilter: step.sl })
+      for (const w of waves) jpUnion.add(jpLabel(w.jpc))
+      for (const w of waves) {
+        if (sameJp(w.jpc, proposal.jpGroup)) {
+          stepJpcs.push({
+            jpc: w.jpc,
+            pair: step.daughters,
+            sl: w.sl.map((x) => [x.s, x.l]),
+          })
+        }
+      }
+      const { kind, cDefined } = pairKind(namedD1, namedD2, identicalGroups)
+      pairSummaries.push(
+        `${step.daughters.join('+')}${cDefined ? ` (${kind})` : ''}${step.sl ? ` sl=${JSON.stringify(step.sl)}` : ''}`,
+      )
+    }
+    if (jpUnion.size > 0 && !jpUnion.has(jpLabel(proposal.jpGroup))) {
+      errors.push(
+        err(
+          'decay-vertex-forbidden',
+          `[${jpLabel(proposal.jpGroup)}] is forbidden at the ${proposal.chain} decay vertex ` +
+            `(R -> ${pairSummaries.join(' | ')}): allowed J^PC = ${[...jpUnion].join(', ')} ` +
+            `— the amplitude would be identically zero (ctpwa zero-SL warning)`,
+        ),
+      )
+    }
+    // Rule 11: C(A) = C(R)*C(B) at the production vertex, with C(R) from the pair.
+    if (kin.motherName !== undefined && kin.daughterName !== undefined) {
+      const motherC = lookupC(db, kin.motherName)
+      const daughterC = lookupC(db, kin.daughterName)
+      if (motherC !== undefined && daughterC !== undefined) {
+        const required = (motherC * daughterC) as 1 | -1
+        const conflicts = stepJpcs.filter((s) => s.jpc.c !== undefined && s.jpc.c !== required)
+        if (conflicts.length > 0) {
+          const [c] = conflicts
+          errors.push(
+            err(
+              'c-violation',
+              `C conservation violated for ${proposal.chain}: C(${kin.motherName})=${motherC > 0 ? '+' : '-'}, ` +
+                `C(${kin.daughterName})=${daughterC > 0 ? '+' : '-'} require C(R)=${required > 0 ? '+' : '-'}, ` +
+                `but the ${jpcLabel(proposal.jpGroup)} wave of ${c.pair.join('+')} has C=${c.jpc.c === undefined ? 'undefined' : c.jpc.c > 0 ? '+' : '-'}`,
+            ),
+          )
+        }
+      }
+    }
+    // Rule 12: same-named daughters not declared identical -> engine will not symmetrize.
+    for (const step of steps) {
+      if (step.daughters[0] === step.daughters[1]) {
+        const declared = identicalGroups?.some((g) => g.includes(step.daughters[0]))
+        if (!declared) {
+          warnings.push(
+            warn(
+              'identical-not-declared',
+              `step ${step.mother} -> ${step.daughters.join(' + ')} decays to the same particle twice but ` +
+                `"${step.daughters[0]}" is not in any Constraints.identical group — ctpwa will NOT symmetrize; ` +
+                `declare Constraints.identical to apply the Bose/Fermi selection rule`,
+            ),
+          )
+        }
+      }
     }
   }
 
@@ -383,4 +499,15 @@ function findResonance(
 ): { mass: number } | undefined {
   const spec = config.resonances[name]
   return spec === undefined ? undefined : { mass: spec.parameters[0] }
+}
+
+/** All decay steps whose mother is the intermediate `chain`, across chains. */
+function decayStepsOf(config: { decayChains?: PwaConfig['decayChains'] }, chain: string): DecayStep[] {
+  const out: DecayStep[] = []
+  for (const c of Object.values(config.decayChains ?? {})) {
+    for (const step of c.steps) {
+      if (step.mother === chain) out.push(step)
+    }
+  }
+  return out
 }

@@ -47,6 +47,8 @@ export interface IterationRecord {
   nextPlan?: string
   /** Evidence references, e.g. evaluate.json path. */
   evidence?: string
+  /** Token usage of this round (token-meter delta since the previous note). */
+  tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +230,11 @@ export function renderReport(record: IterationRecord): string {
   )
   if (record.hessianPositive !== undefined) {
     parts.push(`<dt>Hessian</dt><dd>${record.hessianPositive ? '<span class="badge">正定</span> 参数误差可信' : '<span class="badge bad">不正定</span> 参数误差不可靠'}</dd>`)
+  }
+  if (record.tokens !== undefined) {
+    const t = record.tokens
+    const cached = (t.cacheRead ?? 0) + (t.cacheWrite ?? 0)
+    parts.push(`<dt>本轮 token</dt><dd>输入 ${t.input} + 输出 ${t.output}${cached > 0 ? `（缓存 ${cached}）` : ''}</dd>`)
   }
   parts.push('</dl>')
 

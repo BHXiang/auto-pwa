@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defaultDb } from '../src/db.js'
-import { lookupResonance, normalizeName } from '../src/lookup.js'
+import { lookupResonance, lookupC, normalizeName } from '../src/lookup.js'
 
 describe('normalizeName', () => {
   it('strips case, spaces and symbols', () => {
@@ -68,5 +68,37 @@ describe('lookupResonance by decay mode', () => {
     expect(ids).toContain('phi(1020)')
     expect(ids).toContain("f(2)'(1525)")
     expect(ids).toHaveLength(5) // phi(1020), f(0)(980), f(0)(1500), f(0)(1710), f(2)'(1525)
+  })
+})
+
+describe('lookupResonance by J^PC and lookupC', () => {
+  it('filters by charge conjugation when c is set', () => {
+    // 1- states below 2.0 GeV: C = -1 (omega/rho/phi family) vs C = +1 (none
+    // in the table) — a J^PC query must keep only C = -1 entries.
+    const minus = lookupResonance(defaultDb, { jpc: { j: 1, p: -1, c: -1 }, massRange: [0, 2.0] })
+    expect(minus.length).toBeGreaterThan(0)
+    expect(minus.every((r) => r.c === -1)).toBe(true)
+    expect(minus.map((r) => r.id)).toEqual(expect.arrayContaining(['phi(1020)', 'omega(1420)']))
+    // A c = +1 query for 1- matches nothing (no 1-+ mesons below 2 GeV).
+    const plus = lookupResonance(defaultDb, { jpc: { j: 1, p: -1, c: 1 } })
+    expect(plus.every((r) => r.c === 1)).toBe(true)
+  })
+
+  it('a J^PC query never matches entries without a defined C', () => {
+    // K*(892)0 has no C (not a C eigenstate); jp-only queries still find it,
+    // jpc queries with a fixed c never do.
+    const jpOnly = lookupResonance(defaultDb, { jp: { j: 1, p: -1 } })
+    expect(jpOnly.map((r) => r.id)).toContain('K*(892)0')
+    const jpc = lookupResonance(defaultDb, { jpc: { j: 1, p: -1, c: -1 } })
+    expect(jpc.map((r) => r.id)).not.toContain('K*(892)0')
+  })
+
+  it('lookupC resolves self-conjugate states by analysis spelling', () => {
+    expect(lookupC(defaultDb, 'Jpsi')).toBe(-1) // alias J/psi on J/psi(1S)
+    expect(lookupC(defaultDb, 'eta')).toBe(1)
+    expect(lookupC(defaultDb, 'phi1020')).toBe(-1)
+    expect(lookupC(defaultDb, 'Kp')).toBeUndefined()
+    expect(lookupC(defaultDb, 'K0')).toBeUndefined()
+    expect(lookupC(defaultDb, 'nope')).toBeUndefined()
   })
 })

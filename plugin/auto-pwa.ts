@@ -1,30 +1,33 @@
 /**
- * dsh-pwa plugin: auto_pwa_* tools for partial-wave analysis in the DeepSeek
+ * auto-pwa plugin: auto_pwa_* tools for partial-wave analysis in the DeepSeek
  * Harness. Thin wrappers over the pure core in ../src — the strong
  * constraints (physics validation, YAML rendering, atomic writes) live in the
  * core; this file only declares the model-facing surface.
  *
- * Mount via:  pnpm dsh web --patch /home/whitewash/dsh-pwa/patch/auto-pwa.cordis.yml
+ * Mount via:  pnpm dsh web --patch /home/whitewash/pkgs/auto-pwa/patch/auto-pwa.cordis.yml
  *
  * Tools:
  *   auto_pwa_lookup        query the PDG resonance table
  *   auto_pwa_decay_check   allowed intermediate J^P for A -> R + B, + candidates
+ *   auto_pwa_jpc_check     two-vertex J^PC check (decay ∩ production, C conservation)
+ *   auto_pwa_config_view   read-only JSON view of config.yml
  *   auto_pwa_validate_add  gate a resonance addition (PDG/JPC/threshold/duplicate)
  *   auto_pwa_edit_config   validate + apply + render + atomically write config.yml
- *   auto_pwa_run_fit       submit a fit in an iteration dir (background job)
- *   auto_pwa_fit_status    poll a fit job and summarize results/
+ *   auto_pwa_run_fit       submit a fit via ctx.pwaFit (DSH background job)
+ *   auto_pwa_fit_status    poll a fit job and summarize results/ (fit.json preferred)
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
 import { copyFileSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { defaultDb } from '../src/db.js'
-import { lookupResonance } from '../src/lookup.js'
-import { decayCheck } from '../src/decay-check.js'
+import { lookupResonance, lookupC } from '../src/lookup.js'
+import { decayCheck, allowedIntermediateJP } from '../src/decay-check.js'
+import { pairJPC, pairKind, jpcLabel } from '../src/jpc.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
-import { parseConfig, applyResonanceAddition, dumpConfig, crossReferenceErrors } from '../src/config-edit.js'
+import { parseConfig, applyResonanceAddition, dumpConfig, crossReferenceErrors, validateConfig } from '../src/config-edit.js'
 import { suggestFree } from '../src/float-policy.js'
-import { LocalFitRunner, defaultFitRunnerConfig } from '../src/fit-runner.js'
+import { defaultFitRunnerConfig } from '../src/fit-runner.js'
 import { summarizeFitDir } from '../src/fit-summary.js'
 import { resolveEnv } from '../src/config.js'
 import { existsSync as fsExists } from 'node:fs'
@@ -33,11 +36,16 @@ import { existsSync as fsExistsSync } from 'node:fs'
 import type { IterationRecord } from '../src/report.js'
 import { spawnSync } from 'node:child_process'
 import type { JP, ResonanceProposal } from '../src/types.js'
+import { createUsageTracker, maybeSpill, type TokenTotals } from './pwa-utils.js'
 
 export const name = 'auto-pwa'
-export const inject = ['tools']
+export const inject = ['tools', 'pwaFit']
 
 const text = (t: string) => [{ type: 'text' as const, text: t }]
+
+/** Map a tool execution's agent to a pwaFit owner (jobs session fence). */
+const ownerOf = (exec: { agent?: { sessionId?: string } }): { sessionId: string } | undefined =>
+  exec.agent?.sessionId !== undefined ? { sessionId: exec.agent.sessionId } : undefined
 
 // ---------------------------------------------------------------------------
 // shared parameter fragments
@@ -70,7 +78,15 @@ const proposalParam = {
 } as const
 
 export function apply(ctx: Context) {
-  const runner = new LocalFitRunner(defaultFitRunnerConfig())
+  // token-meter: 累计本会话各 session 的 assistant/message usage；
+  // auto_pwa_note 的 includeTokens 按轮取差值写进日记。
+  const usage = createUsageTracker()
+  ctx.on?.('session/event', (session: unknown, event: unknown) => {
+    const sessionId = typeof (session as { id?: unknown } | null | undefined)?.id === 'string'
+      ? (session as { id: string }).id
+      : '?'
+    usage.onSessionEvent(sessionId, event as { type?: string; usage?: unknown } as never)
+  })
 
   // ---------------------------------------------------------------------
   // auto_pwa_lookup
@@ -224,6 +240,407 @@ export function apply(ctx: Context) {
           resonances: c.resonances.map((x) => ({ id: x.entry.id, mass: x.entry.mass, width: x.entry.width ?? null, decaysTo: x.decaysTo })),
         })),
       }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_jpc_check（两顶点 J^PC 检查）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_jpc_check',
+    description:
+      '两顶点 J^PC 检查（只读）：对 config 中每个中间态输出——① 衰变顶点 J^PC 全集（R→d1+d2：S 来自子自旋、J=L⊗S、P=P1·P2·(−1)^L；C 仅对共轭对（K+K−、K0K~0…）与 Constraints.identical 组定义：C=(−1)^(L+S)，全同组施加 Bose/Fermi 选择定则；sl 白名单与 maxL 生效，波表与 ctpwa Amp2BD::ComSL 逐点一致）② 产生顶点允许 J^P（A→R+B 角动量+宇称）与 C 守恒要求（母子均自共轭时 C(R)=C(A)·C(B)）③ 两顶点交集（唯一可写入的 J^PC）④ 每个允许 J^PC 的 PDG 候选（按 J^PC 过滤）。加共振态前先查这个，能直接看到 f2(1270)→R_KK 这类 C 违例为什么被拦。',
+    parameters: {
+      configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
+      target: { type: 'string', description: '链名（如 decay1）或中间态名（如 R_KK）；省略 = 全部链的全部中间态' },
+      maxL: { type: 'integer', description: '轨道角动量上限；默认取 config Constraints.maxL，未设置则 4' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          configPath: { type: 'string', required: true },
+          maxL: { type: 'integer', required: true },
+          intermediates: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                chain: { type: 'string', required: true },
+                production: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    mother: { type: 'string' },
+                    daughter: { type: 'string' },
+                    threshold: { type: 'number' },
+                    allowedJP: { type: 'array', items: { type: 'string' } },
+                    cRequired: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+                  },
+                },
+                decaySteps: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      daughters: { type: 'array', items: { type: 'string' } },
+                      identical: { type: 'boolean' },
+                      cDefined: { type: 'boolean' },
+                      sl: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+                      jpc: { type: 'array', items: { type: 'string' } },
+                    },
+                  },
+                },
+                allowed: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      jpc: { type: 'string' },
+                      c: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+                      sl: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+                      candidates: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          additionalProperties: false,
+                          properties: {
+                            id: { type: 'string', required: true },
+                            mass: { type: 'number', required: true },
+                            width: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                            cMatch: { type: 'string' },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                cBlocked: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+          spilled: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              locator: { type: 'string' },
+              bytes: { type: 'integer' },
+              retrievalHint: { type: 'string' },
+            },
+          },
+        },
+      },
+      render: (_args, value: {
+        maxL: number
+        intermediates: {
+          name: string
+          chain: string
+          production?: { mother?: string; daughter?: string; threshold?: number; allowedJP?: string[]; cRequired?: number | null }
+          decaySteps?: { daughters: string[]; identical?: boolean; cDefined?: boolean; sl?: [number, number][]; jpc?: string[] }[]
+          allowed?: { jpc: string; sl?: [number, number][]; candidates?: { id: string; mass: number; cMatch?: string }[] }[]
+          cBlocked?: string[]
+        }[]
+        spilled?: { locator: string; bytes: number; retrievalHint: string }
+      }) => {
+        const lines = [`JPC 检查（maxL=${value.maxL}）`]
+        for (const it of value.intermediates) {
+          lines.push(`== ${it.name} (chain ${it.chain}) ==`)
+          const prod = it.production
+          if (prod) {
+            lines.push(
+              `  产生: ${prod.mother ?? '?'} -> R + ${prod.daughter ?? '?'}, 阈值 ${prod.threshold?.toFixed(4) ?? '?'}, ` +
+                `允许 J^P: ${prod.allowedJP?.join(' ') ?? '?'}${prod.cRequired !== undefined && prod.cRequired !== null ? `, C(R)=${prod.cRequired > 0 ? '+' : '-'} 必需` : ''}`,
+            )
+          }
+          for (const st of it.decaySteps ?? []) {
+            lines.push(
+              `  衰变: ${st.daughters.join(' + ')}${st.identical ? ' (identical)' : ''}${st.sl ? ` sl=${JSON.stringify(st.sl)}` : ''} -> J^PC: ${st.jpc?.join(' ') ?? '?'}`,
+            )
+          }
+          for (const a of it.allowed ?? []) {
+            const cands = (a.candidates ?? []).slice(0, 10).map((c) => `${c.id}${c.cMatch === 'unknown' ? '~' : ''}`).join(', ')
+            lines.push(`  ✓ ${a.jpc} (sl ${(a.sl ?? []).map((s) => `${s[0]}/${s[1]}`).join(' ')}) 候选: ${cands}${(a.candidates ?? []).length > 10 ? ' …' : ''}`)
+          }
+          for (const b of it.cBlocked ?? []) lines.push(`  ✗ ${b} (C 守恒拦截)`)
+        }
+        if (value.spilled) lines.push(`（完整输出已 spill: ${value.spilled.locator} — ${value.spilled.retrievalHint}）`)
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { configPath: string; target?: string; maxL?: number }, exec) {
+      const cfg = parseConfig(readFileSync(args.configPath, 'utf8'))
+      const maxL = args.maxL ?? cfg.constraints.maxL ?? 4
+      const identicalGroups = cfg.constraints.identical
+      // Resolve target: chain name, intermediate name, or everything.
+      let chains: string[]
+      if (args.target === undefined) {
+        chains = Object.keys(cfg.decayChains)
+      } else if (cfg.decayChains[args.target] !== undefined) {
+        chains = [args.target]
+      } else {
+        chains = Object.keys(cfg.decayChains).filter((c) => cfg.decayChains[c].intermediates[args.target!] !== undefined)
+        if (chains.length === 0) {
+          return {
+            configPath: args.configPath,
+            maxL,
+            intermediates: [],
+            error: `no chain or intermediate named "${args.target}" in the config`,
+          } as never
+        }
+      }
+      const named = (n: string): { name: string; j: number; p: 1 | -1; c?: 1 | -1 } | undefined => {
+        const p = cfg.particles[n]
+        return p === undefined ? undefined : { name: n, j: p.j, p: p.p, c: lookupC(defaultDb, n) }
+      }
+      const intermediates: {
+        name: string
+        chain: string
+        production?: {
+          mother?: string
+          daughter?: string
+          threshold?: number
+          allowedJP?: string[]
+          cRequired?: 1 | -1 | null
+        }
+        decaySteps?: {
+          daughters: string[]
+          identical?: boolean
+          cDefined?: boolean
+          sl?: [number, number][]
+          jpc?: string[]
+        }[]
+        allowed?: { jpc: string; c: 1 | -1 | null; sl: [number, number][]; candidates: { id: string; mass: number; width: number | null; cMatch: string }[] }[]
+        cBlocked?: string[]
+      }[] = []
+      for (const chainName of chains) {
+        const chain = cfg.decayChains[chainName]
+        for (const intName of Object.keys(chain.intermediates)) {
+          const kin = cfg.kinematics[intName]
+          const production = kin ? allowedIntermediateJP(kin.mother, kin.daughter, maxL) : []
+          const motherC = kin?.motherName !== undefined ? lookupC(defaultDb, kin.motherName) : undefined
+          const daughterC = kin?.daughterName !== undefined ? lookupC(defaultDb, kin.daughterName) : undefined
+          const cRequired = motherC !== undefined && daughterC !== undefined ? ((motherC * daughterC) as 1 | -1) : undefined
+          // Merge J^PC sets over all decay modes of this intermediate.
+          const byKey = new Map<string, { jpc: JP; sl: [number, number][] }>()
+          const stepInfos: { daughters: string[]; identical: boolean; cDefined: boolean; sl?: [number, number][]; jpc: string[] }[] = []
+          for (const step of chain.steps.filter((s) => s.mother === intName)) {
+            const d1 = named(step.daughters[0])
+            const d2 = named(step.daughters[1])
+            if (!d1 || !d2) continue
+            const waves = pairJPC(d1, d2, { maxL, identicalGroups, slFilter: step.sl })
+            const { kind, cDefined } = pairKind(d1, d2, identicalGroups)
+            stepInfos.push({
+              daughters: step.daughters,
+              identical: kind.startsWith('identical'),
+              cDefined,
+              sl: step.sl,
+              jpc: waves.map((w) => jpcLabel(w.jpc)),
+            })
+            for (const w of waves) {
+              const key = `${w.jpc.j}|${w.jpc.p}|${w.jpc.c ?? 'x'}`
+              const e = byKey.get(key) ?? { jpc: w.jpc, sl: [] }
+              e.sl.push(...w.sl.map((x) => [x.s, x.l] as [number, number]))
+              byKey.set(key, e)
+            }
+          }
+          const prodHas = (jpc: JP): boolean => production.some((p) => p.jp.j === jpc.j && p.jp.p === jpc.p)
+          const allowed: { jpc: string; c: 1 | -1 | null; sl: [number, number][]; candidates: { id: string; mass: number; width: number | null; cMatch: string }[] }[] = []
+          const cBlocked: string[] = []
+          for (const e of byKey.values()) {
+            if (!prodHas(e.jpc)) continue
+            if (cRequired !== undefined && e.jpc.c !== undefined && e.jpc.c !== cRequired) {
+              cBlocked.push(jpcLabel(e.jpc))
+              continue
+            }
+            const c = e.jpc.c ?? null
+            const candidates = lookupResonance(defaultDb, { jp: { j: e.jpc.j, p: e.jpc.p } })
+              .filter((r) => {
+                if (c === null) return true
+                return r.c === c || r.c === undefined // undefined C = data gap, flagged
+              })
+              .map((r) => ({
+                id: r.id,
+                mass: r.mass,
+                width: r.width ?? null,
+                cMatch: c === null ? 'n/a' : r.c === c ? 'yes' : 'unknown',
+              }))
+            allowed.push({ jpc: jpcLabel(e.jpc), c, sl: e.sl, candidates })
+          }
+          intermediates.push({
+            name: intName,
+            chain: chainName,
+            production: kin
+              ? {
+                  mother: kin.motherName,
+                  daughter: kin.daughterName,
+                  threshold: kin.threshold,
+                  allowedJP: production.map((p) => `${p.jp.j}${p.jp.p > 0 ? '+' : '-'}`),
+                  cRequired: cRequired ?? null,
+                }
+              : undefined,
+            decaySteps: stepInfos,
+            allowed,
+            cBlocked,
+          })
+        }
+      }
+      const out: { configPath: string; maxL: number; intermediates: unknown[]; spilled?: { locator: string; bytes: number; retrievalHint: string } } =
+        { configPath: args.configPath, maxL, intermediates }
+      // Spill oversized outputs so long autonomous sessions stay lean
+      // (model reads the locator on demand instead of carrying the payload).
+      const ref = await maybeSpill(ctx, exec, 'auto_pwa_jpc_check', JSON.stringify(out), null)
+      return ref === null ? out : { ...out, spilled: ref }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_config_view（只读 JSON 视图）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_config_view',
+    description:
+      'config.yml 的只读 JSON 视图（AI 阅读用）：Particles / DecayChains（intermediates 组 + 衰变步含 sl/p_break opts）/ Resonances / 运动学阈值 / Constraints 解析（identical/trans/maxL/bf_d/has_bf/fix_var/free_var/var_range/var_equal/gauss_constr）/ validateConfig 校验结果 / 每个共振态的 PDG 命中与阈值余量。config.yml 是唯一源头（人看、引擎读），此视图是机器/AI 读法——要修改必须走 auto_pwa_edit_config，禁止用视图直接改文件。',
+    parameters: {
+      configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
+      filter: {
+        type: 'string',
+        enum: ['all', 'particles', 'chains', 'resonances', 'constraints', 'kinematics', 'validation'],
+        description: '视图过滤；默认 all',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          configPath: { type: 'string', required: true },
+          particles: { type: 'array', items: { type: 'object', additionalProperties: false } },
+          chains: { type: 'array', items: { type: 'object', additionalProperties: false } },
+          resonances: { type: 'array', items: { type: 'object', additionalProperties: false } },
+          kinematics: { type: 'array', items: { type: 'object', additionalProperties: false } },
+          constraints: { type: 'object', additionalProperties: false },
+          validation: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' }, errors: { type: 'array', items: { type: 'object', additionalProperties: false } }, warnings: { type: 'array', items: { type: 'object', additionalProperties: false } } } },
+          spilled: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              locator: { type: 'string' },
+              bytes: { type: 'integer' },
+              retrievalHint: { type: 'string' },
+            },
+          },
+        },
+      },
+      render: (_args, value: {
+        particles?: { name: string; jp: string; mass: number }[]
+        chains?: { name: string; intermediates: string; steps: number }[]
+        resonances?: { name: string; jp: string; model: string; pdg?: string | null; jpcMatch?: boolean; thresholdMargin?: { chain: string; margin: number } | null }[]
+        kinematics?: { intermediate: string; threshold: number }[]
+        constraints?: { identical?: string[][]; maxL?: number; trans?: number }
+        validation?: { ok: boolean; errors: { code: string; message: string }[]; warnings: { code: string; message: string }[] }
+      }) => {
+        const lines = [`config 视图: ${value.particles?.length ?? 0} particles, ${value.chains?.length ?? 0} chains, ${value.resonances?.length ?? 0} resonances`]
+        const con = value.constraints
+        if (con && Object.keys(con).length > 0) {
+          lines.push(`Constraints: maxL=${con.maxL ?? '-'} identical=${JSON.stringify(con.identical ?? [])} trans=${con.trans ?? 0} 条`)
+        }
+        for (const r of value.resonances ?? []) {
+          const m = r.thresholdMargin
+          lines.push(
+            `  ${r.name} [${r.jp}] ${r.model} ${r.pdg ? `PDG=${r.pdg}${r.jpcMatch ? '' : ' (JPC 不一致!)'}` : 'PDG 未命中'}${m ? ` 阈值余量 ${m.margin >= 0 ? '+' : ''}${m.margin.toFixed(4)}` : ''}`,
+          )
+        }
+        for (const k of value.kinematics ?? []) {
+          lines.push(`  ${k.intermediate}: 阈值 <= ${k.threshold.toFixed(4)} GeV`)
+        }
+        const v = value.validation
+        if (v) {
+          lines.push(`校验: ${v.ok ? '通过' : '失败'}（${v.errors.length} errors, ${v.warnings.length} warnings）`)
+          for (const e of v.errors) lines.push(`  [error] ${e.code}: ${e.message}`)
+          for (const w of v.warnings) lines.push(`  [warn]  ${w.code}: ${w.message}`)
+        }
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { configPath: string; filter?: string }, exec) {
+      const cfg = parseConfig(readFileSync(args.configPath, 'utf8'))
+      const filter = args.filter ?? 'all'
+      const out: Record<string, unknown> = { configPath: args.configPath }
+      if (filter === 'all' || filter === 'particles') {
+        out.particles = Object.entries(cfg.particles).map(([name, p]) => ({
+          name,
+          jp: `${p.j}${p.p > 0 ? '+' : '-'}`,
+          mass: p.mass,
+          c: p.c ?? null,
+        }))
+      }
+      if (filter === 'all' || filter === 'chains') {
+        out.chains = Object.entries(cfg.decayChains).map(([name, chain]) => ({
+          name,
+          intermediates: Object.entries(chain.intermediates).map(([intName, int]) => ({
+            name: intName,
+            groups: int.groups.map((g) => ({
+              jp: `${g.jp.j}${g.jp.p > 0 ? '+' : '-'}`,
+              names: g.names,
+            })),
+          })),
+          steps: chain.steps.map((s) => ({
+            mother: s.mother,
+            daughters: s.daughters,
+            sl: s.sl ?? null,
+            pBreak: s.pBreak ?? false,
+          })),
+        }))
+      }
+      if (filter === 'all' || filter === 'resonances') {
+        out.resonances = Object.entries(cfg.resonances).map(([name, spec]) => {
+          const hit = lookupResonance(defaultDb, { name })[0]
+          let thresholdMargin: { chain: string; margin: number } | null = null
+          for (const [cname, chain] of Object.entries(cfg.decayChains)) {
+            for (const [intName, int] of Object.entries(chain.intermediates)) {
+              if (int.groups.some((g) => g.names.includes(name))) {
+                const kin = cfg.kinematics[intName]
+                if (kin) {
+                  thresholdMargin = { chain: cname, margin: kin.threshold - spec.parameters[0] }
+                }
+              }
+            }
+          }
+          return {
+            name,
+            jp: `${spec.j}${spec.p > 0 ? '+' : '-'}`,
+            model: spec.model,
+            parameters: spec.parameters,
+            free: spec.free ?? null,
+            pdg: hit ? { id: hit.id, jp: `${hit.jp.j}${hit.jp.p > 0 ? '+' : '-'}`, c: hit.c ?? null, mass: hit.mass } : null,
+            jpcMatch: hit !== undefined && hit.jp.j === spec.j && hit.jp.p === spec.p,
+            thresholdMargin,
+          }
+        })
+      }
+      if (filter === 'all' || filter === 'kinematics') {
+        out.kinematics = Object.entries(cfg.kinematics).map(([intName, kin]) => ({
+          intermediate: intName,
+          mother: kin.motherName ?? '?',
+          daughter: kin.daughterName ?? '?',
+          threshold: kin.threshold,
+        }))
+      }
+      if (filter === 'all' || filter === 'constraints') {
+        out.constraints = cfg.constraints
+      }
+      if (filter === 'all' || filter === 'validation') {
+        const v = validateConfig(cfg)
+        out.validation = { ok: v.errors.length === 0, errors: v.errors, warnings: v.warnings }
+      }
+      const ref = await maybeSpill(ctx, exec, 'auto_pwa_config_view', JSON.stringify(out), null)
+      return ref === null ? out : { ...out, spilled: ref }
     },
   }))
 
@@ -481,7 +898,7 @@ export function apply(ctx: Context) {
         return text(lines.join('\n'))
       },
     },
-    async execute(args: { baseIterDir: string; proposal?: ResonanceProposal; fitScriptPath?: string; plotScriptPath?: string }) {
+    async execute(args: { baseIterDir: string; proposal?: ResonanceProposal; fitScriptPath?: string; plotScriptPath?: string }, exec) {
       const baseConfig = `${args.baseIterDir}/config.yml`
       const iterationsRoot = iterationsRootOf(args.baseIterDir)
       const errors: { code: string; message: string }[] = []
@@ -588,8 +1005,7 @@ export function apply(ctx: Context) {
         const xref = crossReferenceErrors(applied.config)
         warnings.push(...xref.warnings)
         try {
-          const status = runner.submit(started.iterDir)
-          out.jobId = status.jobId
+          out.jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
         } catch (e) {
           errors.push({ code: 'fit-submit-failed', message: (e as Error).message })
           return out
@@ -656,6 +1072,7 @@ export function apply(ctx: Context) {
       nextPlan: { type: 'string', description: '下一步计划（加/删什么共振态，float 策略）' },
       evidence: { type: 'string', description: '证据引用（如 evaluate.json 路径）' },
       notes: { type: 'array', items: { type: 'string' }, description: '自由笔记行' },
+      includeTokens: { type: 'boolean', description: 'true 时把本轮 token 消耗（上次记账以来的差值）写进记录（token-meter 成本追踪；每轮建议开启）' },
     },
     output: {
       schema: {
@@ -686,7 +1103,9 @@ export function apply(ctx: Context) {
       nextPlan?: string
       evidence?: string
       notes?: string[]
-    }) {
+      /** 记入本轮 token 消耗（token-meter：上次记账以来的差值）。 */
+      includeTokens?: boolean
+    }, exec) {
       const root = iterationsRootOf(args.iterDir)
       const m = /iter-(\d+)/.exec(args.iterDir)
       if (!m) return { ok: false, iter: -1, summaryPath: '', records: 0, error: `iterDir 不含 iter-N: ${args.iterDir}` }
@@ -708,6 +1127,10 @@ export function apply(ctx: Context) {
         nextPlan: args.nextPlan,
         evidence: args.evidence,
         notes: args.notes,
+      }
+      if (args.includeTokens === true && exec.agent?.sessionId !== undefined) {
+        const t: TokenTotals = usage.takeDelta(exec.agent.sessionId)
+        record.tokens = { input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite }
       }
       try {
         log.append(record)
@@ -749,6 +1172,7 @@ export function apply(ctx: Context) {
                 conclusion: { type: 'string' },
                 nextPlan: { type: 'string' },
                 evidence: { type: 'string' },
+                tokens: { type: 'object', additionalProperties: false, properties: { input: { type: 'number' }, output: { type: 'number' }, cacheRead: { type: 'number' }, cacheWrite: { type: 'number' } } },
               },
             },
           },
@@ -757,16 +1181,17 @@ export function apply(ctx: Context) {
         },
       },
       render: (_args, value: {
-        records: { iter: number; title: string; kind: string; nll?: number; deltaNll?: number; conclusion?: string; nextPlan?: string }[]
+        records: { iter: number; title: string; kind: string; nll?: number; deltaNll?: number; conclusion?: string; nextPlan?: string; tokens?: { input: number; output: number } }[]
         nextIter: number
         iterDirs: string[]
       }) => {
         if (value.records.length === 0) return text('（迭代日记为空）')
         const lines = value.records.map((r) => {
           const d = r.deltaNll === undefined ? '' : ` ΔNLL=${r.deltaNll > 0 ? '+' : ''}${r.deltaNll.toFixed(1)}`
+          const t = r.tokens ? ` [tokens: ${r.tokens.input}+${r.tokens.output}]` : ''
           const c = r.conclusion ? ` | 结论: ${r.conclusion.slice(0, 120)}` : ''
           const p = r.nextPlan ? ` | 下一步: ${r.nextPlan.slice(0, 120)}` : ''
-          return `iter-${String(r.iter).padStart(3, '0')} ${r.title}${d}${c}${p}`
+          return `iter-${String(r.iter).padStart(3, '0')} ${r.title}${d}${t}${c}${p}`
         })
         return text(`迭代历史（${value.records.length} 轮，下一轮 iter-${String(value.nextIter).padStart(3, '0')}）:\n${lines.join('\n')}`)
       },
@@ -785,6 +1210,7 @@ export function apply(ctx: Context) {
           conclusion?: string
           nextPlan?: string
           evidence?: string
+          tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
         } = { iter: r.iter, title: r.title, kind: r.kind }
         if (r.nll !== undefined) out.nll = r.nll
         if (r.deltaNll !== undefined) out.deltaNll = r.deltaNll
@@ -793,6 +1219,7 @@ export function apply(ctx: Context) {
         if (r.conclusion !== undefined) out.conclusion = r.conclusion
         if (r.nextPlan !== undefined) out.nextPlan = r.nextPlan
         if (r.evidence !== undefined) out.evidence = r.evidence
+        if (r.tokens !== undefined) out.tokens = r.tokens
         return out
       })
       return { records, nextIter: log.nextIter(), iterDirs: listIterations(args.iterationsRoot) }
@@ -848,7 +1275,7 @@ export function apply(ctx: Context) {
         return text(`iter-${String(value.iter).padStart(3, '0')} 已创建并提交拟合（job ${value.jobId}）:\n${value.changed.map((c) => '  ' + c).join('\n')}${value.warnings.length > 0 ? '\n' + value.warnings.slice(0, 3).map((w) => `  [warn] ${w.message}`).join('\n') : ''}`)
       },
     },
-    async execute(args: { baseIterDir: string; proposal: ResonanceProposal; fitScriptPath?: string; plotScriptPath?: string }) {
+    async execute(args: { baseIterDir: string; proposal: ResonanceProposal; fitScriptPath?: string; plotScriptPath?: string }, exec) {
       const baseConfig = `${args.baseIterDir}/config.yml`
       const iterationsRoot = iterationsRootOf(args.baseIterDir)
       if (!fsExistsSync(baseConfig)) {
@@ -887,8 +1314,7 @@ export function apply(ctx: Context) {
       // 4. submit fit
       let jobId: string | undefined
       try {
-        const status = runner.submit(started.iterDir)
-        jobId = status.jobId
+        jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
       } catch (e) {
         return {
           ok: false,
@@ -960,6 +1386,15 @@ export function apply(ctx: Context) {
           },
           pngFiles: { type: 'array', items: { type: 'string' } },
           error: { type: 'string' },
+          spilled: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              locator: { type: 'string' },
+              bytes: { type: 'integer' },
+              retrievalHint: { type: 'string' },
+            },
+          },
         },
       },
       render: (_args, value) => {
@@ -973,10 +1408,11 @@ export function apply(ctx: Context) {
         }
         lines.push(`评估 JSON: ${value.evaluateJsonPath}`)
         if (value.pngFiles && value.pngFiles.length > 0) lines.push(`PNG 图: ${value.pngFiles.length} 张`)
+        if (value.spilled) lines.push(`（完整输出已 spill: ${value.spilled.locator} — ${value.spilled.retrievalHint}）`)
         return text(lines.join('\n'))
       },
     },
-    async execute(args: { rootPath: string; outDir?: string }) {
+    async execute(args: { rootPath: string; outDir?: string }, exec) {
       const script = new URL('../scripts/auto_pwa_evaluate.py', import.meta.url).pathname
       const outDir = args.outDir ?? `${dirname(args.rootPath)}/evaluate`
       const py = defaultFitRunnerConfig().python
@@ -1020,22 +1456,26 @@ export function apply(ctx: Context) {
         distributions.push(item)
       }
       const pngs = existsSync(outDir) ? (await import('node:fs')).readdirSync(outDir).filter((f) => f.endsWith('.png')) : []
-      return {
+      const out = {
         ok: true,
         evaluateJsonPath: jsonPath,
         worst: ev.worst_distributions ?? [],
         distributions,
         pngFiles: pngs,
       }
+      // The full numeric payload stays on disk (evaluate.json); when the
+      // mapped summary itself grows large, spill it for on-demand reads.
+      const ref = await maybeSpill(ctx, exec, 'auto_pwa_evaluate', JSON.stringify(out), null)
+      return ref === null ? out : { ...out, spilled: ref }
     },
   }))
 
   // ---------------------------------------------------------------------
-  // auto_pwa_run_fit
+  // auto_pwa_run_fit（Consumer：经 ctx.pwaFit -> ctx.jobs 提交）
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_run_fit',
-    description: '在迭代目录提交拟合（spawn ctpwa env 的 python fit.py，注入 ROOT/CUDA/torch 库路径）。返回 jobId，用 auto_pwa_fit_status 轮询。无 GPU 时立即失败并给出诊断。',
+    description: '在迭代目录提交拟合（pwa-fit-local 经 ctx.jobs 启动 ctpwa env 的 python fit.py，注入 ROOT/CUDA/torch 库路径）。返回 jobId（ctpwa-N），完成时 DSH 会自动通知（background job ctpwa-N finished），用 auto_pwa_fit_status 或 job_output 查结果。无 GPU 时立即失败并给出诊断。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录绝对路径（须含 fit.py 与 config.yml）' },
       timeoutMs: { type: 'integer', description: '超时毫秒，超过则终止（默认无）' },
@@ -1053,15 +1493,16 @@ export function apply(ctx: Context) {
       },
       render: (_args, value) => text(value.error ? `拟合提交失败: ${value.error}` : `拟合已提交: job ${value.jobId} (${value.state}), 日志: ${value.logPath}`),
     },
-    async execute(args: { iterDir: string; timeoutMs?: number }) {
-      const status = runner.submit(args.iterDir, { timeoutMs: args.timeoutMs })
-      const out: { jobId: string; state: 'running' | 'done' | 'failed' | 'canceled'; logPath: string; error?: string } = {
-        jobId: status.jobId,
-        state: status.state,
-        logPath: join(args.iterDir, 'fit.log'),
+    async execute(args: { iterDir: string; timeoutMs?: number }, exec) {
+      try {
+        const jobId = ctx.pwaFit.submit(
+          { iterDir: args.iterDir, timeoutMin: args.timeoutMs !== undefined ? Math.ceil(args.timeoutMs / 60_000) : undefined },
+          ownerOf(exec),
+        )
+        return { jobId, state: 'running' as const, logPath: join(args.iterDir, 'fit.log') }
+      } catch (e) {
+        return { jobId: '', state: 'failed' as const, logPath: join(args.iterDir, 'fit.log'), error: (e as Error).message }
       }
-      if (status.error !== undefined) out.error = status.error
-      return out
     },
   }))
 
@@ -1093,6 +1534,57 @@ export function apply(ctx: Context) {
               totalRuns: { type: 'integer' },
               positiveDefinite: { type: 'boolean' },
               files: { type: 'array', items: { type: 'string' } },
+              params: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    name: { type: 'string' },
+                    kind: { type: 'string' },
+                    value: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                    error: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                    lower: { type: 'number' },
+                    upper: { type: 'number' },
+                    atBoundary: { type: 'boolean' },
+                    real: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                    imag: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                  },
+                },
+              },
+              fitFractions: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    amplitude: { type: 'string' },
+                    fraction: { type: 'number' },
+                    error: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                  },
+                },
+              },
+              warnings: { type: 'array', items: { type: 'string' } },
+              interference: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  available: { type: 'boolean' },
+                  reason: { type: 'string' },
+                  totalIntensity: { type: 'number' },
+                  topInterference: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      additionalProperties: false,
+                      properties: {
+                        pair: { type: 'array', items: { type: 'string' } },
+                        value: { type: 'number' },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -1103,7 +1595,17 @@ export function apply(ctx: Context) {
         exitCode?: number
         error?: string
         logTail: string
-        summary?: { bestNll?: number; lastNll?: number; totalRuns?: number; positiveDefinite?: boolean; files?: string[] }
+        summary?: {
+          bestNll?: number
+          lastNll?: number
+          totalRuns?: number
+          positiveDefinite?: boolean
+          files?: string[]
+          params?: { name: string; kind?: string; value?: number | null; error?: number | null; lower?: number; upper?: number; atBoundary?: boolean; real?: number | null; imag?: number | null }[]
+          fitFractions?: { amplitude: string; fraction: number; error?: number | null }[]
+          warnings?: string[]
+          interference?: { available: boolean; reason?: string; totalIntensity?: number; topInterference?: { pair: string[]; value: number }[] }
+        }
       }) => {
         const lines = [`job ${value.jobId}: ${value.state}${value.exitCode !== undefined ? ` (exit ${value.exitCode})` : ''}`]
         if (value.error) lines.push(`  error: ${value.error}`)
@@ -1111,6 +1613,35 @@ export function apply(ctx: Context) {
           const s = value.summary
           lines.push(`  最佳 NLL: ${s.bestNll ?? '-'}${s.totalRuns !== undefined ? `（${s.totalRuns} 次运行）` : ''}${s.positiveDefinite !== undefined ? `, Hessian 正定: ${s.positiveDefinite}` : ''}`)
           lines.push(`  最后 NLL: ${s.lastNll ?? '-'}`)
+          const resParams = (s.params ?? []).filter((p) => p.kind === 'resonance')
+          if (resParams.length > 0) {
+            lines.push('  共振态参数:')
+            for (const p of resParams) {
+              lines.push(
+                `    ${p.name} = ${p.value?.toFixed(6) ?? '—'}${p.error !== undefined && p.error !== null ? ` ± ${p.error.toFixed(6)}` : ''}` +
+                  `${p.atBoundary ? ' ⚠️撞边界' : ''}${p.lower !== undefined && p.upper !== undefined ? ` [${p.lower.toFixed(4)}, ${p.upper.toFixed(4)}]` : ''}`,
+              )
+            }
+          }
+          const fractions = s.fitFractions ?? []
+          if (fractions.length > 0) {
+            const top = [...fractions].sort((a, b) => b.fraction - a.fraction).slice(0, 6)
+            lines.push(`  分波贡献 (top ${top.length}):`)
+            for (const f of top) lines.push(`    ${f.amplitude}: ${(f.fraction * 100).toFixed(1)}%${f.error !== undefined && f.error !== null ? ` ± ${(f.error * 100).toFixed(1)}%` : ''}`)
+            if (fractions.length > top.length) lines.push(`    … 共 ${fractions.length} 个分波`)
+          }
+          for (const w of s.warnings ?? []) lines.push(`  [warn] ${w}`)
+          const inter = s.interference
+          if (inter) {
+            if (inter.available) {
+              lines.push('  干涉摘要 (top):')
+              for (const t of (inter.topInterference ?? []).slice(0, 5)) {
+                lines.push(`    ${t.pair[0]} <-> ${t.pair[1]}: ${t.value >= 0 ? '+' : ''}${(t.value * 100).toFixed(1)}%`)
+              }
+            } else {
+              lines.push(`  [warn] 干涉矩阵不可用: ${inter.reason ?? 'unknown'}`)
+            }
+          }
           if (s.files) lines.push(`  results/: ${s.files.join(', ')}`)
         }
         const tail = value.logTail.trim().split('\n').slice(-6).map((l) => `  | ${l}`).join('\n')
@@ -1118,10 +1649,12 @@ export function apply(ctx: Context) {
         return text(lines.join('\n'))
       },
     },
-    async execute(args: { jobId: string }) {
-      const status = runner.status(args.jobId)
-      if (!status) {
-        return { jobId: args.jobId, state: 'failed' as const, logTail: '', error: `unknown job ${args.jobId}` }
+    async execute(args: { jobId: string }, exec) {
+      let view: import('./pwa-fit.js').FitStatusView
+      try {
+        view = ctx.pwaFit.status(args.jobId, ownerOf(exec))
+      } catch (e) {
+        return { jobId: args.jobId, state: 'failed' as const, logTail: '', error: (e as Error).message }
       }
       const out: {
         jobId: string
@@ -1129,22 +1662,62 @@ export function apply(ctx: Context) {
         exitCode?: number
         error?: string
         logTail: string
-        summary?: { bestNll?: number; lastNll?: number; totalRuns?: number; positiveDefinite?: boolean; files: string[] }
+        summary?: {
+          bestNll?: number
+          lastNll?: number
+          totalRuns?: number
+          positiveDefinite?: boolean
+          files: string[]
+          params?: { name: string; kind: string; value?: number | null; error?: number | null; lower?: number; upper?: number; atBoundary?: boolean; real?: number | null; imag?: number | null }[]
+          fitFractions?: { amplitude: string; fraction: number; error?: number | null }[]
+          warnings?: string[]
+          interference?: { available: boolean; reason?: string; totalIntensity?: number; topInterference?: { pair: string[]; value: number }[] }
+        }
       } = {
-        jobId: status.jobId,
-        state: status.state,
-        logTail: status.logTail,
+        jobId: view.jobId,
+        state: view.state,
+        logTail: view.logTail,
       }
-      if (status.exitCode !== null && status.exitCode !== undefined) out.exitCode = status.exitCode
-      if (status.error !== undefined) out.error = status.error
-      if (status.state === 'done' || status.state === 'failed') {
-        const { summary, history, files } = summarizeFitDir(status.iterDir)
-        out.summary = {
-          bestNll: summary.bestNll ?? undefined,
-          lastNll: history.lastNll ?? undefined,
-          totalRuns: summary.totalRuns ?? undefined,
-          positiveDefinite: summary.positiveDefinite ?? undefined,
-          files,
+      if (view.exitCode !== undefined) out.exitCode = view.exitCode
+      if (view.error !== undefined) out.error = view.error
+      if ((view.state === 'done' || view.state === 'failed') && view.iterDir !== '') {
+        try {
+          const { summary, history, files, fitJson } = summarizeFitDir(view.iterDir)
+          out.summary = {
+            bestNll: summary.bestNll ?? undefined,
+            lastNll: history.lastNll ?? undefined,
+            totalRuns: summary.totalRuns ?? undefined,
+            positiveDefinite: summary.positiveDefinite ?? undefined,
+            files,
+          }
+          const best = fitJson?.fit?.best
+          if (best !== undefined) {
+            const params = (best.params ?? [])
+              .filter((p) => p.kind === 'resonance' || p.kind === 'coupling')
+              .map((p) => ({
+                name: p.name,
+                kind: p.kind,
+                ...(p.kind === 'resonance'
+                  ? { value: p.value ?? null, error: p.error ?? null, lower: p.lower, upper: p.upper, atBoundary: p.atBoundary }
+                  : { real: p.real ?? null, imag: p.imag ?? null }),
+              }))
+            if (params.length > 0) out.summary.params = params
+            if (best.fitFractions !== undefined && best.fitFractions !== null) {
+              out.summary.fitFractions = best.fitFractions.map((f) => ({ amplitude: f.amplitude, fraction: f.fraction, error: f.error ?? null }))
+            }
+            if (fitJson?.fit?.warnings !== undefined) out.summary.warnings = fitJson.fit.warnings
+            const inter = fitJson?.fit?.interference
+            if (inter !== undefined) {
+              out.summary.interference = {
+                available: inter.available,
+                reason: inter.reason,
+                totalIntensity: inter.totalIntensity,
+                topInterference: (inter.topInterference ?? []).map((t) => ({ pair: [...t.pair], value: t.value })),
+              }
+            }
+          }
+        } catch {
+          // results/ may be absent on early failure; summary stays undefined.
         }
       }
       return out

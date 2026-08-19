@@ -17,10 +17,12 @@ import { normalizeName } from './lookup.js'
 import type {
   ChainKinematics,
   ConfigEditResult,
+  DecayStep,
   JP,
   JPGroup,
   Particle,
   PwaConfig,
+  PwaConstraints,
   ResonanceModel,
   ResonanceProposal,
   ResonanceSpec,
@@ -62,7 +64,9 @@ export function parseConfig(text: string): PwaConfig {
 }
 
 /** Re-derive the plain-object views from the raw Map document. */
-export function rebuildViews(raw: YamlMap): Pick<PwaConfig, 'particles' | 'decayChains' | 'resonances' | 'kinematics'> {
+export function rebuildViews(
+  raw: YamlMap,
+): Pick<PwaConfig, 'particles' | 'decayChains' | 'resonances' | 'kinematics' | 'constraints'> {
   const particles: Record<string, Particle> = {}
   const resonances: Record<string, ResonanceSpec> = {}
   const decayChains: PwaConfig['decayChains'] = {}
@@ -141,28 +145,37 @@ export function rebuildViews(raw: YamlMap): Pick<PwaConfig, 'particles' | 'decay
         const groups = parseGroupList(groupsRaw)
         intermediates[intName] = { groups }
       }
-      decayChains[chainName] = { intermediates }
+      decayChains[chainName] = {
+        intermediates,
+        steps: parseChainSteps(chain),
+      }
 
       // --- kinematics: production steps A -> R + B ------------------------
-      for (const { mother, daughters } of chainSteps(chain, intermediates)) {
-        const motherParticle = particles[mother]
+      for (const step of decayChains[chainName].steps) {
+        const motherParticle = particles[step.mother]
         if (!motherParticle) continue
         const intermediatesNames = new Set(Object.keys(intermediates))
-        const res = daughters.filter((d) => intermediatesNames.has(d))
-        const siblings = daughters.filter((d) => !intermediatesNames.has(d))
+        const res = step.daughters.filter((d) => intermediatesNames.has(d))
+        const siblings = step.daughters.filter((d) => !intermediatesNames.has(d))
         if (res.length !== 1 || siblings.length !== 1) continue // 2-body production only
         const sibling = particles[siblings[0]]
         if (!sibling) continue
         const threshold = motherParticle.mass - sibling.mass
         const existing = kinematics[res[0]]
         if (!existing || threshold < existing.threshold) {
-          kinematics[res[0]] = { mother: motherParticle, daughter: sibling, threshold }
+          kinematics[res[0]] = {
+            mother: motherParticle,
+            daughter: sibling,
+            threshold,
+            motherName: step.mother,
+            daughterName: siblings[0],
+          }
         }
       }
     }
   }
 
-  return { particles, decayChains, resonances, kinematics }
+  return { particles, decayChains, resonances, kinematics, constraints: parseConstraints(raw) }
 }
 
 /** Collect (intermediate name, group list) entries from a chain: from the
@@ -235,13 +248,20 @@ function parseGroupList(groupsRaw: unknown): JPGroup[] {
   return groups
 }
 
-/** Enumerate production steps of a chain in either config format. */
-function chainSteps(
-  chain: YamlMap,
-  intermediates: Record<string, unknown>,
-): { mother: string; daughters: string[] }[] {
-  const steps: { mother: string; daughters: string[] }[] = []
-  // Format B: chain.decay = [ {Mother: [d1, d2]}, ... ]
+/**
+ * Enumerate the decay steps of a chain in either config format, including
+ * per-step opts (`sl` whitelist, `p_break`, `has_bf`, `bf_d`):
+ *
+ *   Format B: chain.decay = [ {Mother: [d1, d2, {opts}]}, ... ]
+ *   Format A (solve2 style): particle/intermediate keys whose value is
+ *     - a single mode [d1, d2(, {opts})], or
+ *     - a list of modes [[d1, d2(, {opts})], ...]
+ *   (spin-chain group keys `R: [{J,P}: [...]]` are NOT steps.)
+ */
+function parseChainSteps(chain: YamlMap): DecayStep[] {
+  const steps: DecayStep[] = []
+
+  // Format B: explicit `decay:` list.
   const decayList = asArr(chain.get('decay'))
   if (decayList) {
     for (const stepRaw of decayList) {
@@ -249,29 +269,95 @@ function chainSteps(
       if (!step) continue
       for (const [mother, daughtersRaw] of step) {
         if (typeof mother !== 'string') continue
-        const daughters = asArr(daughtersRaw)?.map(asStr).filter((s): s is string => s !== undefined) ?? []
-        if (daughters.length > 0) steps.push({ mother, daughters })
+        for (const { d1, d2, opts } of parseDaughterModes(daughtersRaw)) {
+          steps.push({ mother, daughters: [d1, d2], ...stepOpts(opts) })
+        }
       }
     }
     return steps
   }
-  // Format A (solve2 style): chain keys are particle names (values are modes).
+
+  // Format A: particle/intermediate keys with mode values.
   for (const [mother, modesRaw] of chain) {
     if (typeof mother !== 'string') continue
     if (RESERVED_CHAIN_KEYS.has(mother)) continue
     if (asMap(modesRaw)) continue // intermediates sub-block or similar
     const list0 = asArr(modesRaw)
-    if (list0 && list0.length > 0 && list0.every(isSpinChainGroup)) continue // compact spin-chain key
-    const list = asArr(modesRaw)
-    if (!list) continue
-    const daughtersList = list.map((m) => asArr(m)?.map(asStr).filter((s): s is string => s !== undefined) ?? [])
-    for (const daughters of daughtersList) {
-      if (daughters.length > 0 && daughters.some((d) => d in intermediates)) {
-        steps.push({ mother, daughters })
-      }
+    if (!list0 || list0.length === 0) continue
+    if (isSpinChainGroup(list0[0])) continue // spin-chain group key (not a step)
+    for (const { d1, d2, opts } of parseDaughterModes(modesRaw)) {
+      steps.push({ mother, daughters: [d1, d2], ...stepOpts(opts) })
     }
   }
   return steps
+}
+
+/** One parsed daughter list: [d1, d2(, {opts})] or a list of such modes. */
+function parseDaughterModes(raw: unknown): { d1: string; d2: string; opts: Map<unknown, unknown> }[] {
+  const list = asArr(raw)
+  if (!list) return []
+  const parseMode = (mode: unknown): { d1: string; d2: string; opts: Map<unknown, unknown> } | undefined => {
+    const row = asArr(mode)
+    if (!row || row.length < 2) return undefined
+    const d1 = asStr(row[0])
+    const d2 = asStr(row[1])
+    if (d1 === undefined || d2 === undefined) return undefined
+    const opts = asMap(row[2]) ?? new Map()
+    return { d1, d2, opts }
+  }
+  const out: { d1: string; d2: string; opts: Map<unknown, unknown> }[] = []
+  if (asStr(list[0]) !== undefined) {
+    const m = parseMode(list)
+    if (m) out.push(m)
+  } else {
+    for (const mode of list) {
+      const m = parseMode(mode)
+      if (m) out.push(m)
+    }
+  }
+  return out
+}
+
+/** Per-step opts -> DecayStep fields (ctpwa Config.cu parsing, sl flat or nested). */
+function stepOpts(opts: Map<unknown, unknown>): Pick<DecayStep, 'sl' | 'pBreak' | 'hasBf' | 'bfD'> {
+  const out: Pick<DecayStep, 'sl' | 'pBreak' | 'hasBf' | 'bfD'> = {}
+  const slRaw = opts.get('sl')
+  if (slRaw !== undefined) {
+    const list = asArr(slRaw)
+    if (list) {
+      const rows: [number, number][] = []
+      const pushRow = (r: unknown): void => {
+        const row = asArr(r)
+        if (row && row.length >= 2) {
+          const s = asNum(row[0])
+          const l = asNum(row[1])
+          if (s !== undefined && l !== undefined) rows.push([s, l])
+        }
+      }
+      if (asNum(list[0]) !== undefined) pushRow(list) // flat [S, L]
+      else for (const r of list) pushRow(r) // nested [[S, L], ...]
+      if (rows.length > 0) out.sl = rows
+    }
+  }
+  const pBreak = opts.get('p_break')
+  if (typeof pBreak === 'boolean') out.pBreak = pBreak
+  const hasBf = opts.get('has_bf')
+  if (typeof hasBf === 'boolean') out.hasBf = hasBf
+  else {
+    const pair = asArr(hasBf)?.map((v) => (typeof v === 'boolean' ? v : undefined))
+    if (pair && pair.length >= 2 && pair[0] !== undefined && pair[1] !== undefined) {
+      out.hasBf = [pair[0], pair[1]]
+    }
+  }
+  const bfD = opts.get('bf_d')
+  if (asNum(bfD) !== undefined) out.bfD = bfD as number
+  else if (asArr(bfD)) {
+    const pair = asArr(bfD)?.map(asNum)
+    if (pair && pair.length >= 2 && pair[0] !== undefined && pair[1] !== undefined) {
+      out.bfD = [pair[0], pair[1]]
+    }
+  }
+  return out
 }
 
 /** Decode an intermediates group key: `[{J:1},{P:-1}]` (or a JP flow map). */
@@ -538,4 +624,206 @@ function dupName(config: { resonances: Record<string, unknown> }, name: string):
 /** Render the config back to YAML text (parseable by ctpwa/yaml-cpp). */
 export function dumpConfig(config: PwaConfig): string {
   return `# config.yml — regenerated by dsh-pwa (auto_pwa_config_edit)\n${stringify(config.raw, { lineWidth: 0 })}`
+}
+
+// ---------------------------------------------------------------------------
+// Constraints section + validateConfig
+// ---------------------------------------------------------------------------
+
+/** Parse the `Constraints` section into the PwaConstraints view. */
+export function parseConstraints(raw: YamlMap): PwaConstraints {
+  const conRaw = asMap(raw.get('Constraints')) ?? asMap(raw.get('constraints'))
+  if (!conRaw) return {}
+  const out: PwaConstraints = {}
+
+  const identicalRaw = asArr(conRaw.get('identical'))
+  if (identicalRaw) {
+    const groups: string[][] = []
+    for (const g of identicalRaw) {
+      const names = asArr(g)?.map(asStr).filter((s): s is string => s !== undefined)
+      if (names && names.length > 0) groups.push(names)
+    }
+    if (groups.length > 0) out.identical = groups
+  }
+
+  const transRaw = asArr(conRaw.get('trans'))
+  if (transRaw) {
+    const trans: { names: string[]; value: number[] }[] = []
+    for (const entryRaw of transRaw) {
+      const entry = asMap(entryRaw)
+      if (!entry) continue
+      for (const [namesRaw, valueRaw] of entry) {
+        const names = asArr(namesRaw)?.map(asStr).filter((s): s is string => s !== undefined)
+        if (!names || names.length === 0) continue
+        const value: number[] = []
+        const pushNums = (v: unknown): void => {
+          const n = asNum(v)
+          if (n !== undefined) {
+            value.push(n)
+            return
+          }
+          for (const el of asArr(v) ?? []) pushNums(el)
+        }
+        pushNums(valueRaw)
+        trans.push({ names, value })
+      }
+    }
+    if (trans.length > 0) out.trans = trans
+  }
+
+  const maxL = asNum(conRaw.get('maxL'))
+  if (maxL !== undefined) out.maxL = maxL
+  const bfD = asNum(conRaw.get('bf_d'))
+  if (bfD !== undefined) out.bfD = bfD
+  const hasBf = conRaw.get('has_bf')
+  if (typeof hasBf === 'boolean') out.hasBf = hasBf
+
+  const fixVarRaw = asMap(conRaw.get('fix_var'))
+  if (fixVarRaw) {
+    const fixVar: Record<string, number> = {}
+    for (const [k, v] of fixVarRaw) {
+      const n = asNum(v)
+      if (typeof k === 'string' && n !== undefined) fixVar[k] = n
+    }
+    if (Object.keys(fixVar).length > 0) out.fixVar = fixVar
+  }
+  const freeVarRaw = asArr(conRaw.get('free_var'))
+  if (freeVarRaw) {
+    const names = freeVarRaw.map(asStr).filter((s): s is string => s !== undefined)
+    if (names.length > 0) out.freeVar = names
+  }
+  const varRangeRaw = asMap(conRaw.get('var_range'))
+  if (varRangeRaw) {
+    const varRange: Record<string, [number, number]> = {}
+    for (const [k, v] of varRangeRaw) {
+      const row = asArr(v)
+      const lo = row ? asNum(row[0]) : undefined
+      const hi = row ? asNum(row[1]) : undefined
+      if (typeof k === 'string' && lo !== undefined && hi !== undefined) varRange[k] = [lo, hi]
+    }
+    if (Object.keys(varRange).length > 0) out.varRange = varRange
+  }
+  const varEqualRaw = asArr(conRaw.get('var_equal'))
+  if (varEqualRaw) {
+    const groups: string[][] = []
+    for (const g of varEqualRaw) {
+      const names = asArr(g)?.map(asStr).filter((s): s is string => s !== undefined)
+      if (names && names.length > 0) groups.push(names)
+    }
+    if (groups.length > 0) out.varEqual = groups
+  }
+  const gaussRaw = asMap(conRaw.get('gauss_constr'))
+  if (gaussRaw) {
+    const gaussConstr: Record<string, number> = {}
+    for (const [k, v] of gaussRaw) {
+      const n = asNum(v)
+      if (typeof k === 'string' && n !== undefined) gaussConstr[k] = n
+    }
+    if (Object.keys(gaussConstr).length > 0) out.gaussConstr = gaussConstr
+  }
+
+  return out
+}
+
+/**
+ * Structural validation of a whole config (auto_pwa_config_view gate):
+ *   - Constraints.identical groups: members exist in Particles, same spin;
+ *   - Constraints.trans references <intermediate>_<groupIndex> that exist;
+ *   - Constraints.maxL is a positive integer;
+ *   - Data.order entries exist in Particles;
+ *   - per-step sl whitelist entries are legal (2S+1, L).
+ * Errors indicate the config is structurally broken; warnings are hygiene.
+ */
+export function validateConfig(config: PwaConfig): { errors: ValidationIssue[]; warnings: ValidationIssue[] } {
+  const errors: ValidationIssue[] = []
+  const warnings: ValidationIssue[] = []
+  const { constraints } = config
+
+  for (const group of constraints.identical ?? []) {
+    if (group.length < 2) {
+      errors.push({
+        code: 'identical-group-too-small',
+        message: `Constraints.identical group ${JSON.stringify(group)} has fewer than 2 members — ctpwa needs >= 2 to symmetrize`,
+      })
+      continue
+    }
+    const spins = new Set<number>()
+    for (const name of group) {
+      const p = config.particles[name]
+      if (!p) {
+        errors.push({
+          code: 'identical-unknown-particle',
+          message: `identical group member "${name}" is not in the Particles section`,
+        })
+      } else {
+        spins.add(p.j)
+      }
+    }
+    if (spins.size > 1) {
+      errors.push({
+        code: 'identical-spin-mismatch',
+        message: `identical group ${JSON.stringify(group)} mixes different spins ${[...spins].join(', ')} — identical particles must share one spin`,
+      })
+    }
+  }
+
+  for (const t of constraints.trans ?? []) {
+    for (const name of t.names) {
+      const m = /^(.+)_(\d+)$/.exec(name)
+      if (!m) {
+        errors.push({
+          code: 'trans-bad-name',
+          message: `trans references "${name}" — expected <intermediate>_<groupIndex> (e.g. R_Keta_0)`,
+        })
+        continue
+      }
+      const intName = m[1]
+      const idx = Number(m[2])
+      const found = Object.values(config.decayChains).find((c) => c.intermediates[intName])
+      if (!found) {
+        errors.push({
+          code: 'trans-unknown-intermediate',
+          message: `trans references "${name}" but no intermediate "${intName}" is defined in any chain`,
+        })
+      } else if (idx >= found.intermediates[intName].groups.length) {
+        errors.push({
+          code: 'trans-group-index',
+          message: `trans references "${name}" but ${intName} has only ${found.intermediates[intName].groups.length} [J,P] group(s) (indices 0..${found.intermediates[intName].groups.length - 1})`,
+        })
+      }
+    }
+  }
+
+  if (constraints.maxL !== undefined && (!Number.isInteger(constraints.maxL) || constraints.maxL <= 0)) {
+    errors.push({ code: 'maxl-invalid', message: `Constraints.maxL must be a positive integer, got ${constraints.maxL}` })
+  }
+
+  const dataRaw = asMap(config.raw.get('Data')) ?? asMap(config.raw.get('data'))
+  const order = asArr(dataRaw?.get('order'))?.map(asStr).filter((s): s is string => s !== undefined) ?? []
+  for (const o of order) {
+    if (config.particles[o] === undefined) {
+      errors.push({ code: 'data-order-unknown', message: `Data.order lists "${o}" but no such particle is in the Particles section` })
+    }
+  }
+
+  for (const chain of Object.values(config.decayChains)) {
+    for (const step of chain.steps) {
+      for (const [s, l] of step.sl ?? []) {
+        if (!Number.isInteger(s) || s < 1 || s % 2 !== 1) {
+          errors.push({
+            code: 'sl-invalid-multiplicity',
+            message: `step ${step.mother} -> ${step.daughters.join(' + ')}: sl multiplicity ${s} must be 2S+1 (odd positive integer)`,
+          })
+        }
+        if (!Number.isInteger(l) || l < 0) {
+          errors.push({
+            code: 'sl-invalid-l',
+            message: `step ${step.mother} -> ${step.daughters.join(' + ')}: sl L = ${l} must be a non-negative integer`,
+          })
+        }
+      }
+    }
+  }
+
+  return { errors, warnings }
 }

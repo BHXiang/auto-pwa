@@ -72,6 +72,8 @@ export function detectGpuAvailability(python: string, ldLibraryPath: string): st
 export class LocalFitRunner {
   private jobs = new Map<string, FitJob>()
   private seq = 0
+  /** Completion waiters per job id, resolved by finish(). */
+  private settlers = new Map<string, Set<(s: FitStatus) => void>>()
 
   constructor(private readonly cfg: FitRunnerConfig) {}
 
@@ -172,6 +174,22 @@ export class LocalFitRunner {
     return this.statusOf(job)
   }
 
+  /**
+   * Completion promise for one job (no polling): resolves when the job leaves
+   * 'running' — done/failed/canceled — with its final status. Rejects for an
+   * unknown job. This is the hook a ctx.jobs producer maps onto `JobHooks.done`.
+   */
+  settled(jobId: string): Promise<FitStatus> {
+    const job = this.jobs.get(jobId)
+    if (!job) return Promise.reject(new Error(`unknown job ${jobId}`))
+    if (job.state !== 'running') return Promise.resolve(this.statusOf(job))
+    return new Promise((resolve) => {
+      const waiters = this.settlers.get(jobId) ?? new Set()
+      waiters.add(resolve)
+      this.settlers.set(jobId, waiters)
+    })
+  }
+
   list(): FitStatus[] {
     return [...this.jobs.values()].map((j) => this.statusOf(j))
   }
@@ -180,6 +198,12 @@ export class LocalFitRunner {
     if (job.state !== 'running') return
     job.state = state
     job.finishedAt = Date.now()
+    const waiters = this.settlers.get(job.jobId)
+    if (waiters) {
+      this.settlers.delete(job.jobId)
+      const status = this.statusOf(job)
+      for (const resolve of waiters) resolve(status)
+    }
   }
 
   private statusOf(job: FitJob): FitStatus {

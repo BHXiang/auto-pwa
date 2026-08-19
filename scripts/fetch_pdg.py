@@ -55,6 +55,27 @@ def quantum_jp(name: str) -> tuple[int | float, int] | None:
         con.close()
 
 
+def quantum_c(name: str) -> int | None:
+    """C parity (+1/-1) for self-conjugate (neutral) states, else None.
+
+    The sqlite quantum_c column is authoritative but also carries values for
+    charged multiplet members (e.g. rho(770)+), where C is physically
+    undefined — we only accept charge == 0 rows. Non-C-eigenstates (K0, D0,
+    B0, K(S)0, ...) have NULL quantum_c and stay None, which is exactly the
+    conservative behavior the plugin wants.
+    """
+    con = sqlite3.connect(str(DB))
+    try:
+        row = con.execute(
+            "SELECT charge, quantum_c FROM pdgparticle WHERE name=?", (name,)
+        ).fetchone()
+        if not row or row[0] != 0.0 or not row[1]:
+            return None
+        return 1 if row[1] == "+" else -1
+    finally:
+        con.close()
+
+
 def main() -> int:
     db_url = f"sqlite:///{DB}"
     api = PdgApi(db_url)
@@ -92,11 +113,19 @@ def main() -> int:
             e["width_error"] = round(float(hit.width_error), 6)
         if jp:
             e["jp"] = {"j": int(jp[0]) if float(jp[0]).is_integer() else jp[0], "p": jp[1]}
+        c = quantum_c(hit.name)
+        # Charged states (id ends with + or -) never carry C, even when the
+        # API fuzzy-match returned the neutral multiplet member (e.g.
+        # to_pdg_name strips the charge and "rho(770)+" resolves to the 0).
+        if c is not None and not re.search(r"[+-]$", e["id"]):
+            e["c"] = c
+        else:
+            e.pop("c", None)
         e["status"] = "pdg"
         n_hit += 1
 
     out = {
-        "schemaVersion": "0.2.0",
+        "schemaVersion": "0.3.0",
         "source": "pdg-2026 official package (fetch_pdg.py)",
         "resonances": seed,
     }

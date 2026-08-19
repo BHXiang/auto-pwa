@@ -10,6 +10,56 @@ export interface JP {
   j: number
   /** Parity: +1 or -1. */
   p: 1 | -1
+  /**
+   * Charge conjugation C: +1/-1 for self-conjugate states only.
+   * Absent (undefined) = C not defined (charged or non-C eigenstate);
+   * never invent a C for those.
+   */
+  c?: 1 | -1
+}
+
+/** J^PC: a JP with (possibly undefined) charge conjugation. */
+export type JPC = JP
+
+/**
+ * One (S, L) partial wave of a two-body step. **S is stored in the 2S+1
+ * multiplicity notation**, matching ctpwa config `sl` whitelist entries and
+ * Amp2BD::ComSL output (see src/jpc.ts).
+ */
+export interface SL {
+  /** 2S+1 (multiplicity; odd positive integer). */
+  s: number
+  /** Orbital angular momentum (non-negative integer). */
+  l: number
+}
+
+/** One J^PC value with the (S, L) waves that realize it at a decay vertex. */
+export interface JPCWave {
+  jpc: JPC
+  /** (S, L) waves (2S+1 notation), sorted. */
+  sl: SL[]
+}
+
+/** Result of an isobar J^PC check A -> d1 d2 d3 with R = (di dj). */
+export interface IsobarCheck {
+  /** Intermediate name, e.g. "R_KK". */
+  isobarName: string
+  /** The daughter pair realizing the isobar. */
+  pair: [string, string]
+  /** Whether the pair members are in the same Constraints.identical group. */
+  identical: boolean
+  /** Whether C is well-defined for the pair (conjugate pair or identical group). */
+  cDefined: boolean
+  /** Decay-vertex J^PC full set (R -> d1 + d2). */
+  decayVertex: JPCWave[]
+  /** Production-vertex allowed J^P (A -> R + spectator). */
+  production: AllowedJP[]
+  /** C required by C(A) = C(R)·C(B); undefined when A or B has no C. */
+  cRequired?: 1 | -1
+  /** Intersection of the two vertices (with C conservation when applicable). */
+  allowed: JPCWave[]
+  /** Waves with allowed J^P but violating C conservation (diagnostic). */
+  cBlocked: JPCWave[]
 }
 
 /** A two-body (or more) decay mode of a resonance. */
@@ -29,6 +79,8 @@ export interface ResonanceEntry {
   /** Alternative names used by analyses, e.g. "phi1020". */
   aliases: string[]
   jp: JP
+  /** Charge conjugation C (+1/-1) — only for self-conjugate states (pdg-2026 quantum_c, charge 0). */
+  c?: 1 | -1
   /** GeV. */
   mass: number
   /** GeV. */
@@ -56,6 +108,8 @@ export interface LookupQuery {
   name?: string
   /** Exact spin-parity match. */
   jp?: JP
+  /** Exact J^PC match: when `c` is set, entries without a defined C do not match. */
+  jpc?: JPC
   /** [lo, hi] GeV, inclusive. */
   massRange?: [number, number]
   /** All listed daughters present in at least one decay mode. */
@@ -68,6 +122,12 @@ export interface Particle {
   p: 1 | -1
   /** GeV. */
   mass: number
+  /** C (self-conjugate states only; filled from the PDG table where known). */
+  c?: 1 | -1
+  /** Antiparticle name if this particle has a distinct one (conjugate-pair table). */
+  conjugate?: string
+  /** Whether this is a fermion (half-integer spin). */
+  fermion?: boolean
 }
 
 /** One allowed intermediate state J^P, with the feasible orbital momenta. */
@@ -150,6 +210,56 @@ export interface ChainKinematics {
   daughter: Particle
   /** m_R <= mother.mass - daughter.mass (on-shell threshold). */
   threshold: number
+  /** Mother name (config Particles key, e.g. "Jpsi") — for C lookups. */
+  motherName?: string
+  /** Sibling name (config Particles key, e.g. "eta"). */
+  daughterName?: string
+}
+
+/** One two-body decay step of a chain (decay vertex R -> d1 + d2). */
+export interface DecayStep {
+  /** Mother of this step (particle or intermediate name). */
+  mother: string
+  daughters: [string, string]
+  /** (2S+1, L) whitelist from the per-step `sl` opts; undefined = no filter. */
+  sl?: [number, number][]
+  /** Per-step parity-breaking flag (`p_break`; weak decays). */
+  pBreak?: boolean
+  /** Per-step barrier-factor switch (`has_bf`); may be per daughter. */
+  hasBf?: boolean | [boolean, boolean]
+  /** Per-step barrier-factor range (`bf_d`); may be per daughter. */
+  bfD?: number | [number, number]
+}
+
+/** Parsed `Constraints` section of config.yml (subset relevant to validation). */
+export interface PwaConstraints {
+  /** `identical`: groups of identical-particle names (e.g. [[pi01, pi02]]). */
+  identical?: string[][]
+  /** `trans`: amplitude couplings, e.g. [{names: [R_Keta_0, R_Keta_1], value: [-1]}]. */
+  trans?: { names: string[]; value: number[] }[]
+  /** `maxL`: global orbital-momentum cap. */
+  maxL?: number
+  /** `bf_d`: global barrier-factor range. */
+  bfD?: number
+  /** `has_bf`: global barrier-factor switch. */
+  hasBf?: boolean
+  /** `fix_var`: {paramName: value} fixed named parameters. */
+  fixVar?: Record<string, number>
+  /** `free_var`: names released from fix_var. */
+  freeVar?: string[]
+  /** `var_range`: {paramName: [lo, hi]} fit ranges. */
+  varRange?: Record<string, [number, number]>
+  /** `var_equal`: groups of parameters sharing one slot. */
+  varEqual?: string[][]
+  /** `gauss_constr`: {paramName: sigma} Gaussian penalties. */
+  gaussConstr?: Record<string, number>
+}
+
+/** One chain of a parsed config. */
+export interface ChainSpec {
+  intermediates: Record<string, IntermediateSpec>
+  /** Decay steps in order (production first, then intermediate decays). */
+  steps: DecayStep[]
 }
 
 /** Parsed config.yml, as produced by config-edit parseConfig. */
@@ -157,10 +267,12 @@ export interface PwaConfig {
   /** The whole document as nested Maps (complex YAML keys preserved). */
   raw: Map<unknown, unknown>
   particles: Record<string, Particle>
-  decayChains: Record<string, { intermediates: Record<string, IntermediateSpec> }>
+  decayChains: Record<string, ChainSpec>
   resonances: Record<string, ResonanceSpec>
   /** Intermediate name -> production kinematics (tightest threshold across chains). */
   kinematics: Record<string, ChainKinematics>
+  /** Parsed Constraints section. */
+  constraints: PwaConstraints
 }
 
 // ---------------------------------------------------------------------------

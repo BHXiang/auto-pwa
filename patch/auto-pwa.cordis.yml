@@ -6,8 +6,24 @@
 # Usage (headless):
 #   pnpm dsh --profile headless --patch /home/whitewash/pkgs/auto-pwa/patch/auto-pwa.cordis.yml "完成此文件夹分波"
 #
-# The plugin file must be an absolute path (loader resolves from the profile
-# directory, so relative paths would not find it).
+# Composition (服务三角色 + 硬门禁 + 斜杠命令):
+#   pwa-fit         服务定义（ctx.pwaFit 契约，无逻辑）
+#   pwa-fit-local   本地 Provider：拟合 -> ctx.jobs（JobKind 'ctpwa'，owner 围栏、
+#                   完成通知自动唤醒下一轮、统一 job_output/job_kill）
+#   pwa-guard       config.yml 写文件单调 deny 门禁（无人硬规则）
+#   pwa-commands    /pwa-status 用户旁路观察
+#   auto-pwa        Consumer：14 个 auto_pwa_* 工具（run_fit/fit_status 走 ctx.pwaFit）
+#
+# 依赖 DSH 自带服务：jobs（dsh-jobs-local）、tools、commands。
+# 插件文件必须是绝对路径（loader 从 profile 目录解析，相对路径找不到）。
 - insert:
+    - id: pwa-fit
+      name: '/home/whitewash/pkgs/auto-pwa/plugin/pwa-fit.ts'
+    - id: pwa-fit-local
+      name: '/home/whitewash/pkgs/auto-pwa/plugin/pwa-fit-local.ts'
+    - id: pwa-guard
+      name: '/home/whitewash/pkgs/auto-pwa/plugin/pwa-guard.ts'
+    - id: pwa-commands
+      name: '/home/whitewash/pkgs/auto-pwa/plugin/pwa-commands.ts'
     - id: auto-pwa
       name: '/home/whitewash/pkgs/auto-pwa/plugin/auto-pwa.ts'

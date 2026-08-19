@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       '@deepseek-ai/dsh-tools': fileURLToPath(new URL('./vendor/dsh/dsh-tools.ts', import.meta.url)),
       '@deepseek-ai/cordis': fileURLToPath(new URL('./vendor/dsh/cordis.ts', import.meta.url)),
+      '@deepseek-ai/dsh-jobs': fileURLToPath(new URL('./vendor/dsh/dsh-jobs.ts', import.meta.url)),
     },
   },
   test: {

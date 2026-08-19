@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "0.2.0",
+  "schemaVersion": "0.3.0",
   "source": "pdg-2026 official package (fetch_pdg.py)",
   "resonances": [
     {
@@ -15,7 +15,8 @@
       "tex": "\\pi^{0}",
       "decayModes": [],
       "mass_error": 0.0,
-      "width_error": 0.0
+      "width_error": 0.0,
+      "c": 1
     },
     {
       "id": "pi+",
@@ -165,7 +166,8 @@
         }
       ],
       "mass_error": 1.7e-05,
-      "width_error": 0.0
+      "width_error": 0.0,
+      "c": 1
     },
     {
       "id": "f(0)(500)",
@@ -223,7 +225,8 @@
       "tex": "\\rho(770)^{0}",
       "decayModes": [],
       "mass_error": 0.000234,
-      "width_error": 0.000821
+      "width_error": 0.000821,
+      "c": -1
     },
     {
       "id": "omega(782)",
@@ -250,7 +253,8 @@
         }
       ],
       "mass_error": 0.000129,
-      "width_error": 0.000132
+      "width_error": 0.000132,
+      "c": -1
     },
     {
       "id": "K(0)*(700)0",
@@ -393,7 +397,8 @@
       "status": "pdg",
       "tex": "a_{0}(980)^{0}",
       "decayModes": [],
-      "mass_error": 0.02
+      "mass_error": 0.02,
+      "c": 1
     },
     {
       "id": "a(0)(980)+",
@@ -459,7 +464,8 @@
           "partial": true
         }
       ],
-      "mass_error": 0.02
+      "mass_error": 0.02,
+      "c": 1
     },
     {
       "id": "phi(1020)",
@@ -485,7 +491,8 @@
         }
       ],
       "mass_error": 1.6e-05,
-      "width_error": 1.3e-05
+      "width_error": 1.3e-05,
+      "c": -1
     },
     {
       "id": "h(1)(1170)",
@@ -500,7 +507,8 @@
       "tex": "h_{1}(1170)",
       "decayModes": [],
       "mass_error": 0.005831,
-      "width_error": 0.034525
+      "width_error": 0.034525,
+      "c": -1
     },
     {
       "id": "b(1)(1235)0",
@@ -515,7 +523,8 @@
       "tex": "b_{1}(1235)^{0}",
       "decayModes": [],
       "mass_error": 0.003169,
-      "width_error": 0.008506
+      "width_error": 0.008506,
+      "c": -1
     },
     {
       "id": "b(1)(1235)+",
@@ -559,7 +568,8 @@
       "status": "pdg",
       "tex": "a_{1}(1260)^{0}",
       "decayModes": [],
-      "mass_error": 0.04
+      "mass_error": 0.04,
+      "c": 1
     },
     {
       "id": "a(1)(1260)+",
@@ -694,7 +704,8 @@
           "partial": true
         }
       ],
-      "mass_error": 0.000832
+      "mass_error": 0.000832,
+      "c": 1
     },
     {
       "id": "f(1)(1285)",
@@ -709,7 +720,8 @@
       "tex": "f_{1}(1285)",
       "decayModes": [],
       "mass_error": 0.000454,
-      "width_error": 0.001036
+      "width_error": 0.001036,
+      "c": 1
     },
     {
       "id": "eta(1295)",
@@ -724,7 +736,8 @@
       "tex": "\\eta(1295)",
       "decayModes": [],
       "mass_error": 0.003892,
-      "width_error": 0.005366
+      "width_error": 0.005366,
+      "c": 1
     },
     {
       "id": "pi(1300)0",
@@ -738,7 +751,8 @@
       "status": "pdg",
       "tex": "\\pi(1300)^{0}",
       "decayModes": [],
-      "mass_error": 0.1
+      "mass_error": 0.1,
+      "c": 1
     },
     {
       "id": "pi(1300)+",
@@ -780,7 +794,8 @@
       "status": "pdg",
       "tex": "a_{2}(1320)^{0}",
       "decayModes": [],
-      "mass_error": 0.001317
+      "mass_error": 0.001317,
+      "c": 1
     },
     {
       "id": "a(2)(1320)+",
@@ -921,7 +936,8 @@
       "status": "pdg",
       "tex": "\\eta(1405)",
       "decayModes": [],
-      "mass_error": 0.002308
+      "mass_error": 0.002308,
+      "c": 1
     },
     {
       "id": "h(1)(1415)",
@@ -935,7 +951,8 @@
       "status": "pdg",
       "tex": "h_{1}(1415)",
       "decayModes": [],
-      "width_error": 0.010625
+      "width_error": 0.010625,
+      "c": -1
     },
     {
       "id": "omega(1420)",
@@ -960,7 +977,8 @@
         }
       ],
       "mass_error": 0.06,
-      "width_error": 0.19
+      "width_error": 0.19,
+      "c": -1
     },
     {
       "id": "K*(1410)0",
@@ -1093,7 +1111,8 @@
       "status": "pdg",
       "tex": "f_{1}(1420)",
       "decayModes": [],
-      "width_error": 0.003178
+      "width_error": 0.003178,
+      "c": 1
     },
     {
       "id": "K(0)*(1430)0",
@@ -1194,7 +1213,8 @@
       "tex": "a_{0}(1450)^{0}",
       "decayModes": [],
       "mass_error": 0.034426,
-      "width_error": 0.014
+      "width_error": 0.014,
+      "c": 1
     },
     {
       "id": "a(0)(1450)+",
@@ -1239,7 +1259,8 @@
       "tex": "\\rho(1450)^{0}",
       "decayModes": [],
       "mass_error": 0.025,
-      "width_error": 0.06
+      "width_error": 0.06,
+      "c": -1
     },
     {
       "id": "rho(1450)+",
@@ -1284,7 +1305,8 @@
       "tex": "\\eta(1475)",
       "decayModes": [],
       "mass_error": 0.00397,
-      "width_error": 0.008912
+      "width_error": 0.008912,
+      "c": 1
     },
     {
       "id": "f(2)'(1525)",
@@ -1355,7 +1377,8 @@
         }
       ],
       "mass_error": 0.025,
-      "width_error": 0.033
+      "width_error": 0.033,
+      "c": 1
     },
     {
       "id": "f(2)(1565)",
@@ -1370,7 +1393,8 @@
       "tex": "f_{2}(1565)",
       "decayModes": [],
       "mass_error": 0.013379,
-      "width_error": 0.0225
+      "width_error": 0.0225,
+      "c": 1
     },
     {
       "id": "eta(2)(1645)",
@@ -1385,7 +1409,8 @@
       "tex": "\\eta_{2}(1645)",
       "decayModes": [],
       "mass_error": 0.005261,
-      "width_error": 0.010639
+      "width_error": 0.010639,
+      "c": 1
     },
     {
       "id": "pi(1)(1600)0",
@@ -1398,7 +1423,8 @@
       "width": 0.365403,
       "status": "pdg",
       "tex": "\\pi_{1}(1600)^{0}",
-      "decayModes": []
+      "decayModes": [],
+      "c": 1
     },
     {
       "id": "pi(1)(1600)+",
@@ -1499,7 +1525,8 @@
       "tex": "a_{1}(1640)^{0}",
       "decayModes": [],
       "mass_error": 0.016179,
-      "width_error": 0.038386
+      "width_error": 0.038386,
+      "c": 1
     },
     {
       "id": "a(1)(1640)+",
@@ -1546,7 +1573,8 @@
       "tex": "\\omega_{3}(1670)",
       "decayModes": [],
       "mass_error": 0.003991,
-      "width_error": 0.010018
+      "width_error": 0.010018,
+      "c": -1
     },
     {
       "id": "omega(1650)",
@@ -1561,7 +1589,8 @@
       "tex": "\\omega(1650)",
       "decayModes": [],
       "mass_error": 0.03,
-      "width_error": 0.05
+      "width_error": 0.05,
+      "c": -1
     },
     {
       "id": "pi(2)(1670)0",
@@ -1574,7 +1603,8 @@
       "width": 0.25753,
       "status": "pdg",
       "tex": "\\pi_{2}(1670)^{0}",
-      "decayModes": []
+      "decayModes": [],
+      "c": 1
     },
     {
       "id": "pi(2)(1670)+",
@@ -1625,7 +1655,8 @@
         }
       ],
       "mass_error": 0.02,
-      "width_error": 0.05
+      "width_error": 0.05,
+      "c": -1
     },
     {
       "id": "rho(3)(1690)0",
@@ -1640,7 +1671,8 @@
       "tex": "\\rho_{3}(1690)^{0}",
       "decayModes": [],
       "mass_error": 0.003975,
-      "width_error": 0.014047
+      "width_error": 0.014047,
+      "c": -1
     },
     {
       "id": "rho(3)(1690)+",
@@ -1684,7 +1716,8 @@
       "status": "pdg",
       "tex": "a_{2}(1700)^{0}",
       "decayModes": [],
-      "mass_error": 0.01417
+      "mass_error": 0.01417,
+      "c": 1
     },
     {
       "id": "a(2)(1700)+",
@@ -1798,7 +1831,8 @@
       "tex": "\\rho(1700)^{0}",
       "decayModes": [],
       "mass_error": 0.02,
-      "width_error": 0.1
+      "width_error": 0.1,
+      "c": -1
     },
     {
       "id": "rho(1700)+",
@@ -1866,7 +1900,8 @@
           "partial": true
         }
       ],
-      "width_error": 0.010409
+      "width_error": 0.010409,
+      "c": 1
     },
     {
       "id": "X(1750)",
@@ -1883,7 +1918,8 @@
       "tex": "X(1750)",
       "decayModes": [],
       "mass_error": 0.002705,
-      "width_error": 0.009556
+      "width_error": 0.009556,
+      "c": -1
     },
     {
       "id": "f0(1770)",
@@ -2046,7 +2082,8 @@
       "width": 0.215192,
       "status": "pdg",
       "tex": "\\pi(1800)^{0}",
-      "decayModes": []
+      "decayModes": [],
+      "c": 1
     },
     {
       "id": "pi(1800)+",
@@ -2147,7 +2184,8 @@
       "tex": "\\eta_{2}(1870)",
       "decayModes": [],
       "mass_error": 0.008043,
-      "width_error": 0.014065
+      "width_error": 0.014065,
+      "c": 1
     },
     {
       "id": "phi(3)(1850)",
@@ -2163,7 +2201,8 @@
       "status": "pdg",
       "tex": "\\phi_{3}(1850)",
       "decayModes": [],
-      "mass_error": 0.006775
+      "mass_error": 0.006775,
+      "c": -1
     },
     {
       "id": "D0",
@@ -2259,7 +2298,8 @@
       "tex": "f_{2}(1950)",
       "decayModes": [],
       "mass_error": 0.011731,
-      "width_error": 0.024046
+      "width_error": 0.024046,
+      "c": 1
     },
     {
       "id": "K(0)*(1950)0",
@@ -2331,7 +2371,8 @@
       "status": "pdg",
       "tex": "a_{4}(1970)^{0}",
       "decayModes": [],
-      "mass_error": 0.015965
+      "mass_error": 0.015965,
+      "c": 1
     },
     {
       "id": "a(4)(1970)+",
@@ -2399,7 +2440,8 @@
       "status": "pdg",
       "tex": "f_{0}(2020)",
       "decayModes": [],
-      "width_error": 0.047668
+      "width_error": 0.047668,
+      "c": 1
     },
     {
       "id": "K(2)*(1980)0",
@@ -2495,7 +2537,8 @@
       "status": "pdg",
       "tex": "f_{2}(2010)",
       "decayModes": [],
-      "width_error": 0.0645
+      "width_error": 0.0645,
+      "c": 1
     },
     {
       "id": "D*(2010)+",
@@ -2540,7 +2583,8 @@
       "tex": "f_{4}(2050)",
       "decayModes": [],
       "mass_error": 0.011438,
-      "width_error": 0.01803
+      "width_error": 0.01803,
+      "c": 1
     },
     {
       "id": "K(4)*(2045)0",
@@ -2658,7 +2702,8 @@
         }
       ],
       "mass_error": 0.011767,
-      "width_error": 0.030187
+      "width_error": 0.030187,
+      "c": 1
     },
     {
       "id": "omega(2220)",
@@ -2675,7 +2720,8 @@
       "tex": "\\omega(2220)",
       "decayModes": [],
       "mass_error": 0.02058,
-      "width_error": 0.033807
+      "width_error": 0.033807,
+      "c": -1
     },
     {
       "id": "K2(2250)",
@@ -2705,7 +2751,8 @@
       "tex": "f_{2}(2300)",
       "decayModes": [],
       "mass_error": 0.028,
-      "width_error": 0.041
+      "width_error": 0.041,
+      "c": 1
     },
     {
       "id": "D(s0)*(2317)+",
@@ -2802,7 +2849,8 @@
       "width": 0.331015,
       "status": "pdg",
       "tex": "f_{2}(2340)",
-      "decayModes": []
+      "decayModes": [],
+      "c": 1
     },
     {
       "id": "D(1)(2430)0",
@@ -3041,7 +3089,9 @@
     },
     {
       "id": "J/psi(1S)",
-      "aliases": [],
+      "aliases": [
+        "J/psi"
+      ],
       "jp": {
         "j": 1,
         "p": -1
@@ -3052,7 +3102,8 @@
       "tex": "J/\\psi(1S)",
       "decayModes": [],
       "mass_error": 6e-06,
-      "width_error": 2e-06
+      "width_error": 2e-06,
+      "c": -1
     },
     {
       "id": "chi(c0)(1P)",
@@ -3132,7 +3183,8 @@
       "tex": "\\psi(2S)",
       "decayModes": [],
       "mass_error": 1.1e-05,
-      "width_error": 9e-06
+      "width_error": 9e-06,
+      "c": -1
     },
     {
       "id": "psi(3770)",
@@ -3147,7 +3199,8 @@
       "tex": "\\psi(3770)",
       "decayModes": [],
       "mass_error": 0.000696,
-      "width_error": 0.000959
+      "width_error": 0.000959,
+      "c": -1
     },
     {
       "id": "chi(c2)(3930)",

@@ -4,3 +4,10 @@ probe-out/
 pwa-work/
 lib/
 *.log
+__pycache__/
+*.pyc
+# 本地研发文档（研究计划/评估报告），不上传 GitHub
+PLAN-STEP1.md
+PLAN-STEP2.md
+dev-plan.html
+docs/
