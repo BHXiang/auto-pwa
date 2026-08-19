@@ -1,0 +1,13 @@
+# dsh-pwa plugin overlay — mount the auto_pwa_* tools into any DSH profile.
+#
+# Usage (this GUI):
+#   pnpm dsh web --patch /home/whitewash/pkgs/auto-pwa/patch/auto-pwa.cordis.yml
+#
+# Usage (headless):
+#   pnpm dsh --profile headless --patch /home/whitewash/pkgs/auto-pwa/patch/auto-pwa.cordis.yml "完成此文件夹分波"
+#
+# The plugin file must be an absolute path (loader resolves from the profile
+# directory, so relative paths would not find it).
+- insert:
+    - id: auto-pwa
+      name: '/home/whitewash/pkgs/auto-pwa/plugin/auto-pwa.ts'

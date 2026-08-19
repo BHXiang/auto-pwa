@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dsh-pwa 开发计划</title>
+<style>
+  :root {
+    --bg: #fafaf8; --fg: #1c1c1a; --muted: #6b6b64; --line: #e3e3dd;
+    --accent: #1a6e5c; --accent-bg: #e9f4f0; --warn: #a05a12; --warn-bg: #fdf3e5;
+    --code-bg: #f1f1ec;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+         line-height: 1.7; margin: 0; padding: 0 0 80px; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+  header { border-bottom: 1px solid var(--line); padding: 32px 0 20px; margin-bottom: 24px; }
+  h1 { font-size: 1.7em; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: .95em; }
+  .badge { display: inline-block; background: var(--accent-bg); color: var(--accent);
+           border-radius: 4px; padding: 1px 8px; font-size: .82em; margin-right: 6px; }
+  h2 { font-size: 1.25em; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 1.05em; margin: 22px 0 8px; }
+  code { font-family: "JetBrains Mono", "Consolas", monospace; font-size: .9em;
+         background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px;
+        padding: 12px 16px; overflow-x: auto; font-size: .85em; line-height: 1.55; }
+  table { border-collapse: collapse; width: 100%; font-size: .88em; margin: 10px 0; }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); font-weight: 600; white-space: nowrap; }
+  .note { background: var(--warn-bg); border-left: 3px solid var(--warn); padding: 8px 14px;
+          border-radius: 0 6px 6px 0; font-size: .9em; margin: 12px 0; }
+  .ok { color: var(--accent); font-weight: 600; }
+  ul { padding-left: 22px; } li { margin: 4px 0; }
+  .milestone { display: flex; gap: 12px; margin: 8px 0; }
+  .ms-tag { flex-shrink: 0; width: 44px; height: 44px; border-radius: 8px; display: flex;
+            align-items: center; justify-content: center; font-weight: 700; font-size: .85em;
+            background: var(--code-bg); color: var(--muted); border: 1px solid var(--line); }
+  .ms-tag.done { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  .ms-body { flex: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>dsh-pwa · 分波分析代理插件开发计划</h1>
+  <div class="sub">
+    <span class="badge">2026-08-18</span>
+    <span class="badge">状态: M1 骨架</span>
+    目标: 让 DeepSeek Harness 自主完成分波分析迭代拟合
+  </div>
+</header>
+
+<h2>1. 目标与终止判据</h2>
+<p>命令行执行 <code>dsh --profile headless "完成分波分析"</code>，代理在无人工干预下完成：确认中间共振态 J<sup>P</sup> → 初始分波 → 拟合 → 判断加/删共振态 → 写笔记 → 迭代，直到达成目标。</p>
+<table>
+  <tr><th>判据</th><th>值</th><th>说明</th></tr>
+  <tr><td>pull 分布</td><td>所有质量 bin 的 |pull| &lt; 5</td><td>数据-拟合残差按误差归一，无超过 5σ 的偏差 bin</td></tr>
+  <tr><td>ΔNLL</td><td>&lt; 10（连续 3 轮）</td><td>新增共振态后 NLL 改进 &lt; 10 ≈ 显著性 &lt; 4.5σ（√2ΔNLL），停止添加</td></tr>
+  <tr><td>轮数上限</td><td>待定（建议 15）</td><td>防止发散</td></tr>
+  <tr><td>时间预算</td><td>待定</td><td>模型在笔记中跟踪</td></tr>
+</table>
+
+<h2>2. 架构：三种开发范式</h2>
+<table>
+  <tr><th>范式</th><th>在本项目中的角色</th></tr>
+  <tr><td><b>Agent Loop</b>（主循环）</td><td>headless 会话中模型自己迭代：读评估 → 查知识 → 决策 → 调用工具。科学判断（加什么共振态）不可预定义，交给推理</td></tr>
+  <tr><td><b>PTC</b>（程序化工具调用）</td><td>8 个 <code>pwa_*</code> 工具，每个封装一个完整程序，输入输出全结构化 JSON。机械链（改配置/拟合/解析）不进模型上下文</td></tr>
+  <tr><td><b>Workflow</b>（保险丝）</td><td>可选：初始化骨架（M3 后评估）；失控时切 ralph 模式（每轮新子代理 + 结构化报告）</td></tr>
+</table>
+
+<h2>3. PTC 工具契约</h2>
+<table>
+  <tr><th>工具</th><th>输入（模型给）</th><th>内部执行</th><th>输出（模型拿）</th></tr>
+  <tr><td><code>pwa_lookup</code></td><td>name / jp / massRange / decayTo</td><td>查 pdg.json</td><td><code>{hits: [{id, jp, mass, width, decayModes}]}</code></td></tr>
+  <tr><td><code>pwa_decay_check</code></td><td>mother{j,p,mass} + daughter</td><td>角动量+宇称守恒+质量阈值</td><td><code>{allowedJP, candidates}</code></td></tr>
+  <tr><td><code>pwa_spectrum</code></td><td>dataFile, nBins</td><td>读 dat，峰值识别</td><td><code>{peaks, bins}</code></td></tr>
+  <tr><td><code>pwa_edit_config</code></td><td>op + resonance + jpGroup</td><td>校验→备份→原子写→可加载验证</td><td><code>{ok, changed[]}</code>（非法不改文件）</td></tr>
+  <tr><td><code>pwa_run_fit</code></td><td>round, timeoutMs</td><td>GPU 锁 → 后台跑 fit.py → 等待</td><td><code>{status, nll, logTail}</code></td></tr>
+  <tr><td><code>pwa_evaluate</code></td><td>resultsDir, baselineNll</td><td>解析 txt + root pull</td><td>诊断 JSON（ΔNLL/边界/pull 区域/分波幅度）</td></tr>
+  <tr><td><code>pwa_iterate</code></td><td>configEdit?, round</td><td>复合：校验→拟合→画图→评估</td><td>= evaluate 输出 + 日志摘要</td></tr>
+  <tr><td><code>pwa_note</code></td><td>round, nll, decision, plan</td><td>写 notes/iteration-N.md + SUMMARY.md</td><td><code>{ok, path}</code></td></tr>
+</table>
+
+<h2>4. 数据方案</h2>
+<ul>
+  <li><b>pdg.json 静态表</b>：schema 含 id / aliases（对应分析里的 <code>phi1020</code> 这类名字）/ jp / mass / width / decayModes / status（seed | pdg）。运行时只读 JSON，不依赖 Python。</li>
+  <li><b>种子数据</b>：从现有分析 config 提取（Jpsi2KKeta 的 R_KK/R_Keta 系列、Jpsi2omegaKsKs 的 f0/f2/K1 系列），质量宽度取自 config 的 BWR 参数。标记 <code>status: seed</code>，数值待权威源校准。</li>
+  <li><b>权威数据（M2）</b>：<code>scripts/fetch_pdg.py</code> 尝试 PDG 官方 Python API；不可用则回退 scikit-hep <code>particle</code> 包；再不行手动整理。生成后替换 seed 并置 <code>status: pdg</code>。</li>
+</ul>
+<div class="note">⚠ 种子数据中的质量/宽度是近似值，只用于打通逻辑与测试；权威数值以 M2 拉取为准。</div>
+
+<h2>5. 模型迭代流程</h2>
+<ul>
+  <li><b>第 0 轮</b>：任务文本 + <code>pwa_spectrum</code>（看数据）+ <code>pwa_decay_check</code>（定 J<sup>P</sup>）→ 初始 config → <code>pwa_iterate</code> → 笔记 0</li>
+  <li><b>第 N 轮</b>：读评估 JSON + SUMMARY.md → <code>pwa_lookup</code> 查 pull 偏差区的候选 → 决策 → <code>pwa_edit_config</code> → <code>pwa_iterate</code> → <code>pwa_note</code></li>
+  <li><b>终止</b>：目标达成（pull&lt;5 且 ΔNLL&lt;10）→ 最终笔记 + 总结输出；或轮数/预算耗尽</li>
+</ul>
+
+<h2>6. 里程碑</h2>
+<div class="milestone">
+  <div class="ms-tag done">M1</div>
+  <div class="ms-body"><b>骨架（当前）</b>：pdg.json 种子 + <code>pwa_lookup</code> / <code>pwa_decay_check</code> 纯函数 + 单测。纯 TS，不依赖 harness。</div>
+</div>
+<div class="milestone">
+  <div class="ms-tag">M2</div>
+  <div class="ms-body"><b>工具化</b>：接入 <code>@deepseek-ai/dsh-tools</code>，8 个 <code>pwa_*</code> 工具注册 + <code>fetch_pdg.py</code> 拉权威数据 + 挂入 profile。</div>
+</div>
+<div class="milestone">
+  <div class="ms-tag">M3</div>
+  <div class="ms-body"><b>端到端</b>：persona + SKILL.md + 本机 headless 跑通一个分波（如 Jpsi2omegaKsKs 或 Jpsi2KKeta），记录迭代行为。</div>
+</div>
+<div class="milestone">
+  <div class="ms-tag">M4</div>
+  <div class="ms-body"><b>加固</b>：超时/轮数/收敛自动停；评估 workflow 骨架与 ralph 保险丝；sbatch 部署（后置）。</div>
+</div>
+
+<h2>7. 部署形态（后置）</h2>
+<pre>sbatch 一个作业 = 一个 headless dsh 会话（作业内代理直接跑拟合命令，不嵌套 sbatch）
+前置条件: 计算节点有 node+dsh+插件+API key, 出口可达 LLM API（已确认可测）
+当前阶段: 本机直接运行, 不涉及 sbatch</pre>
+
+<h2>8. 待定项</h2>
+<ul>
+  <li>PDG Python API 可用性（未安装，M2 时验证 <code>pdg</code> / <code>particle</code> 包）</li>
+  <li>轮数上限与时间预算的具体值</li>
+  <li>终止判据注入方式：config 字段 vs 任务文本（倾向 config 字段，可配置）</li>
+</ul>
+
+</div>
+</body>
+</html>

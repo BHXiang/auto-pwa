@@ -1,0 +1,73 @@
+{
+  "name": "auto-pwa",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "AI-driven partial wave analysis for DeepSeek Harness: physics-gated config editing, ctpwa fit execution, numeric evaluation, and goal-driven iterative convergence. Physics knowledge (PDG-2026) as pure functions; DSH integration as a thin pwa_* tool plugin.",
+  "license": "MIT",
+  "keywords": [
+    "pwa",
+    "partial-wave-analysis",
+    "deepseek-harness",
+    "plugin",
+    "ctpwa",
+    "high-energy-physics",
+    "hepex"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "lib",
+    "plugin",
+    "scripts",
+    "data",
+    "skills",
+    "patch",
+    "vendor",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./lib/src/index.d.ts",
+      "default": "./lib/src/index.js"
+    },
+    "./plugin": {
+      "types": "./lib/plugin/pwa-tools.d.ts",
+      "default": "./lib/plugin/pwa-tools.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev:setup": "bash scripts/setup-dev.sh",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json",
+    "demo": "tsx scripts/demo.ts",
+    "demo:step1": "tsx scripts/demo-step1.ts",
+    "demo:report": "tsx scripts/demo-report.ts",
+    "fetch:pdg": "python scripts/fetch_pdg.py"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.5",
+    "@deepseek-ai/cordis": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

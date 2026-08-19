@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noImplicitAny": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/dsh-tools": ["./vendor/dsh/dsh-tools.ts"],
+      "@deepseek-ai/cordis": ["./vendor/dsh/cordis.ts"]
+    }
+  },
+  "include": ["src", "plugin", "tests", "vendor"]
+}

@@ -1,0 +1,5 @@
+# headless iteration experiment: stronger model for multi-step tool chains
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-v4-pro

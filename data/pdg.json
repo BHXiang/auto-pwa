@@ -1,0 +1,3166 @@
+{
+  "schemaVersion": "0.2.0",
+  "source": "pdg-2026 official package (fetch_pdg.py)",
+  "resonances": [
+    {
+      "id": "pi0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.134977,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "\\pi^{0}",
+      "decayModes": [],
+      "mass_error": 0.0,
+      "width_error": 0.0
+    },
+    {
+      "id": "pi+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.13957,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "\\pi^{+}",
+      "decayModes": [],
+      "mass_error": 0.0,
+      "width_error": 0.0
+    },
+    {
+      "id": "pi-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.13957,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "\\pi^{-}",
+      "decayModes": [],
+      "mass_error": 0.0,
+      "width_error": 0.0
+    },
+    {
+      "id": "K+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.493677,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "K^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "K-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.493677,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "K^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "K(L)0",
+      "aliases": [
+        "KL"
+      ],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.497611,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "K_{L}^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(S)0",
+      "aliases": [
+        "KS",
+        "Ks"
+      ],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.497611,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "K_{S}^{0}",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-"
+          ],
+          "br": 0.692,
+          "partial": true
+        }
+      ]
+    },
+    {
+      "id": "K0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.497611,
+      "width": null,
+      "status": "pdg",
+      "tex": "K^{0}",
+      "decayModes": [],
+      "mass_error": 1.3e-05
+    },
+    {
+      "id": "K~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.497611,
+      "width": null,
+      "status": "pdg",
+      "tex": "\\overline{K}^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "eta",
+      "aliases": [
+        "eta"
+      ],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.547862,
+      "width": 1e-06,
+      "status": "pdg",
+      "tex": "\\eta",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-",
+            "pi0"
+          ],
+          "br": 0.228,
+          "partial": true
+        }
+      ],
+      "mass_error": 1.7e-05,
+      "width_error": 0.0
+    },
+    {
+      "id": "f(0)(500)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.6,
+      "width": 0.45,
+      "status": "pdg",
+      "tex": "f_{0}(500)",
+      "decayModes": []
+    },
+    {
+      "id": "rho(770)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 0.775261,
+      "width": 0.147391,
+      "status": "pdg",
+      "tex": "\\rho(770)^{+}",
+      "decayModes": [],
+      "mass_error": 0.000234,
+      "width_error": 0.000821
+    },
+    {
+      "id": "rho(770)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 0.775261,
+      "width": 0.147391,
+      "status": "pdg",
+      "tex": "\\rho(770)^{-}",
+      "decayModes": [],
+      "mass_error": 0.000234,
+      "width_error": 0.000821
+    },
+    {
+      "id": "rho(770)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 0.775261,
+      "width": 0.147391,
+      "status": "pdg",
+      "tex": "\\rho(770)^{0}",
+      "decayModes": [],
+      "mass_error": 0.000234,
+      "width_error": 0.000821
+    },
+    {
+      "id": "omega(782)",
+      "aliases": [
+        "omega"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 0.782656,
+      "width": 0.00868,
+      "status": "pdg",
+      "tex": "\\omega(782)",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-",
+            "pi0"
+          ],
+          "br": 0.893,
+          "partial": true
+        }
+      ],
+      "mass_error": 0.000129,
+      "width_error": 0.000132
+    },
+    {
+      "id": "K(0)*(700)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.838104,
+      "width": 0.462962,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(700)^{0}",
+      "decayModes": [],
+      "mass_error": 0.011343,
+      "width_error": 0.026994
+    },
+    {
+      "id": "K(0)*(700)~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.838,
+      "width": 0.463,
+      "status": "pdg",
+      "tex": "\\overline{K}_{0}^{*}(700)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(0)*(700)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.838104,
+      "width": 0.462962,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(700)^{+}",
+      "decayModes": [],
+      "mass_error": 0.011343,
+      "width_error": 0.026994
+    },
+    {
+      "id": "K(0)*(700)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.838104,
+      "width": 0.462962,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(700)^{-}",
+      "decayModes": [],
+      "mass_error": 0.011343,
+      "width_error": 0.026994
+    },
+    {
+      "id": "K*(892)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 0.895556,
+      "width": 0.047075,
+      "status": "pdg",
+      "tex": "K^{*}(892)^{+}",
+      "decayModes": [],
+      "mass_error": 0.000204,
+      "width_error": 0.000493
+    },
+    {
+      "id": "K*(892)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 0.895556,
+      "width": 0.047075,
+      "status": "pdg",
+      "tex": "K^{*}(892)^{-}",
+      "decayModes": [],
+      "mass_error": 0.000204,
+      "width_error": 0.000493
+    },
+    {
+      "id": "K*(892)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 0.895556,
+      "width": 0.047075,
+      "status": "pdg",
+      "tex": "K^{*}(892)^{0}",
+      "decayModes": [],
+      "mass_error": 0.000204,
+      "width_error": 0.000493
+    },
+    {
+      "id": "K*(892)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 0.89556,
+      "width": 0.0471,
+      "status": "pdg",
+      "tex": "\\overline{K}^{*}(892)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "eta'(958)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 0.95778,
+      "width": 0.000188,
+      "status": "pdg",
+      "tex": "\\eta^\\prime(958)",
+      "decayModes": []
+    },
+    {
+      "id": "a(0)(980)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.98,
+      "width": 0.075,
+      "status": "pdg",
+      "tex": "a_{0}(980)^{0}",
+      "decayModes": [],
+      "mass_error": 0.02
+    },
+    {
+      "id": "a(0)(980)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.98,
+      "width": 0.075,
+      "status": "pdg",
+      "tex": "a_{0}(980)^{+}",
+      "decayModes": [],
+      "mass_error": 0.02
+    },
+    {
+      "id": "a(0)(980)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.98,
+      "width": 0.075,
+      "status": "pdg",
+      "tex": "a_{0}(980)^{-}",
+      "decayModes": [],
+      "mass_error": 0.02
+    },
+    {
+      "id": "f(0)(980)",
+      "aliases": [
+        "f0_980"
+      ],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.99,
+      "width": 0.06,
+      "status": "pdg",
+      "tex": "f_{0}(980)",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-"
+          ],
+          "partial": true
+        },
+        {
+          "daughters": [
+            "K+",
+            "K-"
+          ],
+          "partial": true
+        },
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ],
+      "mass_error": 0.02
+    },
+    {
+      "id": "phi(1020)",
+      "aliases": [
+        "phi1020"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.01946,
+      "width": 0.004249,
+      "status": "pdg",
+      "tex": "\\phi(1020)",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "K-"
+          ],
+          "br": 0.492,
+          "partial": true
+        }
+      ],
+      "mass_error": 1.6e-05,
+      "width_error": 1.3e-05
+    },
+    {
+      "id": "h(1)(1170)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.166,
+      "width": 0.375,
+      "status": "pdg",
+      "tex": "h_{1}(1170)",
+      "decayModes": [],
+      "mass_error": 0.005831,
+      "width_error": 0.034525
+    },
+    {
+      "id": "b(1)(1235)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.229483,
+      "width": 0.142375,
+      "status": "pdg",
+      "tex": "b_{1}(1235)^{0}",
+      "decayModes": [],
+      "mass_error": 0.003169,
+      "width_error": 0.008506
+    },
+    {
+      "id": "b(1)(1235)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.229483,
+      "width": 0.142375,
+      "status": "pdg",
+      "tex": "b_{1}(1235)^{+}",
+      "decayModes": [],
+      "mass_error": 0.003169,
+      "width_error": 0.008506
+    },
+    {
+      "id": "b(1)(1235)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.229483,
+      "width": 0.142375,
+      "status": "pdg",
+      "tex": "b_{1}(1235)^{-}",
+      "decayModes": [],
+      "mass_error": 0.003169,
+      "width_error": 0.008506
+    },
+    {
+      "id": "a(1)(1260)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.23,
+      "width": 0.42,
+      "status": "pdg",
+      "tex": "a_{1}(1260)^{0}",
+      "decayModes": [],
+      "mass_error": 0.04
+    },
+    {
+      "id": "a(1)(1260)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.23,
+      "width": 0.42,
+      "status": "pdg",
+      "tex": "a_{1}(1260)^{+}",
+      "decayModes": [],
+      "mass_error": 0.04
+    },
+    {
+      "id": "a(1)(1260)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.23,
+      "width": 0.42,
+      "status": "pdg",
+      "tex": "a_{1}(1260)^{-}",
+      "decayModes": [],
+      "mass_error": 0.04
+    },
+    {
+      "id": "K(1)(1270)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.275,
+      "width": 0.075,
+      "status": "pdg",
+      "tex": "K_{1}(1270)^{0}",
+      "decayModes": [],
+      "mass_error": 0.01,
+      "width_error": 0.015
+    },
+    {
+      "id": "K(1)(1270)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.256,
+      "width": 0.09,
+      "status": "pdg",
+      "tex": "\\overline{K}_{1}(1270)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(1)(1270)+",
+      "aliases": [
+        "K1_1270"
+      ],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.275,
+      "width": 0.075,
+      "status": "pdg",
+      "tex": "K_{1}(1270)^{+}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K*0",
+            "pi0"
+          ],
+          "partial": true
+        },
+        {
+          "daughters": [
+            "rho0",
+            "K0"
+          ],
+          "partial": true
+        }
+      ],
+      "mass_error": 0.01,
+      "width_error": 0.015
+    },
+    {
+      "id": "K(1)(1270)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.275,
+      "width": 0.075,
+      "status": "pdg",
+      "tex": "K_{1}(1270)^{-}",
+      "decayModes": [],
+      "mass_error": 0.01,
+      "width_error": 0.015
+    },
+    {
+      "id": "f(2)(1270)",
+      "aliases": [
+        "f2_1270"
+      ],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.275412,
+      "width": 0.186554,
+      "status": "pdg",
+      "tex": "f_{2}(1270)",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-"
+          ],
+          "br": 0.844,
+          "partial": true
+        },
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ],
+      "mass_error": 0.000832
+    },
+    {
+      "id": "f(1)(1285)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.281841,
+      "width": 0.023019,
+      "status": "pdg",
+      "tex": "f_{1}(1285)",
+      "decayModes": [],
+      "mass_error": 0.000454,
+      "width_error": 0.001036
+    },
+    {
+      "id": "eta(1295)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.29371,
+      "width": 0.055334,
+      "status": "pdg",
+      "tex": "\\eta(1295)",
+      "decayModes": [],
+      "mass_error": 0.003892,
+      "width_error": 0.005366
+    },
+    {
+      "id": "pi(1300)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.3,
+      "width": 0.4,
+      "status": "pdg",
+      "tex": "\\pi(1300)^{0}",
+      "decayModes": [],
+      "mass_error": 0.1
+    },
+    {
+      "id": "pi(1300)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.3,
+      "width": 0.4,
+      "status": "pdg",
+      "tex": "\\pi(1300)^{+}",
+      "decayModes": [],
+      "mass_error": 0.1
+    },
+    {
+      "id": "pi(1300)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.3,
+      "width": 0.4,
+      "status": "pdg",
+      "tex": "\\pi(1300)^{-}",
+      "decayModes": [],
+      "mass_error": 0.1
+    },
+    {
+      "id": "a(2)(1320)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.318615,
+      "width": 0.104953,
+      "status": "pdg",
+      "tex": "a_{2}(1320)^{0}",
+      "decayModes": [],
+      "mass_error": 0.001317
+    },
+    {
+      "id": "a(2)(1320)+",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.318615,
+      "width": 0.104953,
+      "status": "pdg",
+      "tex": "a_{2}(1320)^{+}",
+      "decayModes": [],
+      "mass_error": 0.001317
+    },
+    {
+      "id": "a(2)(1320)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.318615,
+      "width": 0.104953,
+      "status": "pdg",
+      "tex": "a_{2}(1320)^{-}",
+      "decayModes": [],
+      "mass_error": 0.001317
+    },
+    {
+      "id": "f(0)(1370)",
+      "aliases": [
+        "f0_1370"
+      ],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.35,
+      "width": 0.35,
+      "status": "pdg",
+      "tex": "f_{0}(1370)",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-"
+          ],
+          "partial": true
+        },
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ]
+    },
+    {
+      "id": "K(1)(1400)0",
+      "aliases": [
+        "K1_1400"
+      ],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.402517,
+      "width": 0.173881,
+      "status": "pdg",
+      "tex": "K_{1}(1400)^{0}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K*0",
+            "pi0"
+          ],
+          "br": 0.94,
+          "partial": true
+        }
+      ],
+      "mass_error": 0.006873,
+      "width_error": 0.012606
+    },
+    {
+      "id": "K(1)(1400)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.403,
+      "width": 0.174,
+      "status": "pdg",
+      "tex": "\\overline{K}_{1}(1400)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(1)(1400)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.402517,
+      "width": 0.173881,
+      "status": "pdg",
+      "tex": "K_{1}(1400)^{+}",
+      "decayModes": [],
+      "mass_error": 0.006873,
+      "width_error": 0.012606
+    },
+    {
+      "id": "K(1)(1400)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.402517,
+      "width": 0.173881,
+      "status": "pdg",
+      "tex": "K_{1}(1400)^{-}",
+      "decayModes": [],
+      "mass_error": 0.006873,
+      "width_error": 0.012606
+    },
+    {
+      "id": "eta(1405)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.4055,
+      "width": 0.051141,
+      "status": "pdg",
+      "tex": "\\eta(1405)",
+      "decayModes": [],
+      "mass_error": 0.002308
+    },
+    {
+      "id": "h(1)(1415)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.409062,
+      "width": 0.078033,
+      "status": "pdg",
+      "tex": "h_{1}(1415)",
+      "decayModes": [],
+      "width_error": 0.010625
+    },
+    {
+      "id": "omega(1420)",
+      "aliases": [
+        "omega1420"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.41,
+      "width": 0.29,
+      "status": "pdg",
+      "tex": "\\omega(1420)",
+      "decayModes": [
+        {
+          "daughters": [
+            "rho+",
+            "pi-"
+          ],
+          "partial": true
+        }
+      ],
+      "mass_error": 0.06,
+      "width_error": 0.19
+    },
+    {
+      "id": "K*(1410)0",
+      "aliases": [
+        "K1_1410",
+        "K*_1410"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.413733,
+      "width": 0.231807,
+      "status": "pdg",
+      "tex": "K^{*}(1410)^{0}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "pi-"
+          ],
+          "br": 0.93,
+          "partial": true
+        },
+        {
+          "daughters": [
+            "K+",
+            "eta"
+          ],
+          "partial": true
+        }
+      ],
+      "mass_error": 0.01454,
+      "width_error": 0.021382
+    },
+    {
+      "id": "K*(1410)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.414,
+      "width": 0.232,
+      "status": "pdg",
+      "tex": "\\overline{K}^{*}(1410)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K*(1410)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.413733,
+      "width": 0.231807,
+      "status": "pdg",
+      "tex": "K^{*}(1410)^{+}",
+      "decayModes": [],
+      "mass_error": 0.01454,
+      "width_error": 0.021382
+    },
+    {
+      "id": "K*(1410)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.413733,
+      "width": 0.231807,
+      "status": "pdg",
+      "tex": "K^{*}(1410)^{-}",
+      "decayModes": [],
+      "mass_error": 0.01454,
+      "width_error": 0.021382
+    },
+    {
+      "id": "K(2)*(1430)+",
+      "aliases": [
+        "K2_1430",
+        "K2*_1430"
+      ],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.432353,
+      "width": 0.108937,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1430)^{+}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "pi-"
+          ],
+          "br": 0.499,
+          "partial": true
+        }
+      ],
+      "mass_error": 0.001258,
+      "width_error": 0.005478
+    },
+    {
+      "id": "K(2)*(1430)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.432353,
+      "width": 0.108937,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1430)^{-}",
+      "decayModes": [],
+      "mass_error": 0.001258,
+      "width_error": 0.005478
+    },
+    {
+      "id": "f(1)(1420)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.427708,
+      "width": 0.055424,
+      "status": "pdg",
+      "tex": "f_{1}(1420)",
+      "decayModes": [],
+      "width_error": 0.003178
+    },
+    {
+      "id": "K(0)*(1430)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.425,
+      "width": 0.27,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(1430)^{0}",
+      "decayModes": [],
+      "mass_error": 0.05,
+      "width_error": 0.08
+    },
+    {
+      "id": "K(0)*(1430)~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.43,
+      "width": 0.27,
+      "status": "pdg",
+      "tex": "\\overline{K}_{0}^{*}(1430)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(0)*(1430)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.425,
+      "width": 0.27,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(1430)^{+}",
+      "decayModes": [],
+      "mass_error": 0.05,
+      "width_error": 0.08
+    },
+    {
+      "id": "K(0)*(1430)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.425,
+      "width": 0.27,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(1430)^{-}",
+      "decayModes": [],
+      "mass_error": 0.05,
+      "width_error": 0.08
+    },
+    {
+      "id": "K(2)*(1430)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.432353,
+      "width": 0.108937,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1430)^{0}",
+      "decayModes": [],
+      "mass_error": 0.001258,
+      "width_error": 0.005478
+    },
+    {
+      "id": "K(2)*(1430)~0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.4324,
+      "width": 0.109,
+      "status": "pdg",
+      "tex": "\\overline{K}_{2}^{*}(1430)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "a(0)(1450)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.438689,
+      "width": 0.258,
+      "status": "pdg",
+      "tex": "a_{0}(1450)^{0}",
+      "decayModes": [],
+      "mass_error": 0.034426,
+      "width_error": 0.014
+    },
+    {
+      "id": "a(0)(1450)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.438689,
+      "width": 0.258,
+      "status": "pdg",
+      "tex": "a_{0}(1450)^{+}",
+      "decayModes": [],
+      "mass_error": 0.034426,
+      "width_error": 0.014
+    },
+    {
+      "id": "a(0)(1450)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.438689,
+      "width": 0.258,
+      "status": "pdg",
+      "tex": "a_{0}(1450)^{-}",
+      "decayModes": [],
+      "mass_error": 0.034426,
+      "width_error": 0.014
+    },
+    {
+      "id": "rho(1450)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.465,
+      "width": 0.4,
+      "status": "pdg",
+      "tex": "\\rho(1450)^{0}",
+      "decayModes": [],
+      "mass_error": 0.025,
+      "width_error": 0.06
+    },
+    {
+      "id": "rho(1450)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.465,
+      "width": 0.4,
+      "status": "pdg",
+      "tex": "\\rho(1450)^{+}",
+      "decayModes": [],
+      "mass_error": 0.025,
+      "width_error": 0.06
+    },
+    {
+      "id": "rho(1450)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.465,
+      "width": 0.4,
+      "status": "pdg",
+      "tex": "\\rho(1450)^{-}",
+      "decayModes": [],
+      "mass_error": 0.025,
+      "width_error": 0.06
+    },
+    {
+      "id": "eta(1475)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.475528,
+      "width": 0.095731,
+      "status": "pdg",
+      "tex": "\\eta(1475)",
+      "decayModes": [],
+      "mass_error": 0.00397,
+      "width_error": 0.008912
+    },
+    {
+      "id": "f(2)'(1525)",
+      "aliases": [
+        "f2_1525",
+        "f2'_1525"
+      ],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.5173,
+      "width": 0.072,
+      "status": "pdg",
+      "tex": "f_{2}^\\prime(1525)",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "K-"
+          ],
+          "br": 0.469,
+          "partial": true
+        },
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ]
+    },
+    {
+      "id": "f(0)(1500)",
+      "aliases": [
+        "f0_1500"
+      ],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.522,
+      "width": 0.108,
+      "status": "pdg",
+      "tex": "f_{0}(1500)",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-"
+          ],
+          "partial": true
+        },
+        {
+          "daughters": [
+            "K+",
+            "K-"
+          ],
+          "partial": true
+        },
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ],
+      "mass_error": 0.025,
+      "width_error": 0.033
+    },
+    {
+      "id": "f(2)(1565)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.570525,
+      "width": 0.1325,
+      "status": "pdg",
+      "tex": "f_{2}(1565)",
+      "decayModes": [],
+      "mass_error": 0.013379,
+      "width_error": 0.0225
+    },
+    {
+      "id": "eta(2)(1645)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.617319,
+      "width": 0.180913,
+      "status": "pdg",
+      "tex": "\\eta_{2}(1645)",
+      "decayModes": [],
+      "mass_error": 0.005261,
+      "width_error": 0.010639
+    },
+    {
+      "id": "pi(1)(1600)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.645319,
+      "width": 0.365403,
+      "status": "pdg",
+      "tex": "\\pi_{1}(1600)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "pi(1)(1600)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.645319,
+      "width": 0.365403,
+      "status": "pdg",
+      "tex": "\\pi_{1}(1600)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "pi(1)(1600)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.645319,
+      "width": 0.365403,
+      "status": "pdg",
+      "tex": "\\pi_{1}(1600)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "K(1)(1650)0",
+      "aliases": [
+        "K1_1650"
+      ],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.65,
+      "width": 0.15,
+      "status": "pdg",
+      "tex": "K_{1}(1650)^{0}",
+      "decayModes": [],
+      "mass_error": 0.05,
+      "width_error": 0.05
+    },
+    {
+      "id": "K(1)(1650)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.65,
+      "width": 0.15,
+      "status": "pdg",
+      "tex": "\\overline{K}_{1}(1650)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(1)(1650)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.65,
+      "width": 0.15,
+      "status": "pdg",
+      "tex": "K_{1}(1650)^{+}",
+      "decayModes": [],
+      "mass_error": 0.05,
+      "width_error": 0.05
+    },
+    {
+      "id": "K(1)(1650)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.65,
+      "width": 0.15,
+      "status": "pdg",
+      "tex": "K_{1}(1650)^{-}",
+      "decayModes": [],
+      "mass_error": 0.05,
+      "width_error": 0.05
+    },
+    {
+      "id": "a(1)(1640)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.655443,
+      "width": 0.254416,
+      "status": "pdg",
+      "tex": "a_{1}(1640)^{0}",
+      "decayModes": [],
+      "mass_error": 0.016179,
+      "width_error": 0.038386
+    },
+    {
+      "id": "a(1)(1640)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.655443,
+      "width": 0.254416,
+      "status": "pdg",
+      "tex": "a_{1}(1640)^{+}",
+      "decayModes": [],
+      "mass_error": 0.016179,
+      "width_error": 0.038386
+    },
+    {
+      "id": "a(1)(1640)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.655443,
+      "width": 0.254416,
+      "status": "pdg",
+      "tex": "a_{1}(1640)^{-}",
+      "decayModes": [],
+      "mass_error": 0.016179,
+      "width_error": 0.038386
+    },
+    {
+      "id": "omega(3)(1670)",
+      "aliases": [
+        "omega3_1670"
+      ],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.667206,
+      "width": 0.167537,
+      "status": "pdg",
+      "tex": "\\omega_{3}(1670)",
+      "decayModes": [],
+      "mass_error": 0.003991,
+      "width_error": 0.010018
+    },
+    {
+      "id": "omega(1650)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.67,
+      "width": 0.15,
+      "status": "pdg",
+      "tex": "\\omega(1650)",
+      "decayModes": [],
+      "mass_error": 0.03,
+      "width_error": 0.05
+    },
+    {
+      "id": "pi(2)(1670)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.670628,
+      "width": 0.25753,
+      "status": "pdg",
+      "tex": "\\pi_{2}(1670)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "pi(2)(1670)+",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.670628,
+      "width": 0.25753,
+      "status": "pdg",
+      "tex": "\\pi_{2}(1670)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "pi(2)(1670)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.670628,
+      "width": 0.25753,
+      "status": "pdg",
+      "tex": "\\pi_{2}(1670)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "phi(1680)",
+      "aliases": [
+        "phi1680"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.68,
+      "width": 0.15,
+      "status": "pdg",
+      "tex": "\\phi(1680)",
+      "decayModes": [
+        {
+          "daughters": [
+            "K*+",
+            "K-"
+          ],
+          "partial": true
+        }
+      ],
+      "mass_error": 0.02,
+      "width_error": 0.05
+    },
+    {
+      "id": "rho(3)(1690)0",
+      "aliases": [],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.685623,
+      "width": 0.186186,
+      "status": "pdg",
+      "tex": "\\rho_{3}(1690)^{0}",
+      "decayModes": [],
+      "mass_error": 0.003975,
+      "width_error": 0.014047
+    },
+    {
+      "id": "rho(3)(1690)+",
+      "aliases": [],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.685623,
+      "width": 0.186186,
+      "status": "pdg",
+      "tex": "\\rho_{3}(1690)^{+}",
+      "decayModes": [],
+      "mass_error": 0.003975,
+      "width_error": 0.014047
+    },
+    {
+      "id": "rho(3)(1690)-",
+      "aliases": [],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.685623,
+      "width": 0.186186,
+      "status": "pdg",
+      "tex": "\\rho_{3}(1690)^{-}",
+      "decayModes": [],
+      "mass_error": 0.003975,
+      "width_error": 0.014047
+    },
+    {
+      "id": "a(2)(1700)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.70571,
+      "width": 0.378076,
+      "status": "pdg",
+      "tex": "a_{2}(1700)^{0}",
+      "decayModes": [],
+      "mass_error": 0.01417
+    },
+    {
+      "id": "a(2)(1700)+",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.70571,
+      "width": 0.378076,
+      "status": "pdg",
+      "tex": "a_{2}(1700)^{+}",
+      "decayModes": [],
+      "mass_error": 0.01417
+    },
+    {
+      "id": "a(2)(1700)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.70571,
+      "width": 0.378076,
+      "status": "pdg",
+      "tex": "a_{2}(1700)^{-}",
+      "decayModes": [],
+      "mass_error": 0.01417
+    },
+    {
+      "id": "K*(1680)0",
+      "aliases": [
+        "K1_1680",
+        "K*_1680",
+        "K1*_1680"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.717577,
+      "width": 0.322422,
+      "status": "pdg",
+      "tex": "K^{*}(1680)^{0}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "pi-"
+          ],
+          "br": 0.39,
+          "partial": true
+        }
+      ],
+      "mass_error": 0.017888,
+      "width_error": 0.107573
+    },
+    {
+      "id": "K*(1680)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.718,
+      "width": 0.32,
+      "status": "pdg",
+      "tex": "\\overline{K}^{*}(1680)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K*(1680)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.717577,
+      "width": 0.322422,
+      "status": "pdg",
+      "tex": "K^{*}(1680)^{+}",
+      "decayModes": [],
+      "mass_error": 0.017888,
+      "width_error": 0.107573
+    },
+    {
+      "id": "K*(1680)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.717577,
+      "width": 0.322422,
+      "status": "pdg",
+      "tex": "K^{*}(1680)^{-}",
+      "decayModes": [],
+      "mass_error": 0.017888,
+      "width_error": 0.107573
+    },
+    {
+      "id": "rho(1700)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.72,
+      "width": 0.25,
+      "status": "pdg",
+      "tex": "\\rho(1700)^{0}",
+      "decayModes": [],
+      "mass_error": 0.02,
+      "width_error": 0.1
+    },
+    {
+      "id": "rho(1700)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.72,
+      "width": 0.25,
+      "status": "pdg",
+      "tex": "\\rho(1700)^{+}",
+      "decayModes": [],
+      "mass_error": 0.02,
+      "width_error": 0.1
+    },
+    {
+      "id": "rho(1700)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.72,
+      "width": 0.25,
+      "status": "pdg",
+      "tex": "\\rho(1700)^{-}",
+      "decayModes": [],
+      "mass_error": 0.02,
+      "width_error": 0.1
+    },
+    {
+      "id": "f(0)(1710)",
+      "aliases": [
+        "f0_1710"
+      ],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.723081,
+      "width": 0.148759,
+      "status": "pdg",
+      "tex": "f_{0}(1710)",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "K-"
+          ],
+          "partial": true
+        },
+        {
+          "daughters": [
+            "pi+",
+            "pi-"
+          ],
+          "partial": true
+        },
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ],
+      "width_error": 0.010409
+    },
+    {
+      "id": "X(1750)",
+      "aliases": [
+        "X1750"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.753761,
+      "width": 0.120059,
+      "status": "pdg",
+      "tex": "X(1750)",
+      "decayModes": [],
+      "mass_error": 0.002705,
+      "width_error": 0.009556
+    },
+    {
+      "id": "f0(1770)",
+      "aliases": [
+        "f0_1770"
+      ],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.77,
+      "width": 0.2,
+      "status": "seed",
+      "tex": "f_{0}(1770)",
+      "decayModes": [
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ]
+    },
+    {
+      "id": "K(2)(1770)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.773025,
+      "width": 0.186133,
+      "status": "pdg",
+      "tex": "K_{2}(1770)^{0}",
+      "decayModes": [],
+      "mass_error": 0.007974,
+      "width_error": 0.013971
+    },
+    {
+      "id": "K(2)(1770)~0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.773,
+      "width": 0.186,
+      "status": "pdg",
+      "tex": "\\overline{K}_{2}(1770)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(2)(1770)+",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.773025,
+      "width": 0.186133,
+      "status": "pdg",
+      "tex": "K_{2}(1770)^{+}",
+      "decayModes": [],
+      "mass_error": 0.007974,
+      "width_error": 0.013971
+    },
+    {
+      "id": "K(2)(1770)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.773025,
+      "width": 0.186133,
+      "status": "pdg",
+      "tex": "K_{2}(1770)^{-}",
+      "decayModes": [],
+      "mass_error": 0.007974,
+      "width_error": 0.013971
+    },
+    {
+      "id": "K(3)*(1780)0",
+      "aliases": [],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.778948,
+      "width": 0.161232,
+      "status": "pdg",
+      "tex": "K_{3}^{*}(1780)^{0}",
+      "decayModes": [],
+      "mass_error": 0.007683,
+      "width_error": 0.017232
+    },
+    {
+      "id": "K(3)*(1780)~0",
+      "aliases": [],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.779,
+      "width": 0.161,
+      "status": "pdg",
+      "tex": "\\overline{K}_{3}^{*}(1780)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(3)*(1780)+",
+      "aliases": [
+        "K3_1780"
+      ],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.778948,
+      "width": 0.161232,
+      "status": "pdg",
+      "tex": "K_{3}^{*}(1780)^{+}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "pi-"
+          ],
+          "br": 0.226,
+          "partial": true
+        }
+      ],
+      "mass_error": 0.007683,
+      "width_error": 0.017232
+    },
+    {
+      "id": "K(3)*(1780)-",
+      "aliases": [],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.778948,
+      "width": 0.161232,
+      "status": "pdg",
+      "tex": "K_{3}^{*}(1780)^{-}",
+      "decayModes": [],
+      "mass_error": 0.007683,
+      "width_error": 0.017232
+    },
+    {
+      "id": "pi(1800)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.810133,
+      "width": 0.215192,
+      "status": "pdg",
+      "tex": "\\pi(1800)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "pi(1800)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.810133,
+      "width": 0.215192,
+      "status": "pdg",
+      "tex": "\\pi(1800)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "pi(1800)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.810133,
+      "width": 0.215192,
+      "status": "pdg",
+      "tex": "\\pi(1800)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "K(2)(1820)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.81915,
+      "width": 0.264169,
+      "status": "pdg",
+      "tex": "K_{2}(1820)^{0}",
+      "decayModes": [],
+      "mass_error": 0.01227,
+      "width_error": 0.033748
+    },
+    {
+      "id": "K(2)(1820)~0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.819,
+      "width": 0.264,
+      "status": "pdg",
+      "tex": "\\overline{K}_{2}(1820)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(2)(1820)+",
+      "aliases": [
+        "K2_1820"
+      ],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.81915,
+      "width": 0.264169,
+      "status": "pdg",
+      "tex": "K_{2}(1820)^{+}",
+      "decayModes": [],
+      "mass_error": 0.01227,
+      "width_error": 0.033748
+    },
+    {
+      "id": "K(2)(1820)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.81915,
+      "width": 0.264169,
+      "status": "pdg",
+      "tex": "K_{2}(1820)^{-}",
+      "decayModes": [],
+      "mass_error": 0.01227,
+      "width_error": 0.033748
+    },
+    {
+      "id": "eta(2)(1870)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.841689,
+      "width": 0.225176,
+      "status": "pdg",
+      "tex": "\\eta_{2}(1870)",
+      "decayModes": [],
+      "mass_error": 0.008043,
+      "width_error": 0.014065
+    },
+    {
+      "id": "phi(3)(1850)",
+      "aliases": [
+        "phi3_1850"
+      ],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.854303,
+      "width": 0.086836,
+      "status": "pdg",
+      "tex": "\\phi_{3}(1850)",
+      "decayModes": [],
+      "mass_error": 0.006775
+    },
+    {
+      "id": "D0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.864842,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "D^{0}",
+      "decayModes": [],
+      "mass_error": 4.4e-05,
+      "width_error": 0.0
+    },
+    {
+      "id": "D~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.86484,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "\\overline{D}^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "D+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.869665,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "D^{+}",
+      "decayModes": [],
+      "mass_error": 4.7e-05,
+      "width_error": 0.0
+    },
+    {
+      "id": "D-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.869665,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "D^{-}",
+      "decayModes": [],
+      "mass_error": 4.7e-05,
+      "width_error": 0.0
+    },
+    {
+      "id": "rho(1900)",
+      "aliases": [
+        "rho1900"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.909,
+      "width": 0.335,
+      "status": "seed",
+      "tex": "\\rho(1900)",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-"
+          ],
+          "partial": true
+        }
+      ]
+    },
+    {
+      "id": "f(2)(1950)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.936194,
+      "width": 0.463952,
+      "status": "pdg",
+      "tex": "f_{2}(1950)",
+      "decayModes": [],
+      "mass_error": 0.011731,
+      "width_error": 0.024046
+    },
+    {
+      "id": "K(0)*(1950)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.957221,
+      "width": 0.172247,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(1950)^{0}",
+      "decayModes": [],
+      "mass_error": 0.01432,
+      "width_error": 0.049978
+    },
+    {
+      "id": "K(0)*(1950)~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.957,
+      "width": 0.17,
+      "status": "pdg",
+      "tex": "\\overline{K}_{0}^{*}(1950)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(0)*(1950)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.957221,
+      "width": 0.172247,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(1950)^{+}",
+      "decayModes": [],
+      "mass_error": 0.01432,
+      "width_error": 0.049978
+    },
+    {
+      "id": "K(0)*(1950)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.957221,
+      "width": 0.172247,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(1950)^{-}",
+      "decayModes": [],
+      "mass_error": 0.01432,
+      "width_error": 0.049978
+    },
+    {
+      "id": "a(4)(1970)0",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 1.967276,
+      "width": 0.323894,
+      "status": "pdg",
+      "tex": "a_{4}(1970)^{0}",
+      "decayModes": [],
+      "mass_error": 0.015965
+    },
+    {
+      "id": "a(4)(1970)+",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 1.967276,
+      "width": 0.323894,
+      "status": "pdg",
+      "tex": "a_{4}(1970)^{+}",
+      "decayModes": [],
+      "mass_error": 0.015965
+    },
+    {
+      "id": "a(4)(1970)-",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 1.967276,
+      "width": 0.323894,
+      "status": "pdg",
+      "tex": "a_{4}(1970)^{-}",
+      "decayModes": [],
+      "mass_error": 0.015965
+    },
+    {
+      "id": "D(s)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.96835,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "D_{s}^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.96835,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "D_{s}^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "f(0)(2020)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.982,
+      "width": 0.436,
+      "status": "pdg",
+      "tex": "f_{0}(2020)",
+      "decayModes": [],
+      "width_error": 0.047668
+    },
+    {
+      "id": "K(2)*(1980)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.994462,
+      "width": 0.348034,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1980)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(2)*(1980)~0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.99,
+      "width": 0.348,
+      "status": "pdg",
+      "tex": "\\overline{K}_{2}^{*}(1980)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(2)*(1980)+",
+      "aliases": [
+        "K2_1980",
+        "K2*_1980"
+      ],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.994462,
+      "width": 0.348034,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1980)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "K(2)*(1980)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.994462,
+      "width": 0.348034,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1980)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "D*(2007)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.006857,
+      "width": 0.0021,
+      "status": "pdg",
+      "tex": "D^{*}(2007)^{0}",
+      "decayModes": [],
+      "mass_error": 5.4e-05
+    },
+    {
+      "id": "D*(2007)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.00686,
+      "width": 0.0021,
+      "status": "pdg",
+      "tex": "\\overline{D}^{*}(2007)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "f(2)(2010)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.011,
+      "width": 0.202,
+      "status": "pdg",
+      "tex": "f_{2}(2010)",
+      "decayModes": [],
+      "width_error": 0.0645
+    },
+    {
+      "id": "D*(2010)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.010268,
+      "width": 8.3e-05,
+      "status": "pdg",
+      "tex": "D^{*}(2010)^{+}",
+      "decayModes": [],
+      "mass_error": 4.4e-05,
+      "width_error": 2e-06
+    },
+    {
+      "id": "D*(2010)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.010268,
+      "width": 8.3e-05,
+      "status": "pdg",
+      "tex": "D^{*}(2010)^{-}",
+      "decayModes": [],
+      "mass_error": 4.4e-05,
+      "width_error": 2e-06
+    },
+    {
+      "id": "f(4)(2050)",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 2.01844,
+      "width": 0.23731,
+      "status": "pdg",
+      "tex": "f_{4}(2050)",
+      "decayModes": [],
+      "mass_error": 0.011438,
+      "width_error": 0.01803
+    },
+    {
+      "id": "K(4)*(2045)0",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 2.048247,
+      "width": 0.199363,
+      "status": "pdg",
+      "tex": "K_{4}^{*}(2045)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(4)*(2045)~0",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 2.048,
+      "width": 0.199,
+      "status": "pdg",
+      "tex": "\\overline{K}_{4}^{*}(2045)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(4)*(2045)+",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 2.048247,
+      "width": 0.199363,
+      "status": "pdg",
+      "tex": "K_{4}^{*}(2045)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "K(4)*(2045)-",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 2.048247,
+      "width": 0.199363,
+      "status": "pdg",
+      "tex": "K_{4}^{*}(2045)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "K*(2100)",
+      "aliases": [
+        "K1_2100"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.1,
+      "width": 0.3,
+      "status": "seed",
+      "tex": "K^{*}(2100)",
+      "decayModes": []
+    },
+    {
+      "id": "D(s)*+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 5
+      },
+      "mass": 2.1122,
+      "width": null,
+      "status": "pdg",
+      "tex": "D_{s}^{*+}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s)*-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 5
+      },
+      "mass": 2.1122,
+      "width": null,
+      "status": "pdg",
+      "tex": "D_{s}^{*-}",
+      "decayModes": []
+    },
+    {
+      "id": "f(2)(2150)",
+      "aliases": [
+        "f2_2150"
+      ],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.156934,
+      "width": 0.152021,
+      "status": "pdg",
+      "tex": "f_{2}(2150)",
+      "decayModes": [
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ],
+      "mass_error": 0.011767,
+      "width_error": 0.030187
+    },
+    {
+      "id": "omega(2220)",
+      "aliases": [
+        "omega2220"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.188331,
+      "width": 0.105337,
+      "status": "pdg",
+      "tex": "\\omega(2220)",
+      "decayModes": [],
+      "mass_error": 0.02058,
+      "width_error": 0.033807
+    },
+    {
+      "id": "K2(2250)",
+      "aliases": [
+        "K2_2250"
+      ],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 2.249,
+      "width": 0.2,
+      "status": "seed",
+      "tex": "K_{2}(2250)",
+      "decayModes": []
+    },
+    {
+      "id": "f(2)(2300)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.297,
+      "width": 0.149,
+      "status": "pdg",
+      "tex": "f_{2}(2300)",
+      "decayModes": [],
+      "mass_error": 0.028,
+      "width_error": 0.041
+    },
+    {
+      "id": "D(s0)*(2317)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 2.3178,
+      "width": 0.01,
+      "status": "pdg",
+      "tex": "D_{s0}^{*}(2317)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s0)*(2317)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 2.3178,
+      "width": 0.01,
+      "status": "pdg",
+      "tex": "D_{s0}^{*}(2317)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "D(0)*(2300)+",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 2.343204,
+      "width": 0.229273,
+      "status": "pdg",
+      "tex": "D_{0}^{*}(2300)^{+}",
+      "decayModes": [],
+      "mass_error": 0.009654,
+      "width_error": 0.016015
+    },
+    {
+      "id": "D(0)*(2300)-",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 2.343204,
+      "width": 0.229273,
+      "status": "pdg",
+      "tex": "D_{0}^{*}(2300)^{-}",
+      "decayModes": [],
+      "mass_error": 0.009654,
+      "width_error": 0.016015
+    },
+    {
+      "id": "D(0)*(2300)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 2.343204,
+      "width": 0.229273,
+      "status": "pdg",
+      "tex": "D_{0}^{*}(2300)^{0}",
+      "decayModes": [],
+      "mass_error": 0.009654,
+      "width_error": 0.016015
+    },
+    {
+      "id": "D(0)*(2300)~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 2.343,
+      "width": 0.229,
+      "status": "pdg",
+      "tex": "\\overline{D}_{0}^{*}(2300)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "f(2)(2340)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.345953,
+      "width": 0.331015,
+      "status": "pdg",
+      "tex": "f_{2}(2340)",
+      "decayModes": []
+    },
+    {
+      "id": "D(1)(2430)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.412035,
+      "width": 0.314082,
+      "status": "pdg",
+      "tex": "D_{1}(2430)^{0}",
+      "decayModes": [],
+      "mass_error": 0.009175,
+      "width_error": 0.028507
+    },
+    {
+      "id": "D(1)(2430)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.412,
+      "width": 0.314,
+      "status": "pdg",
+      "tex": "\\overline{D}_{1}(2430)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "D(1)(2420)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.422082,
+      "width": 0.031339,
+      "status": "pdg",
+      "tex": "D_{1}(2420)^{+}",
+      "decayModes": [],
+      "mass_error": 0.000575,
+      "width_error": 0.001936
+    },
+    {
+      "id": "D(1)(2420)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.422082,
+      "width": 0.031339,
+      "status": "pdg",
+      "tex": "D_{1}(2420)^{-}",
+      "decayModes": [],
+      "mass_error": 0.000575,
+      "width_error": 0.001936
+    },
+    {
+      "id": "D(1)(2420)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.422082,
+      "width": 0.031339,
+      "status": "pdg",
+      "tex": "D_{1}(2420)^{0}",
+      "decayModes": [],
+      "mass_error": 0.000575,
+      "width_error": 0.001936
+    },
+    {
+      "id": "D(1)(2420)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.4221,
+      "width": 0.0313,
+      "status": "pdg",
+      "tex": "\\overline{D}_{1}(2420)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s1)(2460)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.4595,
+      "width": 0.0063,
+      "status": "pdg",
+      "tex": "D_{s1}(2460)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s1)(2460)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.4595,
+      "width": 0.0063,
+      "status": "pdg",
+      "tex": "D_{s1}(2460)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "D(2)*(2460)+",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.461132,
+      "width": 0.047297,
+      "status": "pdg",
+      "tex": "D_{2}^{*}(2460)^{+}",
+      "decayModes": [],
+      "mass_error": 0.000798,
+      "width_error": 0.000774
+    },
+    {
+      "id": "D(2)*(2460)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.461132,
+      "width": 0.047297,
+      "status": "pdg",
+      "tex": "D_{2}^{*}(2460)^{-}",
+      "decayModes": [],
+      "mass_error": 0.000798,
+      "width_error": 0.000774
+    },
+    {
+      "id": "D(2)*(2460)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.461132,
+      "width": 0.047297,
+      "status": "pdg",
+      "tex": "D_{2}^{*}(2460)^{0}",
+      "decayModes": [],
+      "mass_error": 0.000798,
+      "width_error": 0.000774
+    },
+    {
+      "id": "D(2)*(2460)~0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.4611,
+      "width": 0.0473,
+      "status": "pdg",
+      "tex": "\\overline{D}_{2}^{*}(2460)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s1)(2536)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.53512,
+      "width": 0.00092,
+      "status": "pdg",
+      "tex": "D_{s1}(2536)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s1)(2536)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.53512,
+      "width": 0.00092,
+      "status": "pdg",
+      "tex": "D_{s1}(2536)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s2)*(2573)+",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 5
+      },
+      "mass": 2.5691,
+      "width": 0.0169,
+      "status": "pdg",
+      "tex": "D_{s2}^{*}(2573)^{+}",
+      "decayModes": []
+    },
+    {
+      "id": "D(s2)*(2573)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 5
+      },
+      "mass": 2.5691,
+      "width": 0.0169,
+      "status": "pdg",
+      "tex": "D_{s2}^{*}(2573)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "eta(c)(1S)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 2.98409,
+      "width": 0.03,
+      "status": "pdg",
+      "tex": "\\eta_{c}(1S)",
+      "decayModes": []
+    },
+    {
+      "id": "J/psi(1S)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 3.0969,
+      "width": 9.3e-05,
+      "status": "pdg",
+      "tex": "J/\\psi(1S)",
+      "decayModes": [],
+      "mass_error": 6e-06,
+      "width_error": 2e-06
+    },
+    {
+      "id": "chi(c0)(1P)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 3.4155,
+      "width": 0.0124,
+      "status": "pdg",
+      "tex": "\\chi_{c0}(1P)",
+      "decayModes": []
+    },
+    {
+      "id": "chi(c1)(1P)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 3.51067,
+      "width": 0.00082,
+      "status": "pdg",
+      "tex": "\\chi_{c1}(1P)",
+      "decayModes": []
+    },
+    {
+      "id": "h(c)(1P)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 3.52537,
+      "width": 0.00078,
+      "status": "pdg",
+      "tex": "h_{c}(1P)",
+      "decayModes": []
+    },
+    {
+      "id": "chi(c2)(1P)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 3.55617,
+      "width": 0.00194,
+      "status": "pdg",
+      "tex": "\\chi_{c2}(1P)",
+      "decayModes": []
+    },
+    {
+      "id": "eta(c)(2S)",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 3.6378,
+      "width": 0.0116,
+      "status": "pdg",
+      "tex": "\\eta_{c}(2S)",
+      "decayModes": []
+    },
+    {
+      "id": "psi(2S)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 3.686097,
+      "width": 0.000293,
+      "status": "pdg",
+      "tex": "\\psi(2S)",
+      "decayModes": [],
+      "mass_error": 1.1e-05,
+      "width_error": 9e-06
+    },
+    {
+      "id": "psi(3770)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 3.773677,
+      "width": 0.02718,
+      "status": "pdg",
+      "tex": "\\psi(3770)",
+      "decayModes": [],
+      "mass_error": 0.000696,
+      "width_error": 0.000959
+    },
+    {
+      "id": "chi(c2)(3930)",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 3.9225,
+      "width": 0.0352,
+      "status": "pdg",
+      "tex": "\\chi_{c2}(2P)",
+      "decayModes": []
+    }
+  ]
+}
