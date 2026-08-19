@@ -30,11 +30,10 @@ pnpm dsh web --patch /absolute/path/to/auto-pwa/patch/auto-pwa.cordis.yml
 pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.cordis.yml "完成此文件夹分波"
 ```
 
-patch 挂载五个插件文件（服务三角色 + 硬门禁 + 斜杠命令）：
+patch 挂载四个插件文件（服务 Provider + 硬门禁 + 斜杠命令；`plugin/pwa-fit.ts` 是服务定义库，由 pwa-fit-local 导入并注册 `ctx.pwaFit`，**不作为插件挂载**——挂载它会被 loader 当类插件实例化，导致 `service "pwaFit" has been registered` 重复注册）：
 
 | 插件 | 角色 |
 |---|---|
-| `plugin/pwa-fit.ts` | 服务定义：`ctx.pwaFit` 拟合契约（请求/状态类型） |
 | `plugin/pwa-fit-local.ts` | 本地 Provider：拟合注册为 DSH 后台任务（`ctpwa-N`，owner 围栏）；完成自动通知代理进入下一轮 |
 | `plugin/pwa-guard.ts` | 单调 deny 门禁：直接 `write`/`edit`/bash 写 `config.yml` 一律拦截（必须走 `auto_pwa_edit_config`） |
 | `plugin/pwa-commands.ts` | `/pwa-status [<iterationsRoot>]` — 实时后台任务 + 迭代日记摘要 |
