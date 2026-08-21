@@ -15,12 +15,15 @@ import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 // ---------------------------------------------------------------------------
 
 describe('createUsageTracker', () => {
-  it('accumulates assistant/message usage per session', () => {
+  it('accumulates assistant/message usage per session (envelope: usage at data.usage)', () => {
     const t = createUsageTracker()
-    t.onSessionEvent('s1', { type: 'assistant/message', usage: { inputTokens: 100, outputTokens: 20 } })
-    t.onSessionEvent('s1', { type: 'assistant/message', usage: { inputTokens: 50, outputTokens: 10, cacheReadTokens: 30 } })
-    t.onSessionEvent('s2', { type: 'assistant/message', usage: { inputTokens: 7, outputTokens: 3 } })
+    t.onSessionEvent('s1', { type: 'assistant/message', data: { usage: { inputTokens: 100, outputTokens: 20 } } })
+    t.onSessionEvent('s1', { type: 'assistant/message', data: { usage: { inputTokens: 50, outputTokens: 10, cacheReadTokens: 30 } } })
+    t.onSessionEvent('s2', { type: 'assistant/message', data: { usage: { inputTokens: 7, outputTokens: 3 } } })
     t.onSessionEvent('s1', { type: 'tool/result' }) // no usage: ignored
+    // Flat usage (wrong envelope) must NOT accumulate: the real harness event
+    // carries usage inside data.
+    t.onSessionEvent('s1', { type: 'assistant/message', usage: { inputTokens: 9999, outputTokens: 9999 } } as never)
     expect(t.total('s1')).toEqual({ input: 150, output: 30, cacheRead: 30, cacheWrite: 0 })
     expect(t.total('s2')).toEqual({ input: 7, output: 3, cacheRead: 0, cacheWrite: 0 })
     expect(t.total('nobody')).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
@@ -28,11 +31,11 @@ describe('createUsageTracker', () => {
 
   it('takeDelta returns the per-round difference and re-anchors', () => {
     const t = createUsageTracker()
-    t.onSessionEvent('s1', { type: 'assistant/message', usage: { inputTokens: 500, outputTokens: 80 } })
+    t.onSessionEvent('s1', { type: 'assistant/message', data: { usage: { inputTokens: 500, outputTokens: 80 } } })
     // Round 1 ends: 500+80.
     expect(t.takeDelta('s1')).toEqual({ input: 500, output: 80, cacheRead: 0, cacheWrite: 0 })
     // Round 2: more usage.
-    t.onSessionEvent('s1', { type: 'assistant/message', usage: { inputTokens: 300, outputTokens: 40, cacheWriteTokens: 12 } })
+    t.onSessionEvent('s1', { type: 'assistant/message', data: { usage: { inputTokens: 300, outputTokens: 40, cacheWriteTokens: 12 } } })
     expect(t.takeDelta('s1')).toEqual({ input: 300, output: 40, cacheRead: 0, cacheWrite: 12 })
     // No usage since the last note -> zero delta.
     expect(t.takeDelta('s1')).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })

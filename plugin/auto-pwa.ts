@@ -18,7 +18,7 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
-import { copyFileSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { defaultDb } from '../src/db.js'
 import { lookupResonance, lookupC } from '../src/lookup.js'
@@ -30,13 +30,11 @@ import { suggestFree } from '../src/float-policy.js'
 import { defaultFitRunnerConfig } from '../src/fit-runner.js'
 import { summarizeFitDir } from '../src/fit-summary.js'
 import { resolveEnv } from '../src/config.js'
-import { existsSync as fsExists } from 'node:fs'
 import { IterationLog, startIteration, iterationsRootOf, listIterations } from '../src/iteration-log.js'
-import { existsSync as fsExistsSync } from 'node:fs'
 import type { IterationRecord } from '../src/report.js'
 import { spawnSync } from 'node:child_process'
 import type { JP, ResonanceProposal } from '../src/types.js'
-import { createUsageTracker, maybeSpill, type TokenTotals } from './pwa-utils.js'
+import { createUsageTracker, maybeSpill, type TokenTotals, type TokenUsageLike } from './pwa-utils.js'
 
 export const name = 'auto-pwa'
 export const inject = ['tools', 'pwaFit']
@@ -80,12 +78,13 @@ const proposalParam = {
 export function apply(ctx: Context) {
   // token-meter: 累计本会话各 session 的 assistant/message usage；
   // auto_pwa_note 的 includeTokens 按轮取差值写进日记。
+  // 事件信封是 { type, seq, time, data }，usage 在 data.usage。
   const usage = createUsageTracker()
   ctx.on?.('session/event', (session: unknown, event: unknown) => {
     const sessionId = typeof (session as { id?: unknown } | null | undefined)?.id === 'string'
       ? (session as { id: string }).id
       : '?'
-    usage.onSessionEvent(sessionId, event as { type?: string; usage?: unknown } as never)
+    usage.onSessionEvent(sessionId, event as { type?: string; data?: { usage?: TokenUsageLike } } as never)
   })
 
   // ---------------------------------------------------------------------
@@ -334,6 +333,7 @@ export function apply(ctx: Context) {
               retrievalHint: { type: 'string' },
             },
           },
+          error: { type: 'string' },
         },
       },
       render: (_args, value: {
@@ -347,7 +347,9 @@ export function apply(ctx: Context) {
           cBlocked?: string[]
         }[]
         spilled?: { locator: string; bytes: number; retrievalHint: string }
+        error?: string
       }) => {
+        if (value.error !== undefined) return text(`JPC 检查失败: ${value.error}`)
         const lines = [`JPC 检查（maxL=${value.maxL}）`]
         for (const it of value.intermediates) {
           lines.push(`== ${it.name} (chain ${it.chain}) ==`)
@@ -391,7 +393,7 @@ export function apply(ctx: Context) {
             maxL,
             intermediates: [],
             error: `no chain or intermediate named "${args.target}" in the config`,
-          } as never
+          }
         }
       }
       const named = (n: string): { name: string; j: number; p: 1 | -1; c?: 1 | -1 } | undefined => {
@@ -490,7 +492,7 @@ export function apply(ctx: Context) {
           })
         }
       }
-      const out: { configPath: string; maxL: number; intermediates: unknown[]; spilled?: { locator: string; bytes: number; retrievalHint: string } } =
+      const out: { configPath: string; maxL: number; intermediates: unknown[]; error?: string; spilled?: { locator: string; bytes: number; retrievalHint: string } } =
         { configPath: args.configPath, maxL, intermediates }
       // Spill oversized outputs so long autonomous sessions stay lean
       // (model reads the locator on demand instead of carrying the payload).
@@ -816,8 +818,8 @@ export function apply(ctx: Context) {
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-004），其 config.yml 为基座、results/ 被评估' },
       proposal: { ...proposalParam, description: '要添加/挂载的共振态（省略 = 纯评估模式，不创建新轮）' },
-      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认 solve2）' },
-      plotScriptPath: { type: 'string', description: 'plot.py 来源（默认 solve2）' },
+      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py，AI 适配驱动；可用 PWA_FIT_SCRIPT 覆盖）' },
+      plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
     },
     output: {
       schema: {
@@ -921,20 +923,22 @@ export function apply(ctx: Context) {
       } = { ok: false, mode: 'evaluate-only', iter: -1, iterDir: '', changed, errors, warnings }
 
       // ---- 1. evaluate the previous round ----
-      const baseCfgExists = fsExists(baseConfig)
+      const env = resolveEnv()
+      const baseCfgExists = existsSync(baseConfig)
       if (baseCfgExists) {
         const { summary, history } = summarizeFitDir(args.baseIterDir)
         if (summary.bestNll !== null) out.nll = summary.bestNll
         if (history.lastNll !== null) out.nll = out.nll ?? history.lastNll
         if (summary.positiveDefinite !== null) out.hessianPositive = summary.positiveDefinite
         const rootFile = `${args.baseIterDir}/results/weight_best.root`
-        if (fsExists(rootFile)) {
+        if (existsSync(rootFile)) {
           try {
-            const evalDir = `${resolveEnv().evaluateOutDir}/round-${Date.now().toString(36)}`
+            const evalRoot = env.evaluateOutDir !== '' ? env.evaluateOutDir : join(process.cwd(), '_auto-pwa-eval')
+            const evalDir = `${evalRoot}/round-${Date.now().toString(36)}`
             const script = new URL('../scripts/auto_pwa_evaluate.py', import.meta.url).pathname
             const py = defaultFitRunnerConfig().python
-            const r = spawnSync(py, [script, rootFile, evalDir], { encoding: 'utf8', timeout: 120_000 })
-            if (r.status === 0 && fsExists(`${evalDir}/evaluate.json`)) {
+            const r = spawnSync(py, [script, rootFile, evalDir], { encoding: 'utf8', timeout: 120_000, env: { ...process.env } })
+            if (r.status === 0 && existsSync(`${evalDir}/evaluate.json`)) {
               const ev = JSON.parse(readFileSync(`${evalDir}/evaluate.json`, 'utf8'))
               out.worst = (ev.worst_distributions ?? []).slice(0, 3).map((w: { name: string; max_abs_pull: number; chi2_ndf?: number; bins_over_5sigma: number }) => ({
                 name: w.name,
@@ -980,8 +984,8 @@ export function apply(ctx: Context) {
           started = startIteration({
             iterationsRoot,
             baseConfigPath: baseConfig,
-            fitScriptPath: args.fitScriptPath ?? '/home/whitewash/pwa/Jpsi2KKeta/solve2/fit.py',
-            plotScriptPath: args.plotScriptPath ?? '/home/whitewash/pwa/Jpsi2KKeta/solve2/plot.py',
+            fitScriptPath: args.fitScriptPath ?? env.fitScript,
+            plotScriptPath: args.plotScriptPath ?? env.plotScript,
           })
         } catch (e) {
           errors.push({ code: 'iter-start-failed', message: (e as Error).message })
@@ -1023,10 +1027,10 @@ export function apply(ctx: Context) {
     name: 'auto_pwa_iter_start',
     description: '创建下一轮迭代目录 iterations/iter-N/：复制基座 config.yml，软链 fit.py/plot.py，写 note.md 骨架。返回新目录路径。每轮拟合前先调用它。',
     parameters: {
-      iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录（如 /home/whitewash/pwa/Jpsi2KKeta/iterations）' },
+      iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录（如 .../Jpsi2KKeta/iterations）' },
       baseConfigPath: { type: 'string', required: true, description: '本轮基座 config.yml（上一轮的 config 或 solve2/config.yml）' },
-      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认 solve2/fit.py）' },
-      plotScriptPath: { type: 'string', description: 'plot.py 来源（默认 solve2/plot.py）' },
+      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
+      plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
     },
     output: {
       schema: {
@@ -1044,7 +1048,12 @@ export function apply(ctx: Context) {
     },
     async execute(args: { iterationsRoot: string; baseConfigPath: string; fitScriptPath?: string; plotScriptPath?: string }) {
       try {
-        const r = startIteration(args)
+        const r = startIteration({
+          iterationsRoot: args.iterationsRoot,
+          baseConfigPath: args.baseConfigPath,
+          fitScriptPath: args.fitScriptPath ?? resolveEnv().fitScript,
+          plotScriptPath: args.plotScriptPath ?? resolveEnv().plotScript,
+        })
         return { iter: r.iter, iterDir: r.iterDir, changed: r.changed }
       } catch (e) {
         return { iter: -1, iterDir: '', changed: [], error: (e as Error).message }
@@ -1235,8 +1244,8 @@ export function apply(ctx: Context) {
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-000），其 config.yml 作为本轮基座' },
       proposal: proposalParam,
-      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认 /home/whitewash/pwa/Jpsi2KKeta/solve2/fit.py）' },
-      plotScriptPath: { type: 'string', description: 'plot.py 来源（默认 /home/whitewash/pwa/Jpsi2KKeta/solve2/plot.py）' },
+      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
+      plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
     },
     output: {
       schema: {
@@ -1278,7 +1287,7 @@ export function apply(ctx: Context) {
     async execute(args: { baseIterDir: string; proposal: ResonanceProposal; fitScriptPath?: string; plotScriptPath?: string }, exec) {
       const baseConfig = `${args.baseIterDir}/config.yml`
       const iterationsRoot = iterationsRootOf(args.baseIterDir)
-      if (!fsExistsSync(baseConfig)) {
+      if (!existsSync(baseConfig)) {
         return { ok: false, iter: -1, iterDir: '', changed: [], errors: [{ code: 'no-base-config', message: `基座 config 不存在: ${baseConfig}` }], warnings: [] }
       }
       // 1. validate against the base config
@@ -1429,7 +1438,6 @@ export function apply(ctx: Context) {
           error: (r.stderr || r.stdout || '').slice(0, 500),
         }
       }
-      const { existsSync } = await import('node:fs')
       const jsonPath = `${outDir}/evaluate.json`
       if (!existsSync(jsonPath)) {
         return { ok: false, evaluateJsonPath: jsonPath, worst: [], error: 'evaluate.json not produced' }
@@ -1455,11 +1463,27 @@ export function apply(ctx: Context) {
         }
         distributions.push(item)
       }
-      const pngs = existsSync(outDir) ? (await import('node:fs')).readdirSync(outDir).filter((f) => f.endsWith('.png')) : []
+      // Map worst_distributions field-by-field as well (the raw Python record
+      // may carry extra keys that would fail the same schema check).
+      const worst: {
+        name: string
+        max_abs_pull: number
+        chi2_ndf?: number
+        bins_over_5sigma: number
+      }[] = []
+      for (const w of ev.worst_distributions ?? []) {
+        if (w === null || typeof w !== 'object') continue
+        const rec = w as Record<string, unknown>
+        if (typeof rec.name !== 'string' || typeof rec.max_abs_pull !== 'number' || typeof rec.bins_over_5sigma !== 'number') continue
+        const item: (typeof worst)[number] = { name: rec.name, max_abs_pull: rec.max_abs_pull, bins_over_5sigma: rec.bins_over_5sigma }
+        if (typeof rec.chi2_ndf === 'number') item.chi2_ndf = rec.chi2_ndf
+        worst.push(item)
+      }
+      const pngs = existsSync(outDir) ? readdirSync(outDir).filter((f) => f.endsWith('.png')) : []
       const out = {
         ok: true,
         evaluateJsonPath: jsonPath,
-        worst: ev.worst_distributions ?? [],
+        worst,
         distributions,
         pngFiles: pngs,
       }

@@ -11,7 +11,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { IterationLog } from '../src/iteration-log.js'
 
 export const name = 'pwa-commands'
-export const inject = ['commands']
+export const inject = ['commands', 'jobs']
 
 export function apply(ctx: Context): void {
   ctx.commands?.register({

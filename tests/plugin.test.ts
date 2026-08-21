@@ -241,9 +241,10 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
     const h = harnessCtx()
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-note-'))
     try {
-      // Feed two assistant/message usage events, then note with includeTokens.
-      h.eventHandlers['session/event']!({ id: 'sess-1' }, { type: 'assistant/message', usage: { inputTokens: 1000, outputTokens: 200 } })
-      h.eventHandlers['session/event']!({ id: 'sess-1' }, { type: 'assistant/message', usage: { inputTokens: 500, outputTokens: 50, cacheReadTokens: 30 } })
+      // Feed two assistant/message usage events (harness envelope: usage at
+      // data.usage), then note with includeTokens.
+      h.eventHandlers['session/event']!({ id: 'sess-1' }, { type: 'assistant/message', data: { usage: { inputTokens: 1000, outputTokens: 200 } } })
+      h.eventHandlers['session/event']!({ id: 'sess-1' }, { type: 'assistant/message', data: { usage: { inputTokens: 500, outputTokens: 50, cacheReadTokens: 30 } } })
       h.eventHandlers['session/event']!({ id: 'sess-1' }, { type: 'tool/result' })
       const iterDir = join(dir, 'iterations', 'iter-001')
       const out = await run(

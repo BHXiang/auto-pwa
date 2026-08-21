@@ -56,12 +56,15 @@ const LOG_TAIL_BYTES = 4096
  * Returns a diagnostic string when unusable, undefined when ctpwa would run.
  */
 export function detectGpuAvailability(python: string, ldLibraryPath: string): string | undefined {
-  if (!existsSync(python)) return `ctpwa python not found: ${python}`
+  // Bare names ('python') resolve through PATH; only absolute/relative paths
+  // can be checked with existsSync.
+  if (python.includes('/') && !existsSync(python)) return `ctpwa python not found: ${python}`
   // Cheap synchronous probe: torch.cuda.is_available() via the env python.
+  const env = ldLibraryPath !== '' ? { ...process.env, LD_LIBRARY_PATH: ldLibraryPath } : { ...process.env }
   const r = spawnSync(python, ['-c', 'import torch; print(torch.cuda.is_available())'], {
     encoding: 'utf8',
     timeout: 30_000,
-    env: { ...process.env, LD_LIBRARY_PATH: ldLibraryPath },
+    env,
   })
   const out = (r.stdout ?? '').trim()
   if (r.status === 0 && out === 'True') return undefined
@@ -87,7 +90,9 @@ export class LocalFitRunner {
     if (!existsSync(scriptPath)) {
       throw new Error(`fit script not found: ${scriptPath}`)
     }
-    if (!existsSync(this.cfg.python)) {
+    // Bare names ('python') resolve through PATH; only path-looking values
+    // can be checked with existsSync.
+    if (this.cfg.python.includes('/') && !existsSync(this.cfg.python)) {
       throw new Error(`ctpwa python not found: ${this.cfg.python}`)
     }
     const gpuIssue = this.cfg.gpuProbe === false ? undefined : detectGpuAvailability(this.cfg.python, this.cfg.ldLibraryPath)
@@ -104,9 +109,13 @@ export class LocalFitRunner {
     logStream.on('error', () => {})
     logStream.write(`# auto-pwa fit job ${jobId} started ${new Date().toISOString()}\n`)
 
+    // LD_LIBRARY_PATH is only injected when configured; an empty value lets
+    // the child inherit the ambient env (a conda-activated env supplies its
+    // own loader paths).
+    const childEnv = this.cfg.ldLibraryPath !== '' ? { ...process.env, LD_LIBRARY_PATH: this.cfg.ldLibraryPath } : { ...process.env }
     const child = spawn(this.cfg.python, [fitScript], {
       cwd: iterDir,
-      env: { ...process.env, LD_LIBRARY_PATH: this.cfg.ldLibraryPath },
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     child.stdout.on('data', (d: Buffer) => logStream.write(d))
@@ -234,10 +243,10 @@ export class LocalFitRunner {
 }
 
 /**
- * Default configuration resolved from the environment (see src/config.ts).
- * On the original developer host this mirrors /home/whitewash/Script/conda.sh
- * ctpwa: CUDA_HOME=/usr/local/cuda-13.2,
- * LD_LIBRARY_PATH=${CUDA_LIB}:${TORCH_LIB}:${LD_LIBRARY_PATH(root/lib,...)}.
+ * Default configuration resolved from the environment (see src/config.ts):
+ * python resolves through PATH (or PWA_CTPWA_PYTHON), LD_LIBRARY_PATH is
+ * only injected when set (PWA_LD_LIBRARY_PATH) — a conda-activated ctpwa
+ * env needs neither.
  */
 export function defaultFitRunnerConfig(): FitRunnerConfig {
   const env = resolveEnv()

@@ -67,20 +67,21 @@ auto_pwa_round（评估 + 决策 + 提交）
 
 用同会话 goal 驱动自动多轮迭代（`create_goal` + 自动续回合；拟合完成通知会唤醒/注入下一轮评估）。
 
-## 机器相关路径
+## 环境配置（可选，开箱即用）
 
-环境变量（见 `src/config.ts`）：
+所有机器相关路径都通过环境变量覆盖；**默认值可移植**——拟合驱动默认用插件自带的 `scripts/aifit.py`，python 走 PATH，不注入 LD_LIBRARY_PATH（conda 激活的 ctpwa 环境自带）：
 
-| 环境变量 | 默认（开发机） |
-|---|---|
-| `PWA_CTPWA_PYTHON` | ctpwa conda 环境 python |
-| `PWA_LD_LIBRARY_PATH` | 导入 ctpwa 所需的 ROOT/CUDA/torch 库路径 |
-| `PWA_FIT_SCRIPT` / `PWA_PLOT_SCRIPT` | 求解器 fit.py/plot.py 来源 |
-| `PWA_EVAL_OUT_DIR` | auto_pwa_evaluate 输出目录 |
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `PWA_CTPWA_PYTHON` | `python`（PATH 解析） | ctpwa 环境 python；非激活环境请显式指定绝对路径 |
+| `PWA_LD_LIBRARY_PATH` | 空（不注入，继承环境） | 导入 ctpwa 所需的 ROOT/CUDA/torch 库路径（仅非激活环境需要） |
+| `PWA_FIT_SCRIPT` | 插件自带 `scripts/aifit.py` | 拟合驱动来源（AI 适配：写 `results/fit.json` + `weight_best.root`） |
+| `PWA_PLOT_SCRIPT` | 空（不软链 plot.py） | 你的求解器 plot.py（需要出图时设置） |
+| `PWA_EVAL_OUT_DIR` | 空（用 `<cwd>/_auto-pwa-eval`） | `auto_pwa_evaluate` 输出目录 |
 
-## AI 优先拟合驱动（`scripts/aifit.py`）
+## AI 优先拟合驱动（`scripts/aifit.py`，默认拟合程序）
 
-`fit.py` 输出给人看的文本；**`aifit.py` 是面向 AI 的拟合驱动**——同一 ctpwa 引擎、零引擎改动，跑相同的 LBFGS 循环并写出结构化的 `results/fit.json`：
+**`aifit.py` 是面向 AI 的拟合驱动**——同一 ctpwa 引擎、零引擎改动，跑相同的 LBFGS 循环并写出结构化的 `results/fit.json`；它是 `PWA_FIT_SCRIPT` 的默认值，新装插件无需任何配置即可迭代（也兼容手写 fit.py，设置 `PWA_FIT_SCRIPT` 或工具参数即可切换）：
 
 ```sh
 # 无 GPU 校验 config（DecayInfo，秒级，不构造 analysis()）：
@@ -97,7 +98,7 @@ python aifit.py --config config.yml --runs 1 --max-iter 500 --json results/fit.j
 python aifit.py --interference results/weight_best.root --json results/interference.json
 ```
 
-环境变量默认值：`PWA_AIFIT_RUNS`（10）、`PWA_AIFIT_MAX_ITER`（10000）。把 `PWA_FIT_SCRIPT` 指向 `aifit.py` 后，`auto_pwa_fit_status` 自动优先读 `fit.json`（参数/分波/干涉直接出现在工具输出里）；旧的 `optimization_summary.txt` 解析保留为回退。
+环境变量默认值：`PWA_AIFIT_RUNS`（10）、`PWA_AIFIT_MAX_ITER`（10000）。`auto_pwa_fit_status` 自动优先读 `fit.json`（参数/分波/干涉直接出现在工具输出里）；旧的 `optimization_summary.txt` 解析保留为回退。
 
 ## 开发
 
@@ -105,11 +106,6 @@ python aifit.py --interference results/weight_best.root --json results/interfere
 - 插件导入 `@deepseek-ai/dsh-tools` / `@deepseek-ai/cordis` / `@deepseek-ai/dsh-jobs`；测试解析 **vendored stubs**（`vendor/dsh/`），无需 DSH 检出。stub 恰好覆盖插件用到的 API 面；DSH API 变化时保持同步。
 - `scripts/fetch_pdg.py` 从官方 PDG-2026 包重新生成 `data/pdg.json`（需在 ctpwa 环境 `pip install pdg`）。
 - 拟合需要 CUDA GPU（ctpwa 无 CPU 后端）；运行器探测并快速失败给出明确诊断。
-
-## 说明
-
-- 本仓库只包含插件代码与数据。研究计划与开发文档（`PLAN-STEP1.md`、`PLAN-STEP2.md`、`dev-plan.html`、`docs/`）为本地研发文档，**不上传 GitHub**。
-- 物理规则速查与迭代作业规则见 skill（`skills/auto-pwa-analysis/SKILL.md`，安装于 `~/.dsh/skills/`）。
 
 ## License
 

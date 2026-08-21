@@ -119,18 +119,21 @@ export function startIteration(options: {
   absolutizeDataPaths(target, dirname(options.baseConfigPath))
   changed.push(`config.yml <- ${options.baseConfigPath} (Data 路径已绝对化)` + (options.baseConfigPath === target ? '' : ''))
 
-  for (const [script, field] of [
-    [options.fitScriptPath, 'fitScriptPath'],
-    [options.plotScriptPath, 'plotScriptPath'],
+  // Canonical names inside the iteration dir (fit.py/plot.py): the fit runner
+  // invokes `python fit.py`, so the source file's basename (e.g. aifit.py)
+  // must not leak into the link name.
+  for (const [script, field, linkName] of [
+    [options.fitScriptPath, 'fitScriptPath', 'fit.py'],
+    [options.plotScriptPath, 'plotScriptPath', 'plot.py'],
   ] as const) {
     if (!script) continue
     if (!existsSync(script)) {
       throw new Error(`${field} not found: ${script}`)
     }
-    const link = join(iterDir, script.split('/').pop() ?? script)
+    const link = join(iterDir, linkName)
     try {
       symlinkSync(script, link)
-      changed.push(`${link.split('/').pop()} -> ${script}`)
+      changed.push(`${linkName} -> ${script}`)
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
     }

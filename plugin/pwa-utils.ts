@@ -47,7 +47,17 @@ export interface UsageTracker {
   /** 自上次 takeDelta 以来的增量（记账并重置锚点）。 */
   takeDelta(sessionId: string): TokenTotals
   /** 处理一条 session 事件（assistant/message 携带 usage 时累计）。 */
-  onSessionEvent(sessionId: string, event: { type?: string; usage?: TokenUsageLike }): void
+  onSessionEvent(sessionId: string, event: SessionEventLike): void
+}
+
+/**
+ * DSH session 事件信封的瘦子集：持久化日志的形状是
+ * `{ type, seq, time, data }`，`assistant/message` 的用量位于 `data.usage`
+ * （见 harness core/session 的 SessionEvent / SessionEventMap）。
+ */
+export interface SessionEventLike {
+  type?: string
+  data?: { usage?: TokenUsageLike }
 }
 
 /**
@@ -72,9 +82,11 @@ export function createUsageTracker(): UsageTracker {
         cacheWrite: now.cacheWrite - anchor.cacheWrite,
       }
     },
-    onSessionEvent(sessionId: string, event: { type?: string; usage?: TokenUsageLike }): void {
-      if (event?.type !== 'assistant/message' || event.usage === undefined) return
-      totals.set(sessionId, addTokens(totals.get(sessionId) ?? zeroTokens(), event.usage))
+    onSessionEvent(sessionId: string, event: SessionEventLike): void {
+      if (event?.type !== 'assistant/message') return
+      const usage = event.data?.usage
+      if (usage === undefined) return
+      totals.set(sessionId, addTokens(totals.get(sessionId) ?? zeroTokens(), usage))
     },
   }
 }

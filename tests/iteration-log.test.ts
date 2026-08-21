@@ -88,11 +88,13 @@ describe('startIteration', () => {
     const { mkdirSync } = require('node:fs') as typeof import('node:fs')
     mkdirSync(base)
     writeFileSync(join(base, 'config.yml'), 'base config')
-    writeFileSync(join(base, 'fit.py'), 'print(1)')
+    // Source may be named anything (e.g. the bundled aifit.py): the link in
+    // the iteration dir must still be the canonical fit.py.
+    writeFileSync(join(base, 'aifit.py'), 'print(1)')
     const r = startIteration({
       iterationsRoot: join(root, 'iterations'),
       baseConfigPath: join(base, 'config.yml'),
-      fitScriptPath: join(base, 'fit.py'),
+      fitScriptPath: join(base, 'aifit.py'),
     })
     expect(r.iter).toBe(0)
     expect(existsSync(join(r.iterDir, 'config.yml'))).toBe(true)
@@ -103,7 +105,7 @@ describe('startIteration', () => {
     const r2 = startIteration({
       iterationsRoot: join(root, 'iterations'),
       baseConfigPath: join(base, 'config.yml'),
-      fitScriptPath: join(base, 'fit.py'),
+      fitScriptPath: join(base, 'aifit.py'),
     })
     expect(r2.iter).toBe(1)
     rmSync(root, { recursive: true, force: true })
