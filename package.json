@@ -16,6 +16,11 @@
   "engines": {
     "node": ">=20"
   },
+  "dsh": {
+    "bundle": {
+      "patch": "./patch/auto-pwa.bundle.yml"
+    }
+  },
   "files": [
     "lib",
     "plugin",

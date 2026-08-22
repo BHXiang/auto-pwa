@@ -1,0 +1,21 @@
+# auto-pwa npm bundle layer — installable via the profile bundles list.
+#
+# Install (web profile):
+#   pnpm dsh plugin --profile web add auto-pwa
+#   # + add "auto-pwa" to the profile's dsh.profile.bundles list
+#
+# Relative entry names resolve against THIS file's directory (the package
+# root), so the same plugin files serve both the dev overlay
+# (patch/auto-pwa.cordis.yml) and the published bundle.
+#
+# 注意：pwa-fit.ts 是服务定义库（由 pwa-fit-local 导入并注册 ctx.pwaFit），
+# 不作为插件挂载——挂载它会被 loader 当类插件实例化导致重复注册。
+- insert:
+    - id: pwa-fit-local
+      name: './plugin/pwa-fit-local.ts'
+    - id: pwa-guard
+      name: './plugin/pwa-guard.ts'
+    - id: pwa-commands
+      name: './plugin/pwa-commands.ts'
+    - id: auto-pwa
+      name: './plugin/auto-pwa.ts'

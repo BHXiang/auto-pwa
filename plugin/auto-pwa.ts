@@ -95,6 +95,35 @@ const proposalParam = {
 } as const
 
 export function apply(ctx: Context) {
+  // 自注册 skill（npm bundle 安装后零手动配置）：把包内 SKILL.md 作为
+  // runtime skill 注册进当前 context 的 skills 层（project > runtime > user，
+  // 会遮蔽 ~/.dsh/skills 的同名副本并随插件版本更新）。尽力而为——skills
+  // 服务缺席或文件缺失时静默跳过，不影响其他工具。
+  const skills = (ctx as { get?: (name: string) => unknown }).get?.('skills') as { register: (skill: unknown) => () => void } | undefined
+  if (skills !== undefined) {
+    try {
+      const skillPath = new URL('../skills/auto-pwa-analysis/SKILL.md', import.meta.url).pathname
+      if (existsSync(skillPath)) {
+        const content = readFileSync(skillPath, 'utf8')
+        const fm = /^---\n([\s\S]*?)\n---/.exec(content)
+        const front = fm !== null ? fm[1] : ''
+        const name = /^name:\s*(.+)$/m.exec(front)?.[1]?.trim() ?? 'auto-pwa-analysis'
+        const description = /^description:\s*(.+)$/m.exec(front)?.[1]?.trim()?.replace(/^['"]|['"]$/g, '') ?? 'PWA 分波分析作业规则'
+        ctx.effect?.(() =>
+          skills.register({
+            name,
+            description,
+            whenToUse: 'Performing partial wave analysis with the auto_pwa_* tools.',
+            content,
+            invocation: { modelInvocable: true, userInvocable: false },
+          } as never),
+        )
+      }
+    } catch {
+      // skill 注册是增强，绝不阻断插件
+    }
+  }
+
   // token-meter: 累计本会话各 session 的 assistant/message usage；
   // auto_pwa_note 的 includeTokens 按轮取差值写进日记。
   // 事件信封是 { type, seq, time, data }，usage 在 data.usage。

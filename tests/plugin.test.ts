@@ -687,3 +687,21 @@ describe.skipIf(!HAS_UPROOT || !existsSync(WAVE_ROOT) || !existsSync(WAVE_CFG))(
     }
   })
 })
+
+describe('auto-pwa skill self-registration', () => {
+  it('registers the bundled SKILL.md as a runtime skill when ctx.skills is present', () => {
+    const registered: { name?: string; description?: string; content?: string; invocation?: unknown }[] = []
+    const ctx = {
+      get: (name: string) => (name === 'skills' ? { register: (s: unknown) => { registered.push(s as never); return () => {} } } : undefined),
+      on: () => {},
+      tools: { register: () => {} },
+      pwaFit: { submit: () => 'x', status: () => ({ state: 'done' }), kill: () => 'already-finished' },
+      effect: (fn: () => () => void) => fn(),
+    }
+    apply(ctx as never)
+    expect(registered).toHaveLength(1)
+    expect(registered[0]!.name).toBe('auto-pwa-analysis')
+    expect(registered[0]!.content).toContain('PWA 分波分析作业规则')
+    expect((registered[0]!.invocation as { modelInvocable: boolean }).modelInvocable).toBe(true)
+  })
+})

@@ -22,7 +22,22 @@ npm run typecheck
 npm run build
 ```
 
-挂载进 DSH（插件文件必须是绝对路径）：
+### 方式 A：npm bundle 安装（推荐，profile 持久声明）
+
+包 manifest 声明 `dsh.bundle.patch`（`patch/auto-pwa.bundle.yml`），可发布到 npm（公开或私有 registry）后像任何 DSH 插件一样安装：
+
+```sh
+# 1. 安装依赖 + 声明 bundle（转发 pnpm；然后手动在 profile package.json 的
+#    dsh.profile.bundles 列表加一行 "auto-pwa"）
+pnpm dsh plugin --profile web add auto-pwa
+
+# 2. 之后每次启动都生效，无需 --patch：
+pnpm dsh web
+```
+
+skill（`auto-pwa-analysis`）由插件启动时**自动注册**（`ctx.skills.register`），无需手动复制到 `~/.dsh/skills`。
+
+### 方式 B：本地 patch 挂载（开发/未发布时）
 
 ```sh
 pnpm dsh web --patch /absolute/path/to/auto-pwa/patch/auto-pwa.cordis.yml
@@ -30,7 +45,7 @@ pnpm dsh web --patch /absolute/path/to/auto-pwa/patch/auto-pwa.cordis.yml
 pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.cordis.yml "完成此文件夹分波"
 ```
 
-patch 挂载四个插件文件（服务 Provider + 硬门禁 + 斜杠命令；`plugin/pwa-fit.ts` 是服务定义库，由 pwa-fit-local 导入并注册 `ctx.pwaFit`，**不作为插件挂载**——挂载它会被 loader 当类插件实例化，导致 `service "pwaFit" has been registered` 重复注册）：
+两种方式挂载相同的四个插件文件（服务 Provider + 硬门禁 + 斜杠命令；`plugin/pwa-fit.ts` 是服务定义库，由 pwa-fit-local 导入并注册 `ctx.pwaFit`，**不作为插件挂载**——挂载它会被 loader 当类插件实例化，导致 `service "pwaFit" has been registered` 重复注册）：
 
 | 插件 | 角色 |
 |---|---|
