@@ -1718,6 +1718,120 @@ export function apply(ctx: Context) {
   }))
 
   // ---------------------------------------------------------------------
+  // auto_pwa_root_view（决策层·视力：直接读 weight_best.root 直方图）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_root_view',
+    description:
+      '直接读拟合权重文件 weight_best.root 的直方图（uproot，ctpwa env python）——AI 的"眼睛"。' +
+      'list 模式列出全部直方图；read 模式取指定直方图的逐 bin 数据（bin 中心/值/误差/积分）。' +
+      '每个分布目录（massX_* 质量谱、cosbetaX_* 角分布）含 hdata/hfit/hbkg（数据/拟合/本底）和 ' +
+      'h_<chain>-<intermediate>-<resonance>（**每个共振态的波谱**：大小与形状）。' +
+      '决策流程：先 list 看有什么 → read 取关键直方图（如 pull 区的波谱、角分布）→ 判断哪个共振态主导/缺失。输出大时自动 spill。',
+    parameters: {
+      rootPath: { type: 'string', required: true, description: 'weight_best.root 绝对路径' },
+      mode: { type: 'string', required: true, enum: ['list', 'read'], description: 'list=列全部直方图；read=取指定直方图逐 bin 数据' },
+      objects: { type: 'array', items: { type: 'string' }, description: 'read 模式必填：直方图路径（如 "mass0_Kp_Km/h_chain1-R_KK-phi1020"），最多 8 个' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          mode: { type: 'string', required: true },
+          rootPath: { type: 'string', required: true },
+          objects: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', required: true }, bins: { type: 'integer', required: true } } } },
+          histograms: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                path: { type: 'string', required: true },
+                bins: { type: 'integer', required: true },
+                range: { type: 'array', items: { type: 'number' } },
+                integral: { type: 'number', required: true },
+                centers: { type: 'array', items: { type: 'number' } },
+                values: { type: 'array', items: { type: 'number' } },
+                errors: { type: 'array', items: { type: 'number' } },
+              },
+            },
+          },
+          spilled: { type: 'object', additionalProperties: false, properties: { locator: { type: 'string' }, bytes: { type: 'integer' }, retrievalHint: { type: 'string' } } },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        mode: string
+        objects?: { path: string; bins: number }[]
+        histograms?: { path: string; bins: number; integral: number; range?: number[] }[]
+        spilled?: { locator: string; retrievalHint: string }
+        error?: string
+      }) => {
+        if (!value.ok) return text(`root_view 失败: ${value.error ?? '未知'}`)
+        if (value.mode === 'list') {
+          const objs = value.objects ?? []
+          const dists = new Map<string, string[]>()
+          for (const o of objs) {
+            const parts = o.path.split('/')
+            const dir = parts.length > 1 ? parts[0]! : '(root)'
+            const name = parts[parts.length - 1]!
+            if (name.startsWith('h_')) dists.set(dir, [...(dists.get(dir) ?? []), name])
+          }
+          const lines = [`ROOT 直方图 ${objs.length} 个:`]
+          for (const [dir, waves] of [...dists.entries()].sort()) {
+            lines.push(`  ${dir}: hdata/hfit/hbkg + ${waves.length} 个波谱 ${waves.slice(0, 6).join(', ')}${waves.length > 6 ? ' …' : ''}`)
+          }
+          return text(lines.join('\n'))
+        }
+        const hs = value.histograms ?? []
+        const lines = [`读取 ${hs.length} 个直方图:`]
+        for (const h of hs) {
+          const peak = h.path
+          const rng = h.range !== undefined ? ` [${h.range[0].toFixed(2)}, ${h.range[1].toFixed(2)}]` : ''
+          lines.push(`  ${h.path}: ${h.bins} bins, integral=${h.integral.toFixed(0)}${rng}`)
+        }
+        if (value.spilled !== undefined) lines.push(`（完整逐 bin 数据已 spill: ${value.spilled.locator} — ${value.spilled.retrievalHint}）`)
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { rootPath: string; mode: 'list' | 'read'; objects?: string[] }, exec) {
+      const py = defaultFitRunnerConfig().python
+      const script = new URL('../scripts/root_view.py', import.meta.url).pathname
+      const argv = [script, args.rootPath, args.mode]
+      if (args.mode === 'read') {
+        if ((args.objects ?? []).length === 0) {
+          return { ok: false, mode: args.mode, rootPath: args.rootPath, error: 'read 模式需要 objects' }
+        }
+        argv.push(...(args.objects ?? []).slice(0, 8))
+      }
+      const r = spawnSync(py, argv, { encoding: 'utf8', timeout: 60_000, env: { ...process.env } })
+      if (r.status !== 0) {
+        return { ok: false, mode: args.mode, rootPath: args.rootPath, error: (r.stderr || r.stdout || '').slice(0, 500) }
+      }
+      try {
+        const parsed = JSON.parse(r.stdout) as { mode?: string; objects?: unknown[]; histograms?: unknown[]; error?: string }
+        if (parsed.error !== undefined) {
+          return { ok: false, mode: args.mode, rootPath: args.rootPath, error: parsed.error }
+        }
+        const out: { ok: boolean; mode: string; rootPath: string; objects?: unknown[]; histograms?: unknown[] } = {
+          ok: true,
+          mode: args.mode,
+          rootPath: args.rootPath,
+        }
+        if (args.mode === 'list' && Array.isArray(parsed.objects)) out.objects = parsed.objects
+        if (args.mode === 'read' && Array.isArray(parsed.histograms)) out.histograms = parsed.histograms
+        const ref = await maybeSpill(ctx, exec, 'auto_pwa_root_view', JSON.stringify(out), null)
+        return ref === null ? out : { ...out, spilled: ref }
+      } catch (e) {
+        return { ok: false, mode: args.mode, rootPath: args.rootPath, error: `解析 root_view 输出失败: ${(e as Error).message}` }
+      }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
   // auto_pwa_run_fit（Consumer：经 ctx.pwaFit -> ctx.jobs 提交）
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({

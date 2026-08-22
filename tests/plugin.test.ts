@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync as readFileSyncSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync as readFileSyncSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { apply } from '../plugin/auto-pwa.js'
 import { apply as applyGuard } from '../plugin/pwa-guard.js'
 import { IterationLog } from '../src/iteration-log.js'
+import { defaultFitRunnerConfig } from '../src/fit-runner.js'
 
 /** Minimal ctx mock: collects tool definitions instead of registering them. */
 function collectDefinitions() {
@@ -38,6 +40,7 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_iterate',
       'auto_pwa_evaluate',
       'auto_pwa_diagnose',
+      'auto_pwa_root_view',
       'auto_pwa_run_fit',
       'auto_pwa_fit_status',
       'auto_pwa_try_candidates',
@@ -467,4 +470,54 @@ Resonances:
       return false
     }
   }
+})
+
+// ---------------------------------------------------------------------------
+// auto_pwa_root_view: real-file smoke test (skipped without uproot/ROOT file)
+// ---------------------------------------------------------------------------
+
+/** The plugin's configured python (PATH 'python' or PWA_CTPWA_PYTHON). */
+const PY = defaultFitRunnerConfig().python
+const HAS_UPROOT = spawnSync(PY, ['-c', 'import uproot'], { encoding: 'utf8' }).status === 0
+const ROOT_FILE = '/home/whitewash/pwa/Jpsi2KKeta/solve3/results/weight_best.root'
+const HAS_ROOT_FILE = existsSync(ROOT_FILE)
+
+describe.skipIf(!HAS_UPROOT || !HAS_ROOT_FILE)('auto_pwa_root_view (real weight_best.root)', () => {
+  it('list discovers per-wave histograms and angular distributions', async () => {
+    const defs = collectDefinitions()
+    const tool = defs.find((d) => d.name === 'auto_pwa_root_view')!
+    const out = (await tool.execute!({ rootPath: ROOT_FILE, mode: 'list' } as never, { agent: { sessionId: 'sess-1' } } as never)) as {
+      ok: boolean
+      mode: string
+      objects: { path: string; bins: number }[]
+    }
+    expect(out.ok).toBe(true)
+    expect(out.mode).toBe('list')
+    expect(out.objects.length).toBeGreaterThan(100)
+    expect(out.objects.some((o) => o.path.includes('/h_chain1-R_KK-phi1020'))).toBe(true)
+    expect(out.objects.some((o) => o.path.startsWith('cosbeta'))).toBe(true)
+    expect(out.objects.every((o) => o.bins > 0)).toBe(true)
+  })
+
+  it('read returns per-bin values for data and a wave spectrum', async () => {
+    const defs = collectDefinitions()
+    const tool = defs.find((d) => d.name === 'auto_pwa_root_view')!
+    const out = (await tool.execute!(
+      { rootPath: ROOT_FILE, mode: 'read', objects: ['mass0_Kp_Km/hdata', 'mass0_Kp_Km/h_chain1-R_KK-phi1020'] } as never,
+      { agent: { sessionId: 'sess-1' } } as never,
+    )) as { ok: boolean; histograms: { path: string; bins: number; integral: number; values: number[]; errors: number[] }[] }
+    expect(out.ok).toBe(true)
+    expect(out.histograms).toHaveLength(2)
+    for (const h of out.histograms) {
+      expect(h.bins).toBe(100)
+      expect(h.values).toHaveLength(100)
+      expect(h.errors).toHaveLength(100)
+      expect(h.integral).toBeGreaterThan(0)
+    }
+    const data = out.histograms.find((h) => h.path.endsWith('/hdata'))!
+    const phi = out.histograms.find((h) => h.path.includes('phi1020'))!
+    // The phi(1020) wave contributes a fraction of the total data spectrum.
+    expect(phi.integral).toBeLessThan(data.integral)
+    expect(phi.integral).toBeGreaterThan(data.integral * 0.01)
+  })
 })
