@@ -94,7 +94,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - 每轮动作序列（goal 回合内）：
   1. 等上轮拟合通知 → `auto_pwa_fit_status` 取结果（NLL/正定性/日志）
   2. `auto_pwa_evaluate` 分析上轮 weight_best.root（数值诊断；完整 JSON 在 evaluate.json，输出过大时会 spill 到 locator 按需读）
-  3. `auto_pwa_diagnose` 把 fit.json 事实转成假设（撞边界/份额不显著/强干涉对）
+  3. `auto_pwa_diagnose` 把 fit.json 事实转成假设（撞边界/份额不显著/强干涉对/**参数高相关**——|ρ|>0.8 的参数对无法独立确定，建议固定一个或合并）
   4. **`auto_pwa_root_view` 直接看拟合形状**：先 `list` 发现直方图，再 `read` 取关键对象——每个共振态的波谱 `h_<chain>-<intermediate>-<resonance>`（该共振态的质量谱形状与大小）、角分布 `cosbeta_*`、`hdata`/`hfit` 逐 bin 对比。**这是"哪个共振态主导/缺失/形状异常"的第一手证据**——pull 区对应哪个波谱、哪个共振态形状被压低，直接决定下一步动什么
   5. `auto_pwa_suggest` 按 pull 区列出候选；`lookup`/`decay_check`/`jpc_check` 复核
   6. `auto_pwa_loop_next` 判收敛；未收敛 → `auto_pwa_loop_decide iterate`（或先 `try_candidates` + `compare` 探索再晋级）

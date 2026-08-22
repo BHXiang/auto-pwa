@@ -48,7 +48,7 @@ patch 挂载四个插件文件（服务 Provider + 硬门禁 + 斜杠命令；`p
 | `auto_pwa_jpc_check` | **两顶点 J^PC 检查**：衰变顶点 J^PC 集（ComSL 一致，含全同选择定则）∩ 产生顶点 J^P 与 C 守恒，逐中间态输出 + 按 J^PC 过滤的 PDG 候选（与写入门禁**同源**） | 决策·参考 |
 | `auto_pwa_config_view` | config.yml 只读 JSON 视图（粒子/链+衰变步/共振态/运动学/Constraints + validateConfig + PDG 交叉引用） | 决策·参考 |
 | `auto_pwa_suggest` | **候选发现**：pull>3σ 质量区 × 允许 J^PC → 按质量对齐度排序的 PDG 候选（含阈值余量） | 决策·发现 |
-| `auto_pwa_diagnose` | **拟合诊断**：fit.json 事实 → 可行动假设（撞边界/份额不显著/强干涉/Hessian） | 决策·诊断 |
+| `auto_pwa_diagnose` | **拟合诊断**：fit.json 事实 → 可行动假设（撞边界/份额不显著/强干涉/**参数高相关简并**/Hessian） | 决策·诊断 |
 | `auto_pwa_root_view` | **ROOT 直方图直读**（AI 的眼睛）：list 列全部直方图 / read 取任意直方图逐 bin 数据——每个共振态的波谱 `h_<chain>-<int>-<res>`（大小与形状）、角分布 `cosbeta_*`、data/fit/bkg 对比 | 决策·视力 |
 | `auto_pwa_compare` | 基座 vs 候选 trial 的 ΔNLL 显著性裁决（默认阈值 3，2 自由度），推荐晋级者 | 决策·裁决 |
 | `auto_pwa_validate_add` | "添加共振态"只读门禁（PDG 依据、JPC、阈值、衰变顶点 J^P、C 守恒、全同选择定则、重复、free 结构） | 执行·门禁 |
@@ -107,7 +107,7 @@ python aifit.py --config config.yml --validate-only --json results/fit.json
 python aifit.py --config config.yml --runs 1 --max-iter 500 --json results/fit.json
 ```
 
-`fit.json` 包含：每轮 NLL/迭代数/正定性、best 参数**带误差与撞边界标记**、分波贡献（`getFitFractions`）/分支比（config 提供 `phsp_truth` 时）、**从 weight_best.root 读回的干涉矩阵**（引擎已把 `interference` TMatrixD + `legends` 波名写进 ROOT 文件，无需 `getSLAmpsTensor`——每事件全波表太大易爆内存）、warnings、结构化错误码（`config-error` / `no-gpu` / `fit-failed` / `usage-error`，非零退出码）。读取器有防御性：未初始化内存条目（`|M| > 1e6`）会被检测并报告为 `interference.available: false`，绝不把垃圾当物理喂给模型。
+`fit.json` 包含：每轮 NLL/迭代数/正定性、best 参数**带误差与撞边界标记**、**参数相关性矩阵**（Hessian 反演，含 Re/Im 耦合与共振态参数名，|ρ|>0.8 由 diagnose 自动标记简并）、分波贡献（`getFitFractions`）/分支比（config 提供 `phsp_truth` 时）、**从 weight_best.root 读回的干涉矩阵**（引擎已把 `interference` TMatrixD + `legends` 波名写进 ROOT 文件，无需 `getSLAmpsTensor`——每事件全波表太大易爆内存）、warnings、结构化错误码（`config-error` / `no-gpu` / `fit-failed` / `usage-error`，非零退出码）。读取器有防御性：未初始化内存条目（`|M| > 1e6`）会被检测并报告为 `interference.available: false`，绝不把垃圾当物理喂给模型。
 
 ```sh
 # 从已有权重文件提取干涉矩阵（不拟合、无 GPU）：

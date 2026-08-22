@@ -17,6 +17,18 @@ export interface DiagnosisItem {
   suggestion?: string
 }
 
+export interface DiagnoseOptions {
+  /** |ρ| above which a parameter pair is flagged; default 0.8. */
+  correlationThreshold?: number
+  /** Max flagged pairs; default 6. */
+  maxCorrelationPairs?: number
+}
+
+/** Is this correlation-matrix row a resonance (physical) parameter name? */
+function isResonanceParamName(name: string): boolean {
+  return !name.startsWith('Re(') && !name.startsWith('Im(')
+}
+
 /** A resonance's chain/group context from the config (for removal suggestions). */
 function resonanceContext(config: PwaConfig | undefined, name: string): string | undefined {
   if (config === undefined) return undefined
@@ -34,8 +46,10 @@ function resonanceContext(config: PwaConfig | undefined, name: string): string |
  * Diagnose one fit result. `fitJson` comes from results/fit.json (may be
  * partial); `config` is optional context for naming suggestions.
  */
-export function diagnoseFit(fitJson: FitJsonView, config?: PwaConfig): DiagnosisItem[] {
+export function diagnoseFit(fitJson: FitJsonView, config?: PwaConfig, options: DiagnoseOptions = {}): DiagnosisItem[] {
   const out: DiagnosisItem[] = []
+  const corrThreshold = options.correlationThreshold ?? 0.8
+  const maxCorrPairs = options.maxCorrelationPairs ?? 6
   const fit = fitJson.fit
   if (fit === undefined || fit.best === undefined) {
     out.push({
@@ -112,6 +126,41 @@ export function diagnoseFit(fitJson: FitJsonView, config?: PwaConfig): Diagnosis
       code: 'interference-unavailable',
       message: `干涉矩阵不可用: ${inter.reason ?? 'unknown'}`,
     })
+  }
+
+  // Parameter correlation pairs from the Hessian inversion: |ρ| > threshold
+  // means the two parameters cannot be determined independently — a
+  // degeneracy the fit is silently trading against.
+  const corr = best.correlation
+  if (corr !== undefined && corr.names.length === corr.matrix.length && corr.names.length > 0) {
+    const pairs: { a: string; b: string; rho: number; aRes: boolean; bRes: boolean }[] = []
+    for (let i = 0; i < corr.names.length; i++) {
+      const row = corr.matrix[i]!
+      for (let j = i + 1; j < corr.names.length; j++) {
+        const rho = row[j]
+        if (Number.isFinite(rho) && Math.abs(rho) >= corrThreshold) {
+          pairs.push({
+            a: corr.names[i]!,
+            b: corr.names[j]!,
+            rho,
+            aRes: isResonanceParamName(corr.names[i]!),
+            bRes: isResonanceParamName(corr.names[j]!),
+          })
+        }
+      }
+    }
+    pairs.sort((x, y) => Math.abs(y.rho) - Math.abs(x.rho))
+    for (const p of pairs.slice(0, maxCorrPairs)) {
+      const bothRes = p.aRes && p.bRes
+      out.push({
+        severity: 'warn',
+        code: 'parameter-correlation',
+        message: `${p.a} ↔ ${p.b} 相关系数 ρ=${p.rho > 0 ? '+' : ''}${p.rho.toFixed(2)}`,
+        suggestion: bothRes
+          ? '两个共振态参数强相关（简并）：数据无法独立确定它们 —— 考虑固定其中一个、合并为单一态，或改线形模型'
+          : '该参数对强相关：模型存在退化方向 —— 考虑固定冗余参数或拆开共享耦合',
+      })
+    }
   }
 
   for (const w of fit.warnings ?? []) {

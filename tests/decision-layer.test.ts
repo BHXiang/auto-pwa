@@ -152,6 +152,62 @@ describe('diagnoseFit (fit.json hypotheses)', () => {
     const items = diagnoseFit(clean)
     expect(items.some((i) => i.severity === 'danger')).toBe(false)
   })
+
+  it('flags strongly correlated parameter pairs (degeneracy) from the correlation matrix', () => {
+    const fit: FitJsonView = {
+      status: 'ok',
+      fit: {
+        runs: 3,
+        maxIter: 1000,
+        best: {
+          nll: 50.0,
+          positiveDefinite: true,
+          params: [],
+          correlation: {
+            names: ['Re(g1)', 'Im(g1)', 'phi1020_mass', 'X1750_width'],
+            matrix: [
+              [1, 0.1, 0.9, 0.2],
+              [0.1, 1, 0.3, -0.85],
+              [0.9, 0.3, 1, 0.4],
+              [0.2, -0.85, 0.4, 1],
+            ],
+          },
+        },
+      },
+    }
+    const items = diagnoseFit(fit)
+    const corrItems = items.filter((i) => i.code === 'parameter-correlation')
+    expect(corrItems.length).toBe(2)
+    // Sorted by |ρ| descending.
+    expect(corrItems[0]!.message).toContain('Re(g1) ↔ phi1020_mass')
+    expect(corrItems[0]!.message).toContain('ρ=+0.90')
+    expect(corrItems[1]!.message).toContain('Im(g1) ↔ X1750_width')
+    expect(corrItems[1]!.message).toContain('ρ=-0.85')
+  })
+
+  it('ignores weak correlations below the threshold', () => {
+    const fit: FitJsonView = {
+      status: 'ok',
+      fit: {
+        runs: 1,
+        maxIter: 500,
+        best: {
+          nll: 50.0,
+          positiveDefinite: true,
+          params: [],
+          correlation: {
+            names: ['a', 'b'],
+            matrix: [
+              [1, 0.4],
+              [0.4, 1],
+            ],
+          },
+        },
+      },
+    }
+    const items = diagnoseFit(fit)
+    expect(items.some((i) => i.code === 'parameter-correlation')).toBe(false)
+  })
 })
 
 describe('loop-state (convergence / persistence / report)', () => {

@@ -72,6 +72,9 @@ export interface FitJsonView {
       params?: FitParamView[]
       fitFractions?: FitFractionView[] | null
       branchFractions?: FitFractionView[] | null
+      /** Parameter correlation matrix (Hessian inversion; names aligned to
+       * the matrix rows: Re(c1), Im(c1), ..., res_0, ...). */
+      correlation?: { names: string[]; matrix: number[][] }
     }
     /** Interference matrix read back from weight_best.root (available=false = untrustworthy). */
     interference?: {
@@ -117,6 +120,17 @@ export function parseFitJson(text: string): FitJsonView {
         params: Array.isArray(best.params) ? best.params.map((p) => p as FitParamView) : undefined,
         fitFractions: Array.isArray(best.fitFractions) ? best.fitFractions.map((f) => f as FitFractionView) : undefined,
         branchFractions: Array.isArray(best.branchFractions) ? best.branchFractions.map((f) => f as FitFractionView) : undefined,
+      }
+      const corr = best.correlation as Record<string, unknown> | undefined
+      if (corr !== undefined && Array.isArray(corr.names) && Array.isArray(corr.matrix)) {
+        const names = corr.names.filter((n): n is string => typeof n === 'string')
+        const matrix = corr.matrix
+          .filter((row): row is unknown[] => Array.isArray(row))
+          .map((row) => row.map(Number))
+          .filter((row) => row.length === names.length)
+        if (names.length > 0 && matrix.length === names.length) {
+          out.fit.best.correlation = { names, matrix }
+        }
       }
     }
     const inter = fit.interference as Record<string, unknown> | undefined

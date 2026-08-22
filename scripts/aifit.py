@@ -41,7 +41,7 @@ EXIT_USAGE = 2
 EXIT_NO_GPU = 3
 EXIT_FIT_FAILED = 4
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"
 
 # 撞边界判定：|value - bound| < 1e-3 * (upper - lower) 记为贴边。
 BOUNDARY_FRACTION = 1e-3
@@ -340,10 +340,15 @@ class AifitOptimizer:
             is_pos_def, min_eig, max_eig, cond_num = False, float("nan"), float("nan"), float("nan")
 
         coupling_real_errors = coupling_imag_errors = res_errors = None
+        correlation: torch.Tensor | None = None
         if is_pos_def:
             try:
                 covariance = torch.linalg.inv(hessian)
                 std_dev = torch.sqrt(torch.diag(covariance))
+                # Correlation = cov / (sigma_i * sigma_j); diagonal stays 1.
+                with torch.no_grad():
+                    denom = torch.outer(std_dev, std_dev)
+                    correlation = (covariance / denom).clamp(-1.0, 1.0)
                 n_c_var = self.n_coupling_free - 1
                 coupling_real_errors = torch.zeros(self.n_coupling_free, dtype=torch.float32, device=self.device)
                 coupling_imag_errors = torch.zeros(self.n_coupling_free, dtype=torch.float32, device=self.device)
@@ -354,6 +359,7 @@ class AifitOptimizer:
                     res_errors = std_dev[2 * n_c_var:].float()
             except Exception:
                 coupling_real_errors = coupling_imag_errors = res_errors = None
+                correlation = None
 
         return {
             "run_id": run_id,
@@ -368,6 +374,7 @@ class AifitOptimizer:
             "coupling_real_errors": coupling_real_errors,
             "coupling_imag_errors": coupling_imag_errors,
             "res_errors": res_errors,
+            "correlation": correlation,
         }
 
     def extract_coupling_complex(self, params: torch.Tensor) -> torch.Tensor:
@@ -443,6 +450,21 @@ def build_best_json(opt: AifitOptimizer, result: dict, warnings: list[str]) -> d
         "fitFractions": None,
         "branchFractions": None,
     }
+
+    # 参数相关性矩阵（Hessian 反演；索引对齐 fixed_mask 过滤后的参数顺序：
+    # Re(c1), Im(c1), ..., Re(c_{n-1}), Im(c_{n-1}), res_0, ...）。
+    corr = result.get("correlation")
+    if corr is not None:
+        corr_names: list[str] = []
+        for i in range(1, opt.n_coupling_free):
+            corr_names.append(f"Re({opt.params_names[i]})")
+            corr_names.append(f"Im({opt.params_names[i]})")
+        for j in range(opt.n_res_free):
+            corr_names.append(opt.params_names[opt.n_coupling_free + j])
+        best["correlation"] = {
+            "names": corr_names,
+            "matrix": [[float(x) for x in row] for row in corr.cpu().numpy()],
+        }
 
     # 分波贡献 / 分支比（需要 config 提供 phsp_truth；缺则降级为 null + warning）
     try:
