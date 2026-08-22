@@ -31,6 +31,7 @@ import { defaultFitRunnerConfig } from '../src/fit-runner.js'
 import { summarizeFitDir, parseFitJson } from '../src/fit-summary.js'
 import { suggestCandidates } from '../src/suggest.js'
 import { diagnoseFit } from '../src/diagnose.js'
+import { freeParamCount, compareModels } from '../src/model-selection.js'
 import { resolveEnv } from '../src/config.js'
 import { IterationLog, startIteration, iterationsRootOf, listIterations, createTrialDir } from '../src/iteration-log.js'
 import {
@@ -41,9 +42,12 @@ import {
   previousDiaryNll,
   previousIterDir,
   writeFinalReport,
+  verifyPrediction,
   type LoopState,
   type LoopEval,
   type LoopObjective,
+  type Prediction,
+  type VerificationResult,
 } from '../src/loop-state.js'
 import type { IterationRecord } from '../src/report.js'
 import { spawnSync } from 'node:child_process'
@@ -1227,6 +1231,28 @@ export function apply(ctx: Context) {
       conclusion: { type: 'string', required: true, description: '本轮结论：拟合好坏判断 + 诊断要点（模型自己写）' },
       nextPlan: { type: 'string', description: '下一步计划（加/删什么共振态，float 策略）' },
       evidence: { type: 'string', description: '证据引用（如 evaluate.json 路径）' },
+      hypothesis: { type: 'string', description: '本轮假设（物理上预期什么被吸收/改变）——与 prediction 配对' },
+      prediction: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          metric: { type: 'string', required: true, enum: ['maxPull', 'deltaNll', 'regionPull'] },
+          region: { type: 'array', items: { type: 'number' } },
+          threshold: { type: 'number', required: true },
+          direction: { type: 'string', required: true, enum: ['below', 'above'] },
+        },
+        description: '可验证预测（下轮 loop_next 自动验证）',
+      },
+      verification: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          passed: { type: 'boolean', required: true },
+          actual: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+          note: { type: 'string', required: true },
+        },
+        description: '上一轮预测的验证结果（从 loop_next 的 verification 字段抄录）',
+      },
       notes: { type: 'array', items: { type: 'string' }, description: '自由笔记行' },
       includeTokens: { type: 'boolean', description: 'true 时把本轮 token 消耗（上次记账以来的差值）写进记录（token-meter 成本追踪；每轮建议开启）' },
     },
@@ -1258,6 +1284,9 @@ export function apply(ctx: Context) {
       conclusion: string
       nextPlan?: string
       evidence?: string
+      hypothesis?: string
+      prediction?: Prediction
+      verification?: VerificationResult
       notes?: string[]
       /** 记入本轮 token 消耗（token-meter：上次记账以来的差值）。 */
       includeTokens?: boolean
@@ -1282,6 +1311,9 @@ export function apply(ctx: Context) {
         conclusion: args.conclusion,
         nextPlan: args.nextPlan,
         evidence: args.evidence,
+        hypothesis: args.hypothesis,
+        prediction: args.prediction,
+        verification: args.verification,
         notes: args.notes,
       }
       if (args.includeTokens === true && exec.agent?.sessionId !== undefined) {
@@ -1562,6 +1594,12 @@ export function apply(ctx: Context) {
                   },
                   description: 'Plot 段元信息（kind=mass/cosbeta/angle/custom，intermediate=匹配到的中间态）——新 expr 画图格式下分布目录名不再含质量/角度信息，靠它识别',
                 },
+                moments: {
+                  type: 'object',
+                  additionalProperties: false,
+                  description: '勒让德矩（角分布）：{L: {data, fit, delta}}——数据-拟合矩差指示缺失/多余的 J（自旋 0 介子对需 J>=L/2 才有 M_L）',
+                },
+                massBins: { type: 'array', items: { type: 'number' }, description: '2D 矩图的质量 bin 中心' },
               },
             },
           },
@@ -1578,7 +1616,15 @@ export function apply(ctx: Context) {
           },
         },
       },
-      render: (_args, value) => {
+      render: (_args, value: {
+        ok: boolean
+        error?: string
+        worst: { name: string; chi2_ndf?: number; max_abs_pull: number; bins_over_5sigma: number }[]
+        distributions?: { name: string; moments?: Record<string, { data?: number; fit?: number; delta?: number }> }[]
+        evaluateJsonPath: string
+        pngFiles?: string[]
+        spilled?: { locator: string; retrievalHint: string }
+      }) => {
         if (!value.ok) return text(`评估失败: ${value.error ?? '未知错误'}`)
         const lines = ['拟合质量评估（按最差排序）:']
         for (const w of value.worst) {
@@ -1586,6 +1632,21 @@ export function apply(ctx: Context) {
             `  ${w.name}: chi2/ndf=${w.chi2_ndf ?? '—'}, max|pull|=${w.max_abs_pull}, ` +
               `>5σ bins=${w.bins_over_5sigma}${w.max_abs_pull > 5 ? ' ⚠️严重' : w.max_abs_pull > 3 ? ' ⚠️' : ''}`,
           )
+        }
+        const moments = (value.distributions ?? []).filter((d) => d.moments !== undefined)
+        for (const d of moments) {
+          const ms = d.moments!
+          const worst = Object.entries(ms)
+            .map(([L, v]) => ({ L: Number(L), delta: Math.abs(v?.delta ?? 0) }))
+            .sort((a, b) => b.delta - a.delta)[0]
+          if (worst !== undefined && worst.delta > 0.02) {
+            const v = ms[worst.L]!
+            const dlt = v?.delta ?? 0
+            lines.push(
+              `  矩 M_${worst.L}（${d.name}）: 数据=${v?.data} 拟合=${v?.fit} Δ=${dlt > 0 ? '+' : ''}${dlt} ` +
+                `${dlt > 0 ? '—— 数据矩高于拟合：缺该 J 波' : '—— 拟合矩高于数据：该 J 波可能多余'}`,
+            )
+          }
         }
         lines.push(`评估 JSON: ${value.evaluateJsonPath}`)
         if (value.pngFiles && value.pngFiles.length > 0) lines.push(`PNG 图: ${value.pngFiles.length} 张`)
@@ -1631,6 +1692,8 @@ export function apply(ctx: Context) {
         pull_regions_over_3sigma?: number[][]
         worst_bin?: { center?: number; pull?: number }
         meta?: { kind?: string; intermediate?: string; particles?: string[]; display?: string[] }
+        moments?: Record<string, { data?: number; fit?: number; delta?: number }>
+        massBins?: number[]
       }[] = []
       for (const [name, d] of Object.entries(ev.distributions ?? {})) {
         if (d === null || typeof d !== 'object') continue
@@ -1639,6 +1702,21 @@ export function apply(ctx: Context) {
         for (const k of ['chi2_ndf', 'max_abs_pull', 'bins_over_5sigma', 'bins_over_3sigma', 'pull_regions_over_3sigma', 'worst_bin'] as const) {
           if (typeof rec[k] === 'number' || typeof rec[k] === 'object') (item as Record<string, unknown>)[k] = rec[k]
         }
+        if (rec.moments !== null && typeof rec.moments === 'object' && !Array.isArray(rec.moments)) {
+          const m = rec.moments as Record<string, unknown>
+          const moments: Record<string, { data?: number; fit?: number; delta?: number }> = {}
+          for (const [L, v] of Object.entries(m)) {
+            if (v === null || typeof v !== 'object') continue
+            const r = v as Record<string, unknown>
+            const entry: { data?: number; fit?: number; delta?: number } = {}
+            if (typeof r.data === 'number') entry.data = r.data
+            if (typeof r.fit === 'number') entry.fit = r.fit
+            if (typeof r.delta === 'number') entry.delta = r.delta
+            moments[L] = entry
+          }
+          if (Object.keys(moments).length > 0) item.moments = moments
+        }
+        if (Array.isArray(rec.massBins)) item.massBins = rec.massBins.filter((x): x is number => typeof x === 'number')
         if (rec.meta !== null && typeof rec.meta === 'object') {
           const m = rec.meta as Record<string, unknown>
           const meta: Record<string, unknown> = {}
@@ -2401,6 +2479,7 @@ export function apply(ctx: Context) {
       baseIterDir: { type: 'string', required: true, description: '基座迭代目录（参考 NLL 的来源）' },
       trialDirs: { type: 'array', required: true, items: { type: 'string' }, description: 'auto_pwa_try_candidates 返回的 trial 目录列表' },
       significanceThreshold: { type: 'number', description: '显著 ΔNLL 阈值（默认 3.0）' },
+      dataEvents: { type: 'integer', description: '数据事件数（BIC 惩罚项用；缺省则只给 AIC）' },
     },
     output: {
       schema: {
@@ -2419,6 +2498,10 @@ export function apply(ctx: Context) {
                 trialDir: { type: 'string', required: true },
                 nll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
                 deltaNll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                deltaK: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                aicDelta: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                bicDelta: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                favoured: { type: 'boolean', required: true },
                 hessianPositive: { oneOf: [{ type: 'boolean' }, { type: 'null' }] },
                 verdict: { type: 'string', required: true, enum: ['significant-improvement', 'not-significant', 'significant-worsening', 'no-result'] },
               },
@@ -2432,7 +2515,7 @@ export function apply(ctx: Context) {
       render: (_args, value: {
         ok: boolean
         baseNll: number | null
-        results: { trialDir: string; nll: number | null; deltaNll: number | null; hessianPositive: boolean | null; verdict: string }[]
+        results: { trialDir: string; nll: number | null; deltaNll: number | null; deltaK: number | null; aicDelta: number | null; bicDelta: number | null; favoured: boolean; hessianPositive: boolean | null; verdict: string }[]
         recommendation: string
         threshold: number
         error?: string
@@ -2442,22 +2525,30 @@ export function apply(ctx: Context) {
         for (const r of value.results) {
           const name = r.trialDir.split(/[\\/]/).pop() ?? r.trialDir
           const d = r.deltaNll === null ? '—' : `${r.deltaNll > 0 ? '+' : ''}${r.deltaNll.toFixed(2)}`
+          const sc = r.aicDelta === null ? '' : ` AICΔ=${r.aicDelta > 0 ? '+' : ''}${r.aicDelta.toFixed(1)}`
+          const scb = r.bicDelta === null ? '' : ` BICΔ=${r.bicDelta > 0 ? '+' : ''}${r.bicDelta.toFixed(1)}`
           lines.push(
-            `  ${name}: NLL=${r.nll?.toFixed(2) ?? '—'} ΔNLL=${d}${r.hessianPositive === false ? ' ⚠️Hessian 不正定' : ''} — ${r.verdict}`,
+            `  ${name}: NLL=${r.nll?.toFixed(2) ?? '—'} ΔNLL=${d}${sc}${scb}${r.favoured ? ' ✓' : ''}${r.hessianPositive === false ? ' ⚠️Hessian 不正定' : ''} — ${r.verdict}`,
           )
         }
         lines.push(`推荐: ${value.recommendation}`)
         return text(lines.join('\n'))
       },
     },
-    async execute(args: { baseIterDir: string; trialDirs: string[]; significanceThreshold?: number }) {
+    async execute(args: { baseIterDir: string; trialDirs: string[]; significanceThreshold?: number; dataEvents?: number }) {
       const threshold = args.significanceThreshold ?? 3.0
       const base = summarizeFitDir(args.baseIterDir)
       const baseNll = base.summary.bestNll
+      const baseK = freeParamCount(base.fitJson)
+      const n = args.dataEvents ?? null
       const results: {
         trialDir: string
         nll: number | null
         deltaNll: number | null
+        deltaK: number | null
+        aicDelta: number | null
+        bicDelta: number | null
+        favoured: boolean
         hessianPositive: boolean | null
         verdict: 'significant-improvement' | 'not-significant' | 'significant-worsening' | 'no-result'
       }[] = []
@@ -2469,7 +2560,22 @@ export function apply(ctx: Context) {
         if (delta !== null) {
           verdict = delta <= -threshold ? 'significant-improvement' : delta >= threshold ? 'significant-worsening' : 'not-significant'
         }
-        results.push({ trialDir: dir, nll, deltaNll: delta, hessianPositive: s.summary.positiveDefinite, verdict })
+        const mc = compareModels(
+          { nll: baseNll, k: baseK },
+          { nll, k: freeParamCount(s.fitJson) },
+          n,
+        )
+        results.push({
+          trialDir: dir,
+          nll,
+          deltaNll: delta,
+          deltaK: mc.deltaK,
+          aicDelta: mc.aicDelta,
+          bicDelta: mc.bicDelta,
+          favoured: mc.favoured,
+          hessianPositive: s.summary.positiveDefinite,
+          verdict,
+        })
       }
       results.sort((a, b) => {
         const an = a.deltaNll ?? Number.POSITIVE_INFINITY
@@ -2477,13 +2583,20 @@ export function apply(ctx: Context) {
         return an - bn
       })
       const best = results.find((r) => r.verdict === 'significant-improvement')
-      const recommendation = best !== undefined
-        ? `${best.trialDir.split(/[\\/]/).pop() ?? best.trialDir} 显著改进（ΔNLL ${best.deltaNll?.toFixed(2)}），建议晋级为正式迭代`
-        : results.some((r) => r.verdict === 'not-significant')
+      let recommendation: string
+      if (best !== undefined) {
+        if (best.bicDelta !== null && best.bicDelta > 0) {
+          recommendation = `${best.trialDir.split(/[\\/]/).pop() ?? best.trialDir} ΔNLL 显著但 BIC 劣化（+${best.bicDelta.toFixed(1)}）：复杂度惩罚超过改进，谨慎采纳`
+        } else {
+          recommendation = `${best.trialDir.split(/[\\/]/).pop() ?? best.trialDir} 显著改进（ΔNLL ${best.deltaNll?.toFixed(2)}${best.aicDelta !== null ? `, AICΔ=${best.aicDelta.toFixed(1)}` : ''}），建议晋级为正式迭代`
+        }
+      } else {
+        recommendation = results.some((r) => r.verdict === 'not-significant')
           ? '所有候选均未达到显著阈值 —— 保持当前模型或换一批候选'
           : results.some((r) => r.verdict === 'significant-worsening')
             ? '有候选显著变差 —— 不要采纳'
             : '没有可比较的结果（检查 trial 是否完成）'
+      }
       return { ok: true, baseNll, results, recommendation, threshold }
     },
   }))
@@ -2495,19 +2608,24 @@ export function apply(ctx: Context) {
 
   /** Best-effort max|pull| from the iteration's evaluate.json (either
    *  `<iter>/evaluate/evaluate.json` or `<iter>/results/evaluate/evaluate.json`). */
-  const readMaxPull = (iterDir: string): number | null => {
+  const readEvaluate = (iterDir: string): { maxPull: number | null; pullRegions: [number, number][] } => {
     for (const p of [`${iterDir}/evaluate/evaluate.json`, `${iterDir}/results/evaluate/evaluate.json`]) {
       if (!existsSync(p)) continue
       try {
         const ev = JSON.parse(readFileSync(p, 'utf8'))
         const worst = ev.worst_distributions as { max_abs_pull?: number }[] | undefined
         const pulls = (worst ?? []).map((w) => w.max_abs_pull ?? 0)
-        return pulls.length > 0 ? Math.max(...pulls) : null
+        const regions: [number, number][] = []
+        const dists = ev.distributions as Record<string, { pull_regions_over_3sigma?: [number, number][] }> | undefined
+        for (const d of Object.values(dists ?? {})) {
+          for (const r of d.pull_regions_over_3sigma ?? []) regions.push(r)
+        }
+        return { maxPull: pulls.length > 0 ? Math.max(...pulls) : null, pullRegions: regions }
       } catch {
-        return null
+        return { maxPull: null, pullRegions: [] }
       }
     }
-    return null
+    return { maxPull: null, pullRegions: [] }
   }
 
   /** Evaluate one iteration against the diary + objective (shared by loop tools). */
@@ -2518,7 +2636,7 @@ export function apply(ctx: Context) {
       const prev = previousDiaryNll(state.iterationsRoot, state.iter)
       return prev !== undefined ? nll - prev : null
     })() : null
-    const maxPull = readMaxPull(state.currentIterDir)
+    const { maxPull, pullRegions } = readEvaluate(state.currentIterDir)
     const verdict: LoopEval['verdict'] =
       deltaNll === null ? 'no-data' : deltaNll <= -state.objective.significanceThreshold ? 'significant-improvement' : 'not-significant'
     const evalResult: LoopEval = {
@@ -2529,6 +2647,7 @@ export function apply(ctx: Context) {
       maxPull,
       hessianPositive: summary.positiveDefinite,
       verdict,
+      pullRegions,
     }
     const c = convergenceVerdict(evalResult, state.objective, state.rounds)
     return { evalResult, converged: c.converged, reason: c.reason }
@@ -2602,6 +2721,16 @@ export function apply(ctx: Context) {
           converged: { type: 'boolean', required: true },
           reason: { type: 'string' },
           reportPath: { type: 'string' },
+          verification: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              passed: { type: 'boolean', required: true },
+              actual: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+              note: { type: 'string', required: true },
+            },
+            description: '上一轮预测的验证结果（模型应据此修正假设，并写入 auto_pwa_note）',
+          },
           error: { type: 'string' },
         },
       },
@@ -2615,6 +2744,7 @@ export function apply(ctx: Context) {
         converged: boolean
         reason?: string
         reportPath?: string
+        verification?: { passed: boolean; actual: number | null; note: string }
         error?: string
       }) => {
         if (!value.ok) return text(`loop 失败: ${value.error ?? '未知'}`)
@@ -2624,6 +2754,9 @@ export function apply(ctx: Context) {
           lines.push(
             `  评估: NLL=${e.nll?.toFixed(2) ?? '—'} ΔNLL=${e.deltaNll === null ? '—' : e.deltaNll.toFixed(2)} max|pull|=${e.maxPull?.toFixed(2) ?? '—'}${e.hessianPositive === false ? ' ⚠️Hessian 不正定' : ''}（${e.verdict}）`,
           )
+        }
+        if (value.verification !== undefined) {
+          lines.push(`  🔍 预测验证: ${value.verification.passed ? '✅ 成立' : '❌ 不成立'} — ${value.verification.note}`)
         }
         if (value.converged) {
           lines.push(`  ✅ 收敛: ${value.reason ?? ''}`)
@@ -2659,6 +2792,26 @@ export function apply(ctx: Context) {
         }
         const { evalResult, converged, reason } = evaluateIteration(state)
         state.lastEval = evalResult
+        // Verify the previous decision's prediction, if one is pending.
+        let verification: { passed: boolean; actual: number | null; note: string } | undefined
+        if (state.pendingPrediction !== undefined) {
+          verification = verifyPrediction(state.pendingPrediction.prediction, evalResult)
+          state.pendingPrediction = undefined
+          saveLoopState(state)
+        }
+        if (verification !== undefined) {
+          return {
+            ok: true,
+            phase: 'propose' as const,
+            iter: state.iter,
+            iterDir: state.currentIterDir,
+            rounds: state.rounds,
+            eval: evalResult,
+            converged: false,
+            reason,
+            verification,
+          }
+        }
         if (converged) {
           const { reportPath } = finalizeLoop(state, reason ?? '收敛判据满足')
           return {
@@ -2734,6 +2887,18 @@ export function apply(ctx: Context) {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
       action: { type: 'string', required: true, enum: ['iterate', 'rollback', 'converge'], description: '决策动作' },
       proposal: { ...proposalParam, description: 'action=iterate 时必填：要添加的共振态' },
+      hypothesis: { type: 'string', description: '本决策的物理假设（如 "f2(1270) 吸收 R_KK 1.2-1.35 GeV 的 pull"）——与 prediction 一起构成可检验的预测' },
+      prediction: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          metric: { type: 'string', required: true, enum: ['maxPull', 'deltaNll', 'regionPull'] },
+          region: { type: 'array', items: { type: 'number' }, description: 'regionPull 用：质量窗口 [lo, hi]' },
+          threshold: { type: 'number', required: true },
+          direction: { type: 'string', required: true, enum: ['below', 'above'] },
+        },
+        description: '可验证预测（下轮拟合后由 loop_next 自动验证）：如 {metric: maxPull, threshold: 3, direction: below} 表示"加后全局 max|pull| < 3"',
+      },
       reason: { type: 'string', description: 'rollback/converge 的原因说明（会写入日记/报告）' },
       fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
       plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
@@ -2780,6 +2945,8 @@ export function apply(ctx: Context) {
       iterationsRoot: string
       action: 'iterate' | 'rollback' | 'converge'
       proposal?: ResonanceProposal
+      hypothesis?: string
+      prediction?: Prediction
       reason?: string
       fitScriptPath?: string
       plotScriptPath?: string
@@ -2830,6 +2997,11 @@ export function apply(ctx: Context) {
           state.iter = started.iter
           state.rounds += 1
           state.phase = 'evaluate'
+          if (args.prediction !== undefined) {
+            state.pendingPrediction = { prediction: args.prediction, hypothesis: args.hypothesis }
+          } else {
+            state.pendingPrediction = undefined
+          }
           saveLoopState(state)
           return {
             ok: true,

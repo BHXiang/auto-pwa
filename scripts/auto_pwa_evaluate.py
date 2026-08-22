@@ -57,6 +57,63 @@ def hist_to_arrays(h) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return centers, contents, errors
 
 
+def legendre_moments(centers: np.ndarray, values: np.ndarray,
+                    max_l: int = 6) -> dict:
+    """Normalized Legendre moments M_L/M_0 of an angular distribution.
+
+    x = cos(theta) in [-1, 1]. For a spin-0 daughter pair (e.g. KK) the
+    angular distribution requires J >= L/2 for M_L to be nonzero, so a
+    data-vs-fit mismatch in M_L signals a missing/extra wave of that J.
+    Returns {L: M_L/M_0} for even L in 2..max_l."""
+    x = np.asarray(centers, dtype=float)
+    w = np.asarray(values, dtype=float)
+    m0 = float(np.sum(w))
+    if m0 <= 0 or len(x) < 3:
+        return {}
+    out: dict = {}
+    for L in range(2, max_l + 1, 2):
+        P = np.polynomial.legendre.legval(x, np.eye(L + 1)[L])
+        out[L] = round(float(np.sum(w * P) / m0), 4)
+    return out
+
+
+def analyze_2d_moments(prefix: str, d: uproot.ReadOnlyDirectory,
+                       meta: dict | None = None) -> dict | None:
+    """Mass-binned Legendre moments from a TH2 (mass x cosbeta) histogram.
+
+    The 2D Plot configs (e.g. expr: ["M([Kp,Km])", "CosAngle([Kp],[Kp,Km])"])
+    write hdata/hfit as TH2; every mass bin's cosbeta projection yields the
+    moment sequence M_L(m) — the "which L is missing at which mass" signal.
+    """
+    hdata = d["hdata"]
+    if not isinstance(hdata, uproot.behaviors.TH2.TH2) or "hfit" not in d:
+        return None
+    hfit = d["hfit"]
+    if not isinstance(hfit, uproot.behaviors.TH2.TH2):
+        return None
+    data2 = np.asarray(hdata.values(), dtype=float)
+    fit2 = np.asarray(hfit.values(), dtype=float)
+    x_edges = np.asarray(hdata.axis(0).edges())
+    y_edges = np.asarray(hdata.axis(1).edges())
+    x_centers = (x_edges[:-1] + x_edges[1:]) / 2
+    y_centers = (y_edges[:-1] + y_edges[1:]) / 2
+    Ls = (2, 4, 6)
+    moments: dict = {L: {"data": [], "fit": []} for L in Ls}
+    for ix in range(data2.shape[0]):
+        drow, frow = data2[ix], fit2[ix]
+        dm = legendre_moments(y_centers, drow, max_l=6)
+        fm = legendre_moments(y_centers, frow, max_l=6)
+        for L in Ls:
+            moments[L]["data"].append(dm.get(L))
+            moments[L]["fit"].append(fm.get(L))
+    return {
+        "kind": "2d-moments",
+        "massBins": [round(float(x), 4) for x in x_centers],
+        "moments": moments,
+        "meta": meta,
+    }
+
+
 def analyze_1d(prefix: str, d: uproot.ReadOnlyDirectory, out: dict,
                meta: dict | None = None) -> dict | None:
     """Pull statistics for one mass/cosbeta distribution."""
@@ -84,6 +141,18 @@ def analyze_1d(prefix: str, d: uproot.ReadOnlyDirectory, out: dict,
                 regions.append([round(float(centers[start]), 3), round(float(centers[prev]), 3)])
                 start = prev = int(i)
         regions.append([round(float(centers[start]), 3), round(float(centers[prev]), 3)])
+    # Angular distributions (cosbeta/angle): normalized Legendre moments.
+    is_angular = (meta or {}).get("kind") in ("cosbeta", "angle") or "cosbeta" in prefix.lower() or "angle" in prefix.lower()
+    moments: dict = {}
+    if is_angular:
+        moments = legendre_moments(centers, data)
+        fit_moments = legendre_moments(centers, fit)
+        for L in list(moments):
+            moments[L] = {
+                "data": moments[L],
+                "fit": fit_moments.get(L),
+                "delta": round(moments[L] - fit_moments.get(L, moments[L]), 4),
+            }
     stat = {
         "chi2": round(chi2, 1),
         "ndf": ndf,
@@ -98,6 +167,7 @@ def analyze_1d(prefix: str, d: uproot.ReadOnlyDirectory, out: dict,
         ),
         "pull_regions_over_3sigma": regions,
         "bin_width": round(float(centers[1] - centers[0]), 4) if len(centers) > 1 else None,
+        **({"moments": moments} if moments else {}),
         "range": [round(float(centers[0]), 3), round(float(centers[-1]), 3)] if len(centers) else None,
     }
     if meta:
@@ -195,7 +265,12 @@ def main() -> int:
         has_1d = "hdata" in obj and isinstance(obj["hdata"]._file if hasattr(obj["hdata"], "_file") else obj["hdata"], uproot.behaviors.TH1.TH1)
         kind = "1d" if "hdata" in obj and "TH1" in str(type(obj["hdata"])) else ("2d" if "hdata" in obj else "other")
         stat = analyze_1d(name, obj, result["distributions"], plot_meta.get(name))
-        if stat is not None:
+        if stat is None:
+            m2 = analyze_2d_moments(name, obj, plot_meta.get(name))
+            if m2 is not None:
+                result["distributions"][name] = m2
+                stat = m2
+        if stat is not None and "moments" not in stat:
             plot_pull(name, obj, out_dir)
             plot_fit(name, obj, out_dir)
         if "hdata" in obj:
@@ -203,7 +278,7 @@ def main() -> int:
 
     # Summarize the worst distributions.
     dists = result["distributions"]
-    ranked = sorted(dists.items(), key=lambda kv: -(kv[1]["max_abs_pull"] if kv[1]["max_abs_pull"] is not None else 0))
+    ranked = sorted(dists.items(), key=lambda kv: -(kv[1].get("max_abs_pull") if kv[1].get("max_abs_pull") is not None else 0))
     result["worst_distributions"] = [
         {"name": n, "max_abs_pull": s["max_abs_pull"], "chi2_ndf": s["chi2_ndf"], "bins_over_5sigma": s["bins_over_5sigma"],
          "meta": s.get("meta")}

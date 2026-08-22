@@ -99,7 +99,8 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
   5. **`auto_pwa_wave_view` 画分波组合**：选中几个波（如 pull 区的候选）→ 看它们的合成分布 vs 数据谱——"缺什么"的直接检验；`eventWeights=true` 时输出选中波对干涉分布（**大文件，非必要不用**，用完自动删）
   6. `auto_pwa_suggest` 按 pull 区列出候选；`lookup`/`decay_check`/`jpc_check` 复核
   7. `auto_pwa_loop_next` 判收敛；未收敛 → `auto_pwa_loop_decide iterate`（或先 `try_candidates` + `compare` 探索再晋级）
-  8. 拟合完成通知后回到 1；`auto_pwa_note` 写审计记录（**includeTokens: true** 记本轮 token 消耗；结论 + 下一步计划）
+  8. **假设-预测-验证**：`auto_pwa_loop_decide` 提交决策时带 `hypothesis`（物理假设）与 `prediction`（结构化可验证预测，如 `{metric: maxPull, threshold: 3, direction: below}` 或 regionPull 指定质量窗）。下一轮 `auto_pwa_loop_next` 评估后**自动验证并返回 🔍 结果**（成立/不成立 + 实际值）——预测被证伪 = 假设错了，换方向；预测成立 = 归因正确，继续深入。
+  9. 拟合完成通知后回到 1；`auto_pwa_note` 写审计记录（**includeTokens: true** 记本轮 token 消耗；结论 + hypothesis/prediction/verification + 下一步计划）
 - 收敛（loop 判定 done）或轮数耗尽 → `update_goal complete`，读 `FINAL-REPORT.md` 给用户总结。
 - `auto_pwa_note` / `auto_pwa_history` 的角色：**审计日志 + 崩溃/中断恢复**（新会话里用 `auto_pwa_history` + `auto_pwa_loop_status` 恢复上下文，含每轮 token 成本）+ 用户阅读（HTML 日记）。决策主通道始终是连续会话上下文。
 
@@ -116,6 +117,8 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - **撞边界**：float 参数贴 range 端点 = 数据不支持该自由度的信号（`auto_pwa_diagnose` 直接给建议）。
 - **份额不显著**：`fitFractions` 中 fraction < 2σ（fraction/error < 2）的分波对拟合无贡献，删除后 ΔNLL 预计 < 3。
 - **强干涉对**：`interference.topInterference` 中 |值| > 20% 的波对通常需要独立耦合参数。
+- **勒让德矩（moments）**：`auto_pwa_evaluate` 对角分布输出 M_L/M_0（L=2,4,6，数据 vs 拟合）。自旋 0 介子对（如 KK）需 J ≥ L/2 才有 M_L——数据矩高于拟合 = 缺该 J 的波；拟合矩高于数据 = 该波可能多余。Δ 最大的 L 就是"下一步该动哪个 J"的直接信号。
+- **AIC/BIC（模型选择）**：`auto_pwa_compare` 输出 ΔAIC = 2Δk + 2ΔNLL、ΔBIC = Δk·ln(N) + 2ΔNLL（ΔNLL<0 为改进）。即使 ΔNLL 显著，若 ΔBIC > 0 = 复杂度惩罚超过改进，谨慎采纳。
 - 组内成员过多（>6）→ 过拟合风险，优先替换而非追加（validate 会给 crowded-group warning）。
 - 迭代记录写进 `note.md` 和 `SUMMARY.jsonl`，供下一轮参考。
 

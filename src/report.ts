@@ -49,6 +49,24 @@ export interface IterationRecord {
   evidence?: string
   /** Token usage of this round (token-meter delta since the previous note). */
   tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
+  /** Hypothesis of THIS round (what the change should achieve, in physics
+   * terms). Written by auto_pwa_note / auto_pwa_loop_decide. */
+  hypothesis?: string
+  /** Structured, checkable prediction of the hypothesis (verified by the
+   * loop after the next fit completes). */
+  prediction?: {
+    metric: 'maxPull' | 'deltaNll' | 'regionPull'
+    region?: [number, number]
+    threshold: number
+    direction: 'below' | 'above'
+  }
+  /** Verification result of the PREVIOUS round's prediction (filled by
+   * auto_pwa_loop_next when the new fit is evaluated). */
+  verification?: {
+    passed: boolean
+    actual: number | null
+    note: string
+  }
 }
 
 // ---------------------------------------------------------------------------

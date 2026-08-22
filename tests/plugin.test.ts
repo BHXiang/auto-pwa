@@ -655,3 +655,35 @@ print('ok', len(meta))
     expect(out).toBe('ok 3')
   })
 })
+
+// ---------------------------------------------------------------------------
+// evaluate.py moments: real weight_best.root cosbeta distributions
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!HAS_UPROOT || !existsSync(WAVE_ROOT) || !existsSync(WAVE_CFG))('evaluate.py Legendre moments', () => {
+  it('computes moments for cosbeta distributions in a real fit output', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-mom-'))
+    try {
+      const r = spawnSync(PY, [
+        join(process.cwd(), 'scripts/auto_pwa_evaluate.py'),
+        WAVE_ROOT,
+        join(dir, 'eval'),
+        WAVE_CFG,
+      ], { encoding: 'utf8', timeout: 120_000, env: { ...process.env } })
+      expect(r.status).toBe(0)
+      const ev = JSON.parse(readFileSyncSync(join(dir, 'eval', 'evaluate.json'), 'utf8'))
+      const dists = ev.distributions as Record<string, { moments?: Record<string, { data?: number; fit?: number; delta?: number }> }>
+      const cos = Object.entries(dists).find(([, d]) => d.moments !== undefined)
+      expect(cos).toBeDefined()
+      const m = cos![1].moments!
+      expect(Object.keys(m)).toContain('2')
+      for (const L of ['2', '4', '6']) {
+        expect(typeof m[L]!.data).toBe('number')
+        expect(typeof m[L]!.fit).toBe('number')
+        expect(Math.abs(m[L]!.data!)).toBeLessThan(1)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

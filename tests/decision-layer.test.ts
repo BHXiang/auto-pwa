@@ -7,6 +7,8 @@ import { suggestCandidates, type EvaluateData } from '../src/suggest.js'
 import { diagnoseFit } from '../src/diagnose.js'
 import { convergenceVerdict, initLoopState, loadLoopState, writeFinalReport, DEFAULT_OBJECTIVE } from '../src/loop-state.js'
 import { IterationLog } from '../src/iteration-log.js'
+import { freeParamCount, compareModels } from '../src/model-selection.js'
+import { verifyPrediction } from '../src/loop-state.js'
 import { defaultDb } from '../src/db.js'
 import { parseConfig } from '../src/config-edit.js'
 import type { FitJsonView } from '../src/fit-summary.js'
@@ -255,5 +257,66 @@ describe('loop-state (convergence / persistence / report)', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// model selection (AIC/BIC) + prediction verification
+// ---------------------------------------------------------------------------
+
+describe('model selection (AIC/BIC)', () => {
+
+  it('counts free parameters: 2 per free coupling (minus reference) + resonance params', () => {
+    expect(freeParamCount({ status: 'ok', fit: { nCouplingFree: 3, nResFree: 4 } })).toBe(2 * 2 + 4)
+    expect(freeParamCount({ status: 'ok', fit: {} })).toBeUndefined()
+  })
+
+  it('ΔAIC/ΔBIC penalize extra complexity despite ΔNLL gains', () => {
+    // trial: ΔNLL = -4 with 2 extra parameters, N = 1e5.
+    const mc = compareModels({ nll: 100, k: 10 }, { nll: 96, k: 12 }, 100_000)
+    expect(mc.deltaNll).toBe(-4)
+    expect(mc.deltaK).toBe(2)
+    // ΔAIC = 2·2 + 2·(-4) = -4: the -4 NLL gain beats the 2-parameter penalty.
+    expect(mc.aicDelta).toBeCloseTo(2 * 2 + 2 * (-4), 6)
+    // ΔBIC = 2·ln(1e5) + 2·(-4) = 15.0 > 0: BIC still disfavours (needs ΔNLL < -ln N).
+    expect(mc.bicDelta).toBeCloseTo(2 * Math.log(100_000) + 2 * (-4), 6)
+    expect(mc.favoured).toBe(false)
+    // No N -> AIC only; AIC negative means favoured.
+    const mc2 = compareModels({ nll: 100, k: 10 }, { nll: 96, k: 12 }, null)
+    expect(mc2.bicDelta).toBeNull()
+    expect(mc2.aicDelta).toBe(-4)
+    expect(mc2.favoured).toBe(true)
+    // Big improvement: favoured.
+    const mc3 = compareModels({ nll: 100, k: 10 }, { nll: 85, k: 12 }, 100_000)
+    expect(mc3.favoured).toBe(true)
+  })
+})
+
+describe('prediction verification', () => {
+
+  it('maxPull prediction passes when the global pull drops below threshold', () => {
+    const r = verifyPrediction({ metric: 'maxPull', threshold: 3, direction: 'below' }, { maxPull: 2.1, deltaNll: -1, pullRegions: [] })
+    expect(r.passed).toBe(true)
+    expect(r.actual).toBe(2.1)
+    const r2 = verifyPrediction({ metric: 'maxPull', threshold: 3, direction: 'below' }, { maxPull: 4.7, deltaNll: -1, pullRegions: [] })
+    expect(r2.passed).toBe(false)
+  })
+
+  it('deltaNll prediction verifies improvement direction', () => {
+    const r = verifyPrediction({ metric: 'deltaNll', threshold: -3, direction: 'below' }, { maxPull: 2, deltaNll: -5, pullRegions: [] })
+    expect(r.passed).toBe(true)
+  })
+
+  it('regionPull prediction checks the mass window is clean', () => {
+    const r = verifyPrediction(
+      { metric: 'regionPull', region: [1.2, 1.35], threshold: 3, direction: 'below' },
+      { maxPull: 2, deltaNll: -1, pullRegions: [[1.25, 1.32]] },
+    )
+    expect(r.passed).toBe(false) // region still has a >3σ band
+    const r2 = verifyPrediction(
+      { metric: 'regionPull', region: [1.2, 1.35], threshold: 3, direction: 'below' },
+      { maxPull: 2, deltaNll: -1, pullRegions: [[1.5, 1.6]] },
+    )
+    expect(r2.passed).toBe(true)
   })
 })

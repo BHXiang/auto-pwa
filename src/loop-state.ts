@@ -42,6 +42,68 @@ export interface LoopEval {
   maxPull: number | null
   hessianPositive: boolean | null
   verdict: 'significant-improvement' | 'not-significant' | 'no-data'
+  /** pull>3σ regions of the worst distributions (for regionPull checks). */
+  pullRegions?: [number, number][]
+}
+
+/** A structured, checkable prediction attached to an iteration decision. */
+export interface Prediction {
+  metric: 'maxPull' | 'deltaNll' | 'regionPull'
+  /** Region for metric=regionPull (mass window of the pull>3σ check). */
+  region?: [number, number]
+  threshold: number
+  direction: 'below' | 'above'
+}
+
+export interface VerificationResult {
+  passed: boolean
+  actual: number | null
+  note: string
+}
+
+/**
+ * Verify a prediction against the evaluated fit. Semantics:
+ *   maxPull     — global max|pull| vs threshold (below/above)
+ *   deltaNll    — ΔNLL vs threshold (below = improved enough, above = not)
+ *   regionPull  — whether any pull>3σ region intersects [region] (prediction
+ *                 "below" = the region must be clean)
+ */
+export function verifyPrediction(
+  pred: Prediction,
+  evalData: { maxPull: number | null; deltaNll: number | null; pullRegions?: [number, number][] },
+): VerificationResult {
+  if (pred.metric === 'maxPull') {
+    const actual = evalData.maxPull
+    if (actual === null) return { passed: false, actual: null, note: 'maxPull 未知（无 evaluate.json）' }
+    const passed = pred.direction === 'below' ? actual < pred.threshold : actual > pred.threshold
+    return {
+      passed,
+      actual,
+      note: `max|pull| = ${actual.toFixed(2)} ${passed ? '满足' : '未满足'} 预测（${pred.direction} ${pred.threshold}）`,
+    }
+  }
+  if (pred.metric === 'deltaNll') {
+    const actual = evalData.deltaNll
+    if (actual === null) return { passed: false, actual: null, note: 'ΔNLL 未知（无上一轮日记）' }
+    const passed = pred.direction === 'below' ? actual < pred.threshold : actual > pred.threshold
+    return {
+      passed,
+      actual,
+      note: `ΔNLL = ${actual.toFixed(2)} ${passed ? '满足' : '未满足'} 预测（${pred.direction} ${pred.threshold}）`,
+    }
+  }
+  // regionPull
+  const region = pred.region
+  const regions = evalData.pullRegions ?? []
+  if (region === undefined) return { passed: false, actual: null, note: 'regionPull 需要 region' }
+  const hit = regions.some((r) => r[0] <= region[1] && r[1] >= region[0])
+  const actual = hit ? 1 : 0
+  const passed = pred.direction === 'below' ? !hit : hit
+  return {
+    passed,
+    actual,
+    note: `${hit ? '区域仍有' : '区域无'} pull>3σ 偏差 ${passed ? '满足' : '未满足'} 预测（${pred.direction} ${pred.threshold}）`,
+  }
 }
 
 export interface LoopState {
@@ -57,6 +119,9 @@ export interface LoopState {
   rounds: number
   objective: LoopObjective
   lastEval?: LoopEval
+  /** Prediction pending verification (attached by loop_decide, verified by
+   * the next loop_next evaluation). */
+  pendingPrediction?: { prediction: Prediction; hypothesis?: string }
   finalized?: {
     bestIter: number
     bestNll: number | null
