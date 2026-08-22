@@ -119,6 +119,8 @@ export function rebuildViews(
       const tex = spec.get('tex')
       if (asStr(tex) !== undefined) resonance.tex = tex as string
       else if (asArr(tex) !== undefined) resonance.tex = tex as string[]
+      const reference = spec.get('reference')
+      if (asStr(reference) !== undefined) resonance.reference = reference as string
       const channels = asArr(spec.get('channels'))
       if (channels !== undefined) {
         resonance.channels = channels
@@ -563,9 +565,16 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
       spec.free_range = proposal.freeRange.map(([lo, hi]) => [lo, hi])
     }
     if (proposal.channels !== undefined) spec.channels = proposal.channels
+    if (proposal.reference !== undefined && proposal.reference.trim() !== '') {
+      spec.reference = proposal.reference.trim()
+    }
     spec.tex = [proposal.tex ?? `\\mathrm{${proposal.name}}`]
     resRaw.set(proposal.name, spec)
-    changed.push(`Resonances.${proposal.name} = ${proposal.model} ${JSON.stringify(proposal.parameters)}${proposal.free ? ` free=${JSON.stringify(proposal.free)}` : ''}`)
+    changed.push(
+      `Resonances.${proposal.name} = ${proposal.model} ${JSON.stringify(proposal.parameters)}` +
+        `${proposal.free ? ` free=${JSON.stringify(proposal.free)}` : ''}` +
+        `${proposal.reference ? ` reference="${proposal.reference}"` : ''}`,
+    )
   } else {
     changed.push(`Resonances.${proposal.name}（已定义，仅挂链）`)
   }

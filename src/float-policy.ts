@@ -29,6 +29,9 @@ export interface FreePolicyOptions {
   widthMarginFraction?: number
   /** Kinematic threshold m_A - m_B for the chain, GeV. */
   threshold?: number
+  /** Center windows on the proposal's parameters instead of the PDG values
+   * (true when the proposal carries a reference/provenance). Default false. */
+  centerOnProposal?: boolean
 }
 
 /** Pure decision function; returns a suggestion plus its rationale. */
@@ -44,6 +47,7 @@ export function suggestFree(
     wideWidthThreshold = 0.2,
     widthMarginFraction = 0.5,
     threshold,
+    centerOnProposal = false,
   } = options
 
   if (proposal.model === 'ONE') {
@@ -55,7 +59,9 @@ export function suggestFree(
 
   const mass = proposal.parameters[0]
   const width = proposal.parameters[1]
-  const pdgMass = pdg?.mass ?? mass
+  // With a reference (provenance), windows center on the proposal's own
+  // parameters — they follow the cited experiment, not the PDG average.
+  const pdgMass = centerOnProposal ? mass : pdg?.mass ?? mass
   const pdgWidth = pdg?.width
 
   const widthIsKnown = pdgWidth !== undefined && pdgWidth > 0
@@ -87,8 +93,9 @@ export function suggestFree(
   const floatWidth = isWide || nearThreshold
   if (floatWidth && widthIsKnown) {
     const wMargin = Math.max(widthMarginFraction * pdgWidth, 0.02)
-    const widthLo = Math.max(pdgWidth - wMargin, 0.001)
-    const widthHi = pdgWidth + wMargin
+    const widthCenter = centerOnProposal && width !== undefined ? width : pdgWidth
+    const widthLo = Math.max(widthCenter - wMargin, 0.001)
+    const widthHi = widthCenter + wMargin
     if (nearThreshold && threshold !== undefined) {
       // Off-shell-prone: allow the mass window to reach toward the threshold.
       massHi = Math.max(massHi, threshold - 0.02)

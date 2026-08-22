@@ -83,8 +83,10 @@ export class LocalFitRunner {
   /**
    * Start a fit in `iterDir` (must contain the fit script). Returns a
    * synchronous "running" status; completion arrives via status()/await.
+   * `scriptArgs` are appended after the script name (e.g. aifit's
+   * --runs/--max-iter for short trial fits).
    */
-  submit(iterDir: string, options: { timeoutMs?: number } = {}): FitStatus {
+  submit(iterDir: string, options: { timeoutMs?: number; scriptArgs?: string[] } = {}): FitStatus {
     const fitScript = this.cfg.fitScript ?? 'fit.py'
     const scriptPath = join(iterDir, fitScript)
     if (!existsSync(scriptPath)) {
@@ -113,7 +115,7 @@ export class LocalFitRunner {
     // the child inherit the ambient env (a conda-activated env supplies its
     // own loader paths).
     const childEnv = this.cfg.ldLibraryPath !== '' ? { ...process.env, LD_LIBRARY_PATH: this.cfg.ldLibraryPath } : { ...process.env }
-    const child = spawn(this.cfg.python, [fitScript], {
+    const child = spawn(this.cfg.python, [fitScript, ...(options.scriptArgs ?? [])], {
       cwd: iterDir,
       env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],

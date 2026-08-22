@@ -40,7 +40,7 @@ export const FIT_OUTPUT_LIMIT_BYTES = 32 * 1024
 
 /** The runner surface the provider needs (LocalFitRunner satisfies it; tests inject fakes). */
 export interface FitSpawner {
-  submit(iterDir: string, options?: { timeoutMs?: number }): FitStatus
+  submit(iterDir: string, options?: { timeoutMs?: number; scriptArgs?: string[] }): FitStatus
   settled(jobId: string): Promise<FitStatus>
   cancel(jobId: string): boolean
 }
@@ -88,6 +88,7 @@ export class PwaFitLocalService extends FitService {
   private spawnFit(request: FitRequest): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
     const status = this.runner.submit(request.iterDir, {
       timeoutMs: request.timeoutMin !== undefined ? request.timeoutMin * 60_000 : undefined,
+      scriptArgs: request.scriptArgs,
     })
     const jobId = status.jobId
     const done = this.runner.settled(jobId).then(

@@ -6,9 +6,11 @@ sqlite) merged with the curated seed table.
 
 Per existing entry: name is converted to the PDG spelling (f(0)(1500) ->
 f_0(1500), K* -> K^*), queried via PdgApi; hits update mass/width AND add
-mass_error/width_error (drives tolerance checks and float-policy ranges) and
-J/P from the sqlite quantum columns. Unmatched entries keep their current
-values (status stays "seed"); matched become status "pdg".
+mass_error/width_error (drives tolerance checks and float-policy ranges),
+J/P from the sqlite quantum columns, and the newest individual MASS
+measurements (value/errors/stat/syst/used_in_average + DOI/Inspire refs,
+see extract_measurements). Unmatched entries keep their current values
+(status stays "seed"); matched become status "pdg".
 """
 from __future__ import annotations
 
@@ -76,6 +78,61 @@ def quantum_c(name: str) -> int | None:
         con.close()
 
 
+def extract_measurements(particle, max_n: int = 6) -> list[dict]:
+    """Individual MASS measurements (newest first), converted to GeV.
+
+    PdgParticle.mass_measurements() yields one PdgMeasurement per experiment;
+    each carries technique/comment/reference (DOI, Inspire ID, year) and a
+    PdgValue with value/errors (stat & syst separated) plus used_in_average.
+    Values come in MeV from the database; GeV is the plugin convention.
+    """
+    out: list[dict] = []
+    try:
+        for m in particle.mass_measurements():
+            try:
+                v = m.get_value()
+            except Exception:
+                continue
+            value = getattr(v, "value", None)
+            if value is None:
+                continue
+            unit = getattr(v, "unit_text", "") or ""
+            scale = 0.001 if "MeV" in unit else 1.0
+            ref = getattr(m, "reference", None)
+            year = None
+            if ref is not None:
+                try:
+                    year = int(getattr(ref, "publication_year", None) or 0) or None
+                except (TypeError, ValueError):
+                    year = None
+            entry: dict = {
+                "year": year,
+                "publication": getattr(ref, "publication_name", None) if ref else None,
+                "doi": getattr(ref, "doi", None) if ref else None,
+                "inspireId": getattr(ref, "inspire_id", None) if ref else None,
+                "technique": getattr(m, "technique", None) or None,
+                "comment": (getattr(m, "comment", None) or "")[:80] or None,
+                "value": round(float(value) * scale, 6),
+            }
+            for src, dst in [
+                ("error_positive", "errorPositive"),
+                ("error_negative", "errorNegative"),
+                ("stat_error_positive", "statError"),
+                ("syst_error_positive", "systError"),
+            ]:
+                raw = getattr(v, src, None)
+                if raw is not None:
+                    entry[dst] = round(float(raw) * scale, 6)
+            entry["usedInAverage"] = bool(getattr(v, "used_in_average", False))
+            out.append({k: x for k, x in entry.items() if x is not None})
+            if len(out) >= max_n:
+                break
+    except Exception:
+        # Measurements are enrichment, never a hard failure.
+        pass
+    return out
+
+
 def main() -> int:
     db_url = f"sqlite:///{DB}"
     api = PdgApi(db_url)
@@ -121,11 +178,14 @@ def main() -> int:
             e["c"] = c
         else:
             e.pop("c", None)
+        ms = extract_measurements(hit)
+        if ms:
+            e["measurements"] = ms
         e["status"] = "pdg"
         n_hit += 1
 
     out = {
-        "schemaVersion": "0.3.0",
+        "schemaVersion": "0.4.0",
         "source": "pdg-2026 official package (fetch_pdg.py)",
         "resonances": seed,
     }

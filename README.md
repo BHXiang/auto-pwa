@@ -37,39 +37,54 @@ patch 挂载四个插件文件（服务 Provider + 硬门禁 + 斜杠命令；`p
 | `plugin/pwa-fit-local.ts` | 本地 Provider：拟合注册为 DSH 后台任务（`ctpwa-N`，owner 围栏）；完成自动通知代理进入下一轮 |
 | `plugin/pwa-guard.ts` | 单调 deny 门禁：直接 `write`/`edit`/bash 写 `config.yml` 一律拦截（必须走 `auto_pwa_edit_config`） |
 | `plugin/pwa-commands.ts` | `/pwa-status [<iterationsRoot>]` — 实时后台任务 + 迭代日记摘要 |
-| `plugin/auto-pwa.ts` | Consumer：十四个 `auto_pwa_*` 工具；run_fit/fit_status 走 `ctx.pwaFit`；大输出 spill 进 `ctx.spillStore`；`auto_pwa_note` 记录每轮 token 消耗 |
+| `plugin/auto-pwa.ts` | Consumer：二十一个 `auto_pwa_*` 工具；run_fit/fit_status 走 `ctx.pwaFit`；大输出 spill 进 `ctx.spillStore`；`auto_pwa_note` 记录每轮 token 消耗 |
 
 ## 工具
 
-| 工具 | 用途 |
-|---|---|
-| `auto_pwa_lookup` | 查询 PDG-2026 共振态表（名称/J^P/J^PC/质量区间/衰变末态，含不确定度与 C 宇称） |
-| `auto_pwa_decay_check` | A → R + B 允许的中间态 J^P（角动量+宇称守恒），阈值以下候选 |
-| `auto_pwa_jpc_check` | **两顶点 J^PC 检查**：衰变顶点 J^PC 集（ComSL 一致，含全同选择定则）∩ 产生顶点 J^P 与 C 守恒，逐中间态输出 + 按 J^PC 过滤的 PDG 候选 |
-| `auto_pwa_config_view` | config.yml 只读 JSON 视图（粒子/链+衰变步/共振态/运动学/Constraints + validateConfig + PDG 交叉引用） |
-| `auto_pwa_validate_add` | "添加共振态"只读门禁（PDG 依据、JPC、阈值、衰变顶点 J^P、C 守恒、全同选择定则、重复、free 结构） |
-| `auto_pwa_edit_config` | 强约束 config.yml 编辑：校验 → 结构化修改 → 渲染 → 原子写（+ .bak） |
-| `auto_pwa_iterate` | 一轮迭代：校验 → 新建迭代目录（Data 路径绝对化）→ 写 config → 提交拟合 |
-| `auto_pwa_round` | **主路径**：评估上一轮（NLL/ΔNLL/最差 pull/收敛提示）+ 迭代，一次调用完成 |
-| `auto_pwa_run_fit` / `auto_pwa_fit_status` | 提交/查询 ctpwa 拟合（DSH 后台任务 `ctpwa-N`，完成自动通知；无 GPU 快速失败） |
-| `auto_pwa_evaluate` | weight_best.root → 数值诊断（chi2/ndf、pull 区域、分波份额）+ PNG |
-| `auto_pwa_iter_start` | 创建 `iterations/iter-N/`（config 副本 + 脚本软链） |
-| `auto_pwa_note` / `auto_pwa_history` | 追加/读取迭代日记（SUMMARY.jsonl + 渲染 HTML） |
+| 工具 | 用途 | 层 |
+|---|---|---|
+| `auto_pwa_lookup` | 查询 PDG-2026 共振态表（名称/J^P/J^PC/质量区间/衰变末态，含不确定度与 C 宇称 + **单实验测量历史**：最近 8 条，含 stat/syst 误差、DOI、入平均标记） | 决策·参考 |
+| `auto_pwa_decay_check` | A → R + B 允许的中间态 J^P（角动量+宇称守恒），阈值以下候选 | 决策·参考 |
+| `auto_pwa_jpc_check` | **两顶点 J^PC 检查**：衰变顶点 J^PC 集（ComSL 一致，含全同选择定则）∩ 产生顶点 J^P 与 C 守恒，逐中间态输出 + 按 J^PC 过滤的 PDG 候选（与写入门禁**同源**） | 决策·参考 |
+| `auto_pwa_config_view` | config.yml 只读 JSON 视图（粒子/链+衰变步/共振态/运动学/Constraints + validateConfig + PDG 交叉引用） | 决策·参考 |
+| `auto_pwa_suggest` | **候选发现**：pull>3σ 质量区 × 允许 J^PC → 按质量对齐度排序的 PDG 候选（含阈值余量） | 决策·发现 |
+| `auto_pwa_diagnose` | **拟合诊断**：fit.json 事实 → 可行动假设（撞边界/份额不显著/强干涉/Hessian） | 决策·诊断 |
+| `auto_pwa_compare` | 基座 vs 候选 trial 的 ΔNLL 显著性裁决（默认阈值 3，2 自由度），推荐晋级者 | 决策·裁决 |
+| `auto_pwa_validate_add` | "添加共振态"只读门禁（PDG 依据、JPC、阈值、衰变顶点 J^P、C 守恒、全同选择定则、重复、free 结构） | 执行·门禁 |
+| `auto_pwa_edit_config` | 强约束 config.yml 编辑：校验 → 结构化修改 → **写前总闸（全文 validateConfig + 交叉引用）** → 原子写（+ .bak） | 执行 |
+| `auto_pwa_round` | 一轮迭代：评估上一轮（NLL/ΔNLL/最差 pull/收敛提示）+ 迭代，一次调用完成 | 执行 |
+| `auto_pwa_iter_start` | 创建 `iterations/iter-N/`（config 副本 + 脚本软链；Data 路径绝对化告警） | 执行 |
+| `auto_pwa_run_fit` / `auto_pwa_fit_status` | 提交/查询 ctpwa 拟合（DSH 后台任务 `ctpwa-N`，完成自动通知；无 GPU 快速失败） | 执行 |
+| `auto_pwa_try_candidates` | **并行候选短拟合**：基座上试 2–5 个候选（`_trials/` 目录，`--runs 1 --max-iter 500`），门禁与正式迭代一致 | 执行·探索 |
+| `auto_pwa_note` / `auto_pwa_history` | 追加/读取迭代日记（SUMMARY.jsonl + 渲染 HTML；含每轮 token 成本） | 执行·审计 |
+| `auto_pwa_loop_next` / `auto_pwa_loop_status` / `auto_pwa_loop_decide` | **循环状态机**：评估→收敛判定（pull/ΔNLL/预算）→ FINAL-REPORT.md；决策落盘（iterate/rollback/converge）；状态持久化 `.loop-state.json` 重启可续 | 执行·自动化 |
 
 ## 迭代闭环
 
 ```
-auto_pwa_round（评估 + 决策 + 提交）
+auto_pwa_loop_next（评估 + 收敛判定）
+   └─> 未收敛 → auto_pwa_suggest / auto_pwa_diagnose（决策输入）
+   └─> auto_pwa_try_candidates + auto_pwa_compare（并行探索，最优晋级）
+   └─> auto_pwa_loop_decide iterate（验证 + 建轮 + 写 config + 提交拟合）
    └─> 拟合后台运行（RTX 级 GPU 约 8 分钟；DSH 完成通知自动送达）
-   └─> 下一轮 auto_pwa_round 评估结果，模型决定下一个提案
-   └─> 收敛判据：max|pull| < 5 且 |ΔNLL| < 10
+   └─> 收敛 → FINAL-REPORT.md + phase done
 ```
 
 用同会话 goal 驱动自动多轮迭代（`create_goal` + 自动续回合；拟合完成通知会唤醒/注入下一轮评估）。
 
+## 出处（reference）机制：参数不跟 PDG 平均
+
+真实分波分析中，某些共振态参数来自**最新实验结果**而非 PDG 平均值（或该态尚未被 PDG 收录）。提案带 `reference` 字段（DOI 或论文名）即声明出处：
+
+- **质量/J^P 与 PDG 平均的偏离**：从硬错误降为警告（`mass-mismatch`/`jpc-mismatch` 豁免；`not-on-pdg` 对未收录态放行）——记录 `jpc-deviates-with-reference` / `not-on-pdg-with-reference` 警告
+- **物理门禁绝不豁免**：运动学阈值、衰变顶点 J^P、C 守恒照常强制
+- **DOI 交叉核对**：reference 命中 `pdg.json` 里该态的单实验测量时，输出 `reference-measurement-check` 警告（测量值 vs 提案值偏差）；未命中给 `reference-not-found`
+- **随 config 继承**：reference 写入 `config.yml` 的 `Resonances.<name>.reference`，随迭代复制，`auto_pwa_config_view` 可见
+- **数据来源**：`data/pdg.json` 的 `measurements[]` 由 `scripts/fetch_pdg.py` 从官方 pdg 包提取（单实验值 + stat/syst 误差 + DOI/Inspire 引用，最近 6 条/态，137/200 态已覆盖）；重跑 `npm run fetch:pdg` 可刷新
+
 ## 环境配置（可选，开箱即用）
 
-所有机器相关路径都通过环境变量覆盖；**默认值可移植**——拟合驱动默认用插件自带的 `scripts/aifit.py`，python 走 PATH，不注入 LD_LIBRARY_PATH（conda 激活的 ctpwa 环境自带）：
+所有机器相关路径都通过环境变量覆盖；**默认值可移植**——拟合驱动默认用插件自带的 `scripts/aifit.py`，python 走 PATH：
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
@@ -102,7 +117,7 @@ python aifit.py --interference results/weight_best.root --json results/interfere
 
 ## 开发
 
-- 纯核心无环境依赖、单测覆盖（113 个测试）：`npm test`。
+- 纯核心无环境依赖、单测覆盖（123 个测试）：`npm test`。
 - 插件导入 `@deepseek-ai/dsh-tools` / `@deepseek-ai/cordis` / `@deepseek-ai/dsh-jobs`；测试解析 **vendored stubs**（`vendor/dsh/`），无需 DSH 检出。stub 恰好覆盖插件用到的 API 面；DSH API 变化时保持同步。
 - `scripts/fetch_pdg.py` 从官方 PDG-2026 包重新生成 `data/pdg.json`（需在 ctpwa 环境 `pip install pdg`）。
 - 拟合需要 CUDA GPU（ctpwa 无 CPU 后端）；运行器探测并快速失败给出明确诊断。

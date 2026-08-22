@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, writeFileSync, readFileSync as readFileSyncSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync as readFileSyncSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../plugin/auto-pwa.js'
 import { apply as applyGuard } from '../plugin/pwa-guard.js'
+import { IterationLog } from '../src/iteration-log.js'
 
 /** Minimal ctx mock: collects tool definitions instead of registering them. */
 function collectDefinitions() {
@@ -20,13 +21,14 @@ function collectDefinitions() {
 }
 
 describe('auto-pwa plugin', () => {
-  it('registers the fourteen auto_pwa_* tools', () => {
+  it('registers the auto_pwa_* tools', () => {
     const defs = collectDefinitions()
     expect(defs.map((d) => d.name)).toEqual([
       'auto_pwa_lookup',
       'auto_pwa_decay_check',
       'auto_pwa_jpc_check',
       'auto_pwa_config_view',
+      'auto_pwa_suggest',
       'auto_pwa_validate_add',
       'auto_pwa_edit_config',
       'auto_pwa_round',
@@ -35,8 +37,14 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_history',
       'auto_pwa_iterate',
       'auto_pwa_evaluate',
+      'auto_pwa_diagnose',
       'auto_pwa_run_fit',
       'auto_pwa_fit_status',
+      'auto_pwa_try_candidates',
+      'auto_pwa_compare',
+      'auto_pwa_loop_next',
+      'auto_pwa_loop_status',
+      'auto_pwa_loop_decide',
     ])
   })
 
@@ -170,48 +178,48 @@ Resonances:
   })
 })
 
+/** ctx with a fake pwaFit service + guard recorder + session-event hook. */
+function harnessCtx() {
+  const definitions: { name: string; execute?: (args: never, exec: never) => Promise<unknown> }[] = []
+  const guards: ((exec: { name: string; arguments: unknown }) => string | undefined)[] = []
+  const eventHandlers: Record<string, (...args: unknown[]) => void> = {}
+  const submits: { request: { iterDir: string }; owner?: { sessionId: string } }[] = []
+  const statusCalls: { jobId: string; caller?: { sessionId: string } }[] = []
+  const pwaFit = {
+    submit: (request: { iterDir: string }, owner?: { sessionId: string }) => {
+      submits.push({ request, owner })
+      return 'ctpwa-9'
+    },
+    status: (jobId: string, caller?: { sessionId: string }) => {
+      statusCalls.push({ jobId, caller })
+      return { jobId, iterDir: '/pwa/iter-001', state: 'done' as const, exitCode: 0, logTail: 'log tail' }
+    },
+    kill: () => 'requested' as const,
+  }
+  const ctx = {
+    tools: {
+      register: (def: { name: string; execute?: (args: never, exec: never) => Promise<unknown> }) => definitions.push(def),
+      guard: (g: (exec: { name: string; arguments: unknown }) => string | undefined) => {
+        guards.push(g)
+        return () => {}
+      },
+    },
+    on: (event: string, handler: (...args: unknown[]) => void) => {
+      eventHandlers[event] = handler
+    },
+    pwaFit,
+  }
+  apply(ctx as never)
+  applyGuard(ctx as never) // pwa-guard registers the config.yml write gate
+  return { definitions, guards, eventHandlers, submits, statusCalls }
+}
+
+const run = async (h: ReturnType<typeof harnessCtx>, name: string, args: unknown, exec: unknown) => {
+  const def = h.definitions.find((d) => d.name === name)!
+  return def.execute!(args as never, exec as never)
+}
+
 describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
-  /** ctx with a fake pwaFit service + guard recorder + session-event hook. */
-  function harnessCtx() {
-    const definitions: { name: string; execute?: (args: never, exec: never) => Promise<unknown> }[] = []
-    const guards: ((exec: { name: string; arguments: unknown }) => string | undefined)[] = []
-    const eventHandlers: Record<string, (...args: unknown[]) => void> = {}
-    const submits: { request: { iterDir: string }; owner?: { sessionId: string } }[] = []
-    const statusCalls: { jobId: string; caller?: { sessionId: string } }[] = []
-    const pwaFit = {
-      submit: (request: { iterDir: string }, owner?: { sessionId: string }) => {
-        submits.push({ request, owner })
-        return 'ctpwa-9'
-      },
-      status: (jobId: string, caller?: { sessionId: string }) => {
-        statusCalls.push({ jobId, caller })
-        return { jobId, iterDir: '/pwa/iter-001', state: 'done' as const, exitCode: 0, logTail: 'log tail' }
-      },
-      kill: () => 'requested' as const,
-    }
-    const ctx = {
-      tools: {
-        register: (def: { name: string; execute?: (args: never, exec: never) => Promise<unknown> }) => definitions.push(def),
-        guard: (g: (exec: { name: string; arguments: unknown }) => string | undefined) => {
-          guards.push(g)
-          return () => {}
-        },
-      },
-      on: (event: string, handler: (...args: unknown[]) => void) => {
-        eventHandlers[event] = handler
-      },
-      pwaFit,
-    }
-    apply(ctx as never)
-    applyGuard(ctx as never) // pwa-guard registers the config.yml write gate
-    return { definitions, guards, eventHandlers, submits, statusCalls }
-  }
-
-  const run = async (h: ReturnType<typeof harnessCtx>, name: string, args: unknown, exec: unknown) => {
-    const def = h.definitions.find((d) => d.name === name)!
-    return def.execute!(args as never, exec as never)
-  }
-
   it('registers the config.yml write guard', () => {
     const h = harnessCtx()
     expect(h.guards).toHaveLength(1)
@@ -274,4 +282,189 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+})
+
+describe('auto-pwa batch-2/3 tools (trial fits + loop state machine)', () => {
+  const LOOP_CONFIG = `Particles:
+  Jpsi:
+    J: 1
+    P: -1
+    mass: 3.0969
+  eta:
+    J: 0
+    P: -1
+    mass: 0.5478
+  Kp:
+    J: 0
+    P: -1
+    mass: 0.4937
+  Km:
+    J: 0
+    P: -1
+    mass: 0.4937
+
+DecayChains:
+  decay1:
+    Jpsi:
+      - [eta, R_KK]
+      - [Kp, R_Keta]
+    R_KK: [Kp, Km]
+    R_Keta: [Kp, eta]
+    intermediates:
+      R_KK:
+        - [J: 1, P: -1]: [phi1020]
+      R_Keta:
+        - [J: 1, P: -1]: [K1_1410]
+        - [J: 2, P: 1]: [K2_1430]
+
+Constraints:
+  maxL: 3
+
+Resonances:
+  phi1020:
+    J: 1
+    P: -1
+    model: BWR
+    parameters: [1.0195, 0.0045]
+  K1_1410:
+    J: 1
+    P: -1
+    model: BWR
+    parameters: [1.403, 0.174]
+  K2_1430:
+    J: 2
+    P: 1
+    model: BWR
+    parameters: [1.425, 0.098]
+`
+
+  function fitJson(nll: number) {
+    return JSON.stringify({ status: 'ok', fit: { runs: 2, maxIter: 500, best: { nll, positiveDefinite: true, params: [], fitFractions: [] } } })
+  }
+
+  it('auto_pwa_try_candidates: valid candidate submitted with short-fit args, invalid skipped by the gate', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-trial-'))
+    try {
+      const iterationsRoot = join(dir, 'iterations')
+      const iterDir = join(iterationsRoot, 'iter-000')
+      mkdirSync(join(iterDir, 'results'), { recursive: true })
+      writeFileSync(join(iterDir, 'config.yml'), LOOP_CONFIG)
+      const out = (await run(
+        h,
+        'auto_pwa_try_candidates',
+        {
+          baseIterDir: iterDir,
+          candidates: [
+            { name: 'omega1420', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.41, 0.29] },
+            { name: 'f2_1270', chain: 'R_KK', jpGroup: { j: 2, p: 1 }, model: 'BWR', parameters: [1.275, 0.187] }, // C-violation
+          ],
+          shortRuns: 1,
+          shortMaxIter: 300,
+        },
+        { agent: { sessionId: 'sess-1' } },
+      )) as { ok: boolean; jobs: { candidate: string; iterDir: string; jobId: string }[]; skipped: { candidate: string; errors: { code: string }[] }[] }
+      expect(out.ok).toBe(true)
+      expect(out.jobs).toHaveLength(1)
+      expect(out.jobs[0]!.candidate).toBe('omega1420')
+      expect(out.jobs[0]!.iterDir).toContain(join(iterationsRoot, '_trials'))
+      expect(out.skipped).toHaveLength(1)
+      expect(out.skipped[0]!.candidate).toBe('f2_1270')
+      expect(out.skipped[0]!.errors.map((e) => e.code)).toContain('c-violation')
+      // Short fit args flow through ctx.pwaFit into the job request.
+      const req = h.submits[0]!.request as { iterDir: string; scriptArgs?: string[] }
+      expect(req.scriptArgs).toEqual(['--runs', '1', '--max-iter', '300'])
+      expect(h.submits[0]!.owner).toEqual({ sessionId: 'sess-1' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_loop: next(propose) -> decide(iterate) -> next(converge) writes FINAL-REPORT.md', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-loop-'))
+    try {
+      const iterationsRoot = join(dir, 'iterations')
+      const iter0 = join(iterationsRoot, 'iter-000')
+      mkdirSync(join(iter0, 'results'), { recursive: true })
+      writeFileSync(join(iter0, 'config.yml'), LOOP_CONFIG)
+      writeFileSync(join(iter0, 'results', 'fit.json'), fitJson(100))
+      // Diary baseline so ΔNLL can be computed after the next iteration.
+      new IterationLog({ rootDir: iterationsRoot }).append({
+        iter: 0,
+        timestamp: new Date().toISOString(),
+        title: '基线',
+        kind: 'other',
+        configPath: join(iter0, 'config.yml'),
+        iterDir: iter0,
+        nll: 100,
+        conclusion: 'baseline',
+      })
+
+      // 1. Start: evaluate the baseline (no ΔNLL yet -> propose).
+      const first = (await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter0 }, { agent: { sessionId: 'sess-1' } })) as {
+        ok: boolean
+        phase: string
+        converged: boolean
+        reason?: string
+        eval?: { nll: number | null }
+      }
+      expect(first.ok).toBe(true)
+      expect(first.phase).toBe('propose')
+      expect(first.converged).toBe(false)
+      expect(first.eval?.nll).toBe(100)
+      expect(existsLoopState(iterationsRoot)).toBe(true)
+
+      // 2. Decide: iterate with a valid proposal -> new iteration + fit job.
+      const decided = (await run(
+        h,
+        'auto_pwa_loop_decide',
+        {
+          iterationsRoot,
+          action: 'iterate',
+          proposal: { name: 'omega1420', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.41, 0.29] },
+        },
+        { agent: { sessionId: 'sess-1' } },
+      )) as { ok: boolean; action: string; iter: number; iterDir: string; jobId?: string; phase: string }
+      expect(decided.ok).toBe(true)
+      expect(decided.iter).toBe(1)
+      expect(decided.jobId).toBe('ctpwa-9')
+      expect(decided.phase).toBe('evaluate')
+
+      // 3. Simulate the fit finishing with a small (insignificant) gain.
+      const iter1 = decided.iterDir
+      mkdirSync(join(iter1, 'results'), { recursive: true })
+      mkdirSync(join(iter1, 'evaluate'), { recursive: true })
+      writeFileSync(join(iter1, 'results', 'fit.json'), fitJson(98))
+      writeFileSync(
+        join(iter1, 'evaluate', 'evaluate.json'),
+        JSON.stringify({ worst_distributions: [{ name: 'mass_R_KK', max_abs_pull: 2.1, bins_over_5sigma: 0 }] }),
+      )
+
+      // 4. Next: ΔNLL = -2 (below threshold), pulls OK -> converged.
+      const second = (await run(h, 'auto_pwa_loop_next', { iterationsRoot }, { agent: { sessionId: 'sess-1' } })) as {
+        ok: boolean
+        phase: string
+        converged: boolean
+        reportPath?: string
+        reason?: string
+      }
+      expect(second.ok).toBe(true)
+      expect(second.phase).toBe('done')
+      expect(second.converged).toBe(true)
+      expect(second.reportPath).toContain('FINAL-REPORT.md')
+      expect(readFileSyncSync(join(iterationsRoot, 'FINAL-REPORT.md'), 'utf8')).toContain('收敛')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  function existsLoopState(root: string): boolean {
+    try {
+      readFileSyncSync(join(root, '.loop-state.json'))
+      return true
+    } catch {
+      return false
+    }
+  }
 })

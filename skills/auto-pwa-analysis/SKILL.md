@@ -17,12 +17,13 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 ## 2. 加共振态的标准流程（强约束链）
 
+0. `auto_pwa_suggest`：**先发现再验证**——把上轮评估的 pull>3σ 质量区与每个中间态的允许 J^PC 相交，直接列出质量对齐的 PDG 候选（含阈值余量）。决策输入，省去"猜名字再查"的往返。
 1. `auto_pwa_config_view`：读 config 的只读 JSON 视图（Particles/链/衰变步/Constraints/校验结果/PDG 交叉引用）。config.yml 是唯一源头，禁止用视图直接改文件。
-2. `auto_pwa_jpc_check`：查目标中间态**两顶点 J^PC**——衰变顶点（R→d1+d2 允许的 J^PC 全集）∩ 产生顶点（A→R+B 的 J^P + C 守恒要求）。**只写交集里的 J^PC**；被 C 拦截的波会明确标出。
+2. `auto_pwa_jpc_check`：查目标中间态**两顶点 J^PC**——衰变顶点（R→d1+d2 允许的 J^PC 全集）∩ 产生顶点（A→R+B 的 J^P + C 守恒要求）。**只写交集里的 J^PC**；被 C 拦截的波会明确标出。**执行门与它同源**（共享 `analyzeIntermediateJPC`），看到的就是会被强制执行的。
 3. `auto_pwa_decay_check`：确认目标 J^P 物理可达（角动量+宇称守恒，maxL 截断）。**不可达的 J^P 程序会拒绝**（jp-not-allowed）。
 4. `auto_pwa_lookup`：确认候选在 PDG 表里，查它的 J^P、C、质量、宽度。
 5. `auto_pwa_validate_add`：程序验证 PDG 依据 / JPC 一致 / 运动学阈值 / 重复 / 参数结构 / float 结构 / **衰变顶点 J^P（规则 10）** / **C 守恒（规则 11）** / **全同选择定则（规则 12）**。**errors 非空时禁止继续**；warnings 是风险提示，模型判断。
-6. `auto_pwa_edit_config`：程序改 YAML + 原子写（自动备份 .bak）。
+6. `auto_pwa_edit_config`：程序改 YAML + **写前总闸**（对最终 config 全文跑结构校验 validateConfig + 交叉引用，errors 非空拒绝写）+ 原子写（自动备份 .bak）。
 7. `auto_pwa_run_fit` + `auto_pwa_fit_status`：提交拟合、轮询结果。
 
 ## 2.1 两顶点 J^PC 检查（jpc_check / 规则 10–12）
@@ -49,6 +50,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 ## 3. 物理硬规则（程序强制，模型需理解）
 
 - **PDG 依据**：BWR/BW/Flatte 共振态必须能在 PDG 表命中（名字匹配 id/别名）。**PDG 上没有的新粒子一律拒绝**——分波分析不能发明粒子。唯一例外：`model: ONE`（相空间项），其振幅 = 势垒因子，mass 参数不参与振幅，命名惯例 `NR*`（如 NR1_KK）。
+- **出处（reference）例外**：若参数来自**最新实验结果**（而非 PDG 平均）或该态尚未被 PDG 收录，提案必须带 `reference`（DOI 或论文名）——此时 PDG 平均一致性检查（质量/J^P/未收录）降为警告并记录出处，但**物理门禁（阈值/衰变顶点 J^P/C 守恒）绝不豁免**。reference 会写入 config.yml 并随迭代继承。用 `auto_pwa_lookup` 看单实验测量历史（stat/syst 分离 + DOI），确认引用的实验值真实存在。
 - **JPC 一致性**：提案 (J,P) 必须与 PDG 条目一致。ρ(770) 是 1⁻，写成 0⁺ 会被拒。
 - **运动学阈值**：m_R ≤ m_A − m_B（on-shell）。R_KK 链阈值 ≈ 2.549 GeV，R_Keta 链 ≈ 2.603 GeV。接近阈值 → off-shell 风险 → 建议 float 质量。
 - **参数结构**：BWR/BW 恰好 [质量, 宽度] GeV；ONE 恰好 1 个参数；Flatte 需要 channels 字段。参数长度错 ctpwa 直接崩溃。
@@ -75,7 +77,14 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - fit.py 默认 10 个随机初值各跑到收敛（最高 10000 次 LBFGS 迭代），输出到 `results/`：`nll_history.txt`（每次运行一段）、`parameters.txt`、`optimization_summary.txt`（最佳 NLL/正定性/分支比）、`weight_best.root`。
 - 拟合是**长任务**（10–30 分钟级）：`auto_pwa_run_fit` 返回 jobId 后后台运行，用 `auto_pwa_fit_status` 轮询；不要阻塞等待。
 
-## 5.1 迭代主循环：同会话 goal（推荐）而非跨会话传递
+## 5.1 迭代主循环：状态机 + 同会话 goal
+
+**主路径（推荐）用循环状态机工具**（持久化在 `iterations/.loop-state.json`，重启可续）：
+- `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/Hessian）→ 按判据（`stopMaxPull`、`stopDeltaNll`、显著阈值、`maxRounds` 预算）判定收敛 → **收敛则写 `FINAL-REPORT.md` 并 phase=done**；未收敛则进入 propose 阶段。首次调用传 `baseIterDir` 启动。
+- `auto_pwa_loop_decide`：把 AI 决策落盘——`iterate`（验证+建轮+写 config+提交拟合）、`rollback`（当前轮标记失败、基线回退到上一轮）、`converge`（强制收敛出报告）。
+- 每轮循环：`loop_next`（评估/判收敛）→ 决策（`suggest`/`diagnose`/`compare` 辅助）→ `loop_decide iterate` → 等拟合完成通知 → 回到 `loop_next`。
+
+**并行探索（提速关键）**：`auto_pwa_try_candidates` 在基座上并行提交 2–5 个候选的**短拟合**（默认 `--runs 1 --max-iter 500`，目录在 `iterations/_trials/`，不进 iter-N 序列）；全部完成后 `auto_pwa_compare` 按 ΔNLL 显著性（默认阈值 3，2 自由度）裁决，**最优者晋级**为正式迭代。探索与晋级分离，一轮时间试探多个方向。
 
 **结论传递首选"同一个会话里连续上下文"，不是"写摘要给下一个会话"。** 跨会话传递（A 写 conclusion → B 读）会丢失推理细节（为什么选这个态、排除了什么），压缩即损失。
 
@@ -85,15 +94,12 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - 每轮动作序列（goal 回合内）：
   1. 等上轮拟合通知 → `auto_pwa_fit_status` 取结果（NLL/正定性/日志）
   2. `auto_pwa_evaluate` 分析上轮 weight_best.root（数值诊断；完整 JSON 在 evaluate.json，输出过大时会 spill 到 locator 按需读）
-  3. 基于连续上下文 + 诊断，判断：哪里差、缺什么、ΔNLL 是否显著
-  4. `auto_pwa_lookup` / `auto_pwa_decay_check` / `auto_pwa_jpc_check` 验证候选与 J^P/J^PC 可达性
-  5. `auto_pwa_validate_add`（必须 0 errors）
-  6. `auto_pwa_iter_start` 建新轮目录（基座 = 上轮 config.yml）
-  7. `auto_pwa_edit_config` 写入新 config
-  8. `auto_pwa_run_fit` 后台提交 → 回合结束（等完成通知/自动续回合）
-  9. `auto_pwa_note` 写审计记录（**includeTokens: true** 记本轮 token 消耗；结论 + 下一步计划）
-- 收敛或轮数耗尽 → `update_goal complete`，写最终 note。
-- `auto_pwa_note` / `auto_pwa_history` 的角色：**审计日志 + 崩溃/中断恢复**（新会话里用 `auto_pwa_history` 恢复上下文，含每轮 token 成本）+ 用户阅读（HTML 日记）。决策主通道始终是连续会话上下文。
+  3. `auto_pwa_diagnose` 把 fit.json 事实转成假设（撞边界/份额不显著/强干涉对）
+  4. `auto_pwa_suggest` 按 pull 区列出候选；`lookup`/`decay_check`/`jpc_check` 复核
+  5. `auto_pwa_loop_next` 判收敛；未收敛 → `auto_pwa_loop_decide iterate`（或先 `try_candidates` + `compare` 探索再晋级）
+  6. 拟合完成通知后回到 1；`auto_pwa_note` 写审计记录（**includeTokens: true** 记本轮 token 消耗；结论 + 下一步计划）
+- 收敛（loop 判定 done）或轮数耗尽 → `update_goal complete`，读 `FINAL-REPORT.md` 给用户总结。
+- `auto_pwa_note` / `auto_pwa_history` 的角色：**审计日志 + 崩溃/中断恢复**（新会话里用 `auto_pwa_history` + `auto_pwa_loop_status` 恢复上下文，含每轮 token 成本）+ 用户阅读（HTML 日记）。决策主通道始终是连续会话上下文。
 
 ## 5.2 harness 机制（少人工，多自主）
 
@@ -103,11 +109,13 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 ## 6. 拟合质量判断（第二步，迭代决策）
 
-- **ΔNLL 显著性**：新增共振态后 NLL 改进 ΔNLL < 10（≈ √(2ΔNLL) < 4.5σ）→ 该共振态不显著，考虑删除或换方案。
-- **Hessian 正定性**：`optimization_summary.txt` 里 best run 正定才有参数误差可信；不正定 → 参数不可靠。
-- **撞边界**：float 参数贴 range 端点 = 数据不支持该自由度的信号。
+- **ΔNLL 显著性**：新共振态约 2 个自由参数——|ΔNLL| ≥ 3（≈ 2σ）才算显著改进；|ΔNLL| < 3 不显著，考虑删除或换方案；ΔNLL < 10 的旧判据仅作为"不再值得继续"的停止参考（`loop` 的 `significanceThreshold`/`stopDeltaNll` 可调）。
+- **Hessian 正定性**：`fit.json` 里 best run 正定才有参数误差可信；不正定 → 参数不可靠（loop 会提示）。
+- **撞边界**：float 参数贴 range 端点 = 数据不支持该自由度的信号（`auto_pwa_diagnose` 直接给建议）。
+- **份额不显著**：`fitFractions` 中 fraction < 2σ（fraction/error < 2）的分波对拟合无贡献，删除后 ΔNLL 预计 < 3。
+- **强干涉对**：`interference.topInterference` 中 |值| > 20% 的波对通常需要独立耦合参数。
 - 组内成员过多（>6）→ 过拟合风险，优先替换而非追加（validate 会给 crowded-group warning）。
-- 迭代记录写进 `note.md` 和 `SUMMARY.md`，供下一轮参考。
+- 迭代记录写进 `note.md` 和 `SUMMARY.jsonl`，供下一轮参考。
 
 ## 7. 注意
 

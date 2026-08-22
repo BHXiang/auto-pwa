@@ -29,9 +29,9 @@
  *
  * Pure function; no I/O.
  */
-import { normalizeName, lookupC } from './lookup.js'
+import { normalizeName } from './lookup.js'
 import { hasDecayTo, allowedIntermediateJP } from './decay-check.js'
-import { pairJPC, pairKind, jpcLabel } from './jpc.js'
+import { analyzeIntermediateJPC } from './intermediate-jpc.js'
 import type {
   ChainKinematics,
   DecayStep,
@@ -165,30 +165,56 @@ export function validateResonanceAddition(
   // --- PDG lookup (particle models only) -----------------------------------
   const pdgHits = isParticle ? db.resonances.filter((r) => normalizeName(r.id) === normalizeName(proposal.name) || r.aliases.some((a) => normalizeName(a) === normalizeName(proposal.name))) : []
   const pdg = pdgHits[0]
+  const hasReference = proposal.reference !== undefined && proposal.reference.trim() !== ''
 
   // --- 2. PDG backing ------------------------------------------------------
   if (isParticle && !pdg) {
-    errors.push(
-      err(
-        'not-on-pdg',
-        `"${proposal.name}" is not in the PDG table. New particles not on PDG are rejected; ` +
-          `only ONE (phase-space) terms may use analysis-invented names (e.g. NR1_KK).`,
-      ),
-    )
+    if (hasReference) {
+      // Provenance overrides: a state whose parameters come from a recent
+      // experiment may not be in the current PDG edition yet.
+      warnings.push(
+        warn(
+          'not-on-pdg-with-reference',
+          `"${proposal.name}" is not in the PDG table, but the proposal carries reference ` +
+            `"${proposal.reference}". PDG-average checks are skipped; physics reachability ` +
+            `(threshold, J^P, C) is still enforced. Verify the name spelling and cite the paper.`,
+        ),
+      )
+    } else {
+      errors.push(
+        err(
+          'not-on-pdg',
+          `"${proposal.name}" is not in the PDG table. New particles not on PDG are rejected; ` +
+            `only ONE (phase-space) terms may use analysis-invented names (e.g. NR1_KK). ` +
+            `For a new state from a published experiment, pass \`reference\` (DOI or citation).`,
+        ),
+      )
+    }
   }
 
   // --- 3. JPC consistency --------------------------------------------------
   if (isParticle && pdg && !sameJp(pdg.jp, proposal.jpGroup)) {
-    errors.push(
-      err(
-        'jpc-mismatch',
-        `PDG gives ${proposal.name} J^P = ${jpLabel(pdg.jp)}, but the proposal targets ${jpLabel(proposal.jpGroup)}`,
-      ),
-    )
+    if (hasReference) {
+      warnings.push(
+        warn(
+          'jpc-deviates-with-reference',
+          `PDG gives ${proposal.name} J^P = ${jpLabel(pdg.jp)}, but the proposal targets ` +
+            `${jpLabel(proposal.jpGroup)} (reference "${proposal.reference}"). ` +
+            `Adopted per reference; verify the recent measurement supports the assignment.`,
+        ),
+      )
+    } else {
+      errors.push(
+        err(
+          'jpc-mismatch',
+          `PDG gives ${proposal.name} J^P = ${jpLabel(pdg.jp)}, but the proposal targets ${jpLabel(proposal.jpGroup)}`,
+        ),
+      )
+    }
   }
 
   // --- 8. mass agreement with PDG ------------------------------------------
-  if (isParticle && pdg) {
+  if (isParticle && pdg && !hasReference) {
     // Tolerance from the official PDG uncertainty when available (3 sigma,
     // floored at 20 MeV); falls back to the width heuristic for seed entries.
     const tol =
@@ -200,6 +226,32 @@ export function validateResonanceAddition(
           'mass-mismatch',
           `proposed mass ${proposal.parameters[0].toFixed(4)} GeV deviates from PDG ${pdg.mass.toFixed(4)} GeV ` +
             `by more than ${tol.toFixed(4)} GeV`,
+        ),
+      )
+    }
+  } else if (isParticle && pdg && hasReference) {
+    // Provenance: parameters follow the cited experiment. Cross-check the
+    // reference against the measurement history when a DOI matches.
+    const refNorm = normalizeName(proposal.reference!)
+    const hit = (pdg.measurements ?? []).find((m) =>
+      m.doi !== undefined && (normalizeName(m.doi) === refNorm || normalizeName(m.doi).includes(refNorm) || refNorm.includes(normalizeName(m.doi))),
+    )
+    if (hit !== undefined && hit.value !== undefined) {
+      const dev = proposal.parameters[0] - hit.value
+      warnings.push(
+        warn(
+          'reference-measurement-check',
+          `reference "${proposal.reference}" matches ${hit.publication ?? 'a measurement'} ` +
+            `(${hit.year ?? '?'}): measured mass ${hit.value.toFixed(4)} GeV, proposal ` +
+            `${proposal.parameters[0].toFixed(4)} GeV (${dev >= 0 ? '+' : ''}${dev.toFixed(4)} GeV deviation)`,
+        ),
+      )
+    } else {
+      warnings.push(
+        warn(
+          'reference-not-found',
+          `reference "${proposal.reference}" does not match any measurement DOI in the PDG table — ` +
+            `provenance recorded as-is (make sure the citation is accurate)`,
         ),
       )
     }
@@ -305,9 +357,9 @@ export function validateResonanceAddition(
 
   // --- 10/11/12. decay-vertex J^PC + C conservation + identical selection --
   // The intermediate's decay steps tell us R -> d1 + d2 (from the config).
-  // pairJPC reproduces the engine's (S, L) enumeration (Amp2BD::ComSL +
-  // identical detection), so a J^P that cannot realize any wave at the decay
-  // vertex would fit with an identically-zero amplitude.
+  // analyzeIntermediateJPC reproduces the engine's (S, L) enumeration
+  // (Amp2BD::ComSL + identical detection) — the SAME shared analysis the
+  // auto_pwa_jpc_check view tool exposes, so view and gate cannot drift.
   const steps = decayStepsOf(config, proposal.chain)
   if (kin && steps.length === 0) {
     warnings.push(
@@ -318,85 +370,70 @@ export function validateResonanceAddition(
     )
   } else if (kin) {
     const identicalGroups = config.constraints?.identical
-    // J^P union over all modes + C-constrained JPC per matching wave.
-    const jpUnion = new Set<string>()
-    const stepJpcs: { jpc: JP & { c?: 1 | -1 }; pair: [string, string]; sl: [number, number][] }[] = []
-    const pairSummaries: string[] = []
+    // Missing-daughter warnings (the shared analysis skips such steps).
     for (const step of steps) {
-      const d1 = config.particles[step.daughters[0]]
-      const d2 = config.particles[step.daughters[1]]
-      if (!d1 || !d2) {
+      if (config.particles[step.daughters[0]] === undefined || config.particles[step.daughters[1]] === undefined) {
         warnings.push(
           warn(
             'decay-daughter-unknown',
             `step ${step.mother} -> ${step.daughters.join(' + ')} references particles missing from the Particles section`,
           ),
         )
-        continue
       }
-      // Name-aware copies: pair detection (conjugate pairs / identical
-      // groups) needs the config names, which Particle itself does not carry.
-      const namedD1 = { ...d1, name: step.daughters[0] }
-      const namedD2 = { ...d2, name: step.daughters[1] }
-      const waves = pairJPC(namedD1, namedD2, { maxL, identicalGroups, slFilter: step.sl })
-      for (const w of waves) jpUnion.add(jpLabel(w.jpc))
-      for (const w of waves) {
-        if (sameJp(w.jpc, proposal.jpGroup)) {
-          stepJpcs.push({
-            jpc: w.jpc,
-            pair: step.daughters,
-            sl: w.sl.map((x) => [x.s, x.l]),
-          })
+    }
+    const ana = analyzeIntermediateJPC(config, db, proposal.chain, { maxL })
+    if (ana !== undefined) {
+      const pairSummaries = ana.decaySteps
+        .filter((s) => s.jpc.length > 0)
+        .map((s) => `${s.daughters.join('+')}${s.cDefined ? ` (${s.kind})` : ''}${s.sl ? ` sl=${JSON.stringify(s.sl)}` : ''}`)
+      // Rule 10: the J^P must be realizable by some wave at the decay vertex
+      // (any C; C is enforced separately by rule 11).
+      if (ana.jpUnion.length > 0 && !ana.jpUnion.includes(jpLabel(proposal.jpGroup))) {
+        errors.push(
+          err(
+            'decay-vertex-forbidden',
+            `[${jpLabel(proposal.jpGroup)}] is forbidden at the ${proposal.chain} decay vertex ` +
+              `(R -> ${pairSummaries.join(' | ')}): allowed J^PC = ${ana.jpUnion.join(', ')} ` +
+              `— the amplitude would be identically zero (ctpwa zero-SL warning)`,
+          ),
+        )
+      }
+      // Rule 11: C(A) = C(R)*C(B) at the production vertex, with C(R) from the pair.
+      const required = ana.production?.cRequired ?? null
+      if (required !== null) {
+        const conflicts: { label: string; pair: string[]; c: 1 | -1 }[] = []
+        for (const step of ana.decaySteps) {
+          const c = step.cOf[jpLabel(proposal.jpGroup)]
+          if (c !== undefined && c !== 'x' && c !== required) {
+            conflicts.push({ label: `${jpLabel(proposal.jpGroup)}${c > 0 ? '+' : '-'}`, pair: step.daughters, c })
+          }
         }
-      }
-      const { kind, cDefined } = pairKind(namedD1, namedD2, identicalGroups)
-      pairSummaries.push(
-        `${step.daughters.join('+')}${cDefined ? ` (${kind})` : ''}${step.sl ? ` sl=${JSON.stringify(step.sl)}` : ''}`,
-      )
-    }
-    if (jpUnion.size > 0 && !jpUnion.has(jpLabel(proposal.jpGroup))) {
-      errors.push(
-        err(
-          'decay-vertex-forbidden',
-          `[${jpLabel(proposal.jpGroup)}] is forbidden at the ${proposal.chain} decay vertex ` +
-            `(R -> ${pairSummaries.join(' | ')}): allowed J^PC = ${[...jpUnion].join(', ')} ` +
-            `— the amplitude would be identically zero (ctpwa zero-SL warning)`,
-        ),
-      )
-    }
-    // Rule 11: C(A) = C(R)*C(B) at the production vertex, with C(R) from the pair.
-    if (kin.motherName !== undefined && kin.daughterName !== undefined) {
-      const motherC = lookupC(db, kin.motherName)
-      const daughterC = lookupC(db, kin.daughterName)
-      if (motherC !== undefined && daughterC !== undefined) {
-        const required = (motherC * daughterC) as 1 | -1
-        const conflicts = stepJpcs.filter((s) => s.jpc.c !== undefined && s.jpc.c !== required)
         if (conflicts.length > 0) {
           const [c] = conflicts
           errors.push(
             err(
               'c-violation',
-              `C conservation violated for ${proposal.chain}: C(${kin.motherName})=${motherC > 0 ? '+' : '-'}, ` +
-                `C(${kin.daughterName})=${daughterC > 0 ? '+' : '-'} require C(R)=${required > 0 ? '+' : '-'}, ` +
-                `but the ${jpcLabel(proposal.jpGroup)} wave of ${c.pair.join('+')} has C=${c.jpc.c === undefined ? 'undefined' : c.jpc.c > 0 ? '+' : '-'}`,
+              `C conservation violated for ${proposal.chain}: C(${ana.production?.mother})=${required > 0 ? '+' : '-'}, ` +
+                `C(${ana.production?.daughter})=${required > 0 ? '+' : '-'} require C(R)=${required > 0 ? '+' : '-'}, ` +
+                `but the ${c.label} wave of ${c.pair.join('+')} has C=${c.c > 0 ? '+' : '-'}`,
             ),
           )
         }
       }
-    }
-    // Rule 12: same-named daughters not declared identical -> engine will not symmetrize.
-    for (const step of steps) {
-      if (step.daughters[0] === step.daughters[1]) {
-        const declared = identicalGroups?.some((g) => g.includes(step.daughters[0]))
-        if (!declared) {
-          warnings.push(
-            warn(
-              'identical-not-declared',
-              `step ${step.mother} -> ${step.daughters.join(' + ')} decays to the same particle twice but ` +
-                `"${step.daughters[0]}" is not in any Constraints.identical group — ctpwa will NOT symmetrize; ` +
-                `declare Constraints.identical to apply the Bose/Fermi selection rule`,
-            ),
-          )
+      // Rule 12: same-named daughters not declared identical -> engine will not symmetrize.
+      for (const step of ana.decaySteps) {
+        if (step.daughters[0] === step.daughters[1]) {
+          const declared = identicalGroups?.some((g) => g.includes(step.daughters[0]))
+          if (!declared) {
+            warnings.push(
+              warn(
+                'identical-not-declared',
+                `step ${proposal.chain} -> ${step.daughters.join(' + ')} decays to the same particle twice but ` +
+                  `"${step.daughters[0]}" is not in any Constraints.identical group — ctpwa will NOT symmetrize; ` +
+                  `declare Constraints.identical to apply the Bose/Fermi selection rule`,
+              ),
+            )
+          }
         }
       }
     }
@@ -411,7 +448,7 @@ export function validateResonanceAddition(
       ),
     )
   }
-  if (isParticle && pdg && pdg.width !== undefined && proposal.parameters[1] !== undefined) {
+  if (isParticle && pdg && !hasReference && pdg.width !== undefined && proposal.parameters[1] !== undefined) {
     const ref = Math.max(pdg.width, 0.05)
     if (Math.abs(proposal.parameters[1] - pdg.width) > widthDeviationFraction * ref) {
       warnings.push(

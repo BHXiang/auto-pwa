@@ -101,12 +101,13 @@ export function startIteration(options: {
   baseConfigPath: string
   fitScriptPath?: string
   plotScriptPath?: string
-}): { iterDir: string; iter: number; changed: string[] } {
+}): { iterDir: string; iter: number; changed: string[]; warnings: string[] } {
   const log = new IterationLog({ rootDir: options.iterationsRoot })
   const iter = log.nextIter()
   const iterDir = join(options.iterationsRoot, `iter-${String(iter).padStart(3, '0')}`)
   mkdirSync(iterDir, { recursive: true })
   const changed: string[] = []
+  const warnings: string[] = []
 
   if (!existsSync(options.baseConfigPath)) {
     throw new Error(`base config not found: ${options.baseConfigPath}`)
@@ -116,8 +117,14 @@ export function startIteration(options: {
   // Data paths in the base config are usually relative to the base config's
   // own directory (e.g. solve1's "../root/..."): from the iteration dir they
   // would resolve wrongly, so absolutize them against the base dir.
-  absolutizeDataPaths(target, dirname(options.baseConfigPath))
+  const pathStat = absolutizeDataPaths(target, dirname(options.baseConfigPath))
   changed.push(`config.yml <- ${options.baseConfigPath} (Data 路径已绝对化)` + (options.baseConfigPath === target ? '' : ''))
+  if (pathStat.found > pathStat.rewritten) {
+    warnings.push(
+      `Data 路径绝对化：${pathStat.rewritten}/${pathStat.found} 行匹配（${pathStat.found - pathStat.rewritten} 行未匹配，` +
+        `相对路径可能仍指向错误位置）— 请检查 config.yml 的 data/phsp/bkg 行格式`,
+    )
+  }
 
   // Canonical names inside the iteration dir (fit.py/plot.py): the fit runner
   // invokes `python fit.py`, so the source file's basename (e.g. aifit.py)
@@ -141,7 +148,7 @@ export function startIteration(options: {
 
   writeFileSync(join(iterDir, 'note.md'), `# iter-${String(iter).padStart(3, '0')}\n\n（本轮决策记录）\n`)
   changed.push(`note.md 骨架`)
-  return { iterDir, iter, changed }
+  return { iterDir, iter, changed, warnings }
 }
 
 /** Discover existing iteration dirs under an iterations root. */
@@ -151,6 +158,65 @@ export function listIterations(iterationsRoot: string): string[] {
     .filter((n) => /^iter-\d{3,}$/.test(n))
     .sort()
     .map((n) => join(iterationsRoot, n))
+}
+
+/** Trial (short parallel candidate fit) dirs live under `_trials/`, outside
+ * the iter-N sequence so they never pollute the main iteration numbering. */
+export function trialsRootOf(iterationsRoot: string): string {
+  return join(iterationsRoot, '_trials')
+}
+
+/** Discover existing trial dirs (sorted by name). */
+export function listTrials(iterationsRoot: string): string[] {
+  const root = trialsRootOf(iterationsRoot)
+  if (!existsSync(root)) return []
+  return readdirSync(root)
+    .filter((n) => n.startsWith('trial-'))
+    .sort()
+    .map((n) => join(root, n))
+}
+
+/**
+ * Create one trial dir for a candidate experiment: copies the base config
+ * (with Data paths absolutized), symlinks the fit script as fit.py.
+ * Trial dirs are NOT part of the iter-N sequence.
+ */
+export function createTrialDir(options: {
+  iterationsRoot: string
+  baseConfigPath: string
+  label: string
+  fitScriptPath?: string
+}): { trialDir: string; changed: string[]; warnings: string[] } {
+  const root = trialsRootOf(options.iterationsRoot)
+  mkdirSync(root, { recursive: true })
+  const trialDir = join(root, `trial-${options.label.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
+  if (!existsSync(options.baseConfigPath)) {
+    throw new Error(`base config not found: ${options.baseConfigPath}`)
+  }
+  const changed: string[] = []
+  const warnings: string[] = []
+  const target = join(trialDir, 'config.yml')
+  mkdirSync(trialDir, { recursive: true })
+  copyFileSync(options.baseConfigPath, target)
+  const pathStat = absolutizeDataPaths(target, dirname(options.baseConfigPath))
+  changed.push(`config.yml <- ${options.baseConfigPath} (Data 路径已绝对化)`)
+  if (pathStat.found > pathStat.rewritten) {
+    warnings.push(
+      `Data 路径绝对化：${pathStat.rewritten}/${pathStat.found} 行匹配 — 相对路径可能仍指向错误位置`,
+    )
+  }
+  if (options.fitScriptPath !== undefined) {
+    if (!existsSync(options.fitScriptPath)) {
+      throw new Error(`fitScriptPath not found: ${options.fitScriptPath}`)
+    }
+    try {
+      symlinkSync(options.fitScriptPath, join(trialDir, 'fit.py'))
+      changed.push(`fit.py -> ${options.fitScriptPath}`)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+    }
+  }
+  return { trialDir, changed, warnings }
 }
 
 /** Infer the iterations root from an iterDir (parent dir). */
@@ -167,15 +233,23 @@ export function iterationsRootOf(iterDir: string): string {
  * Text-level replacement (comments preserved): matches lines like
  *   data: [dat, "../root/cut_data.root"]
  *   phsp: [ROOT, "../root/cut_phsp.root", "OmegaKsKs", ...]
+ *
+ * @returns how many data/phsp/bkg lines were found and how many rewritten
+ * (a found > rewritten mismatch means the config uses an unsupported layout
+ * and relative paths may silently stay wrong).
  */
-export function absolutizeDataPaths(configPath: string, baseDir: string): void {
+export function absolutizeDataPaths(configPath: string, baseDir: string): { found: number; rewritten: number } {
   const text = readFileSync(configPath, 'utf8')
+  const found = (text.match(/^\s*(?:data|phsp|bkg|bkg_weights)\s*:/gm) ?? []).length
+  let rewritten = 0
   const out = text.replace(
     /(^\s*(?:data|phsp|bkg|bkg_weights)\s*:\s*\[\s*(?:dat|ROOT)\s*,\s*")([^"]+)("\s*)/gm,
     (m, pre: string, p: string, post: string) => {
       if (isAbsolute(p)) return m
+      rewritten += 1
       return pre + resolve(baseDir, p) + post
     },
   )
   if (out !== text) writeFileSync(configPath, out)
+  return { found, rewritten }
 }

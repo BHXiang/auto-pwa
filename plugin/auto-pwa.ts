@@ -22,15 +22,29 @@ import { copyFileSync, existsSync, readFileSync, readdirSync, renameSync, writeF
 import { dirname, join } from 'node:path'
 import { defaultDb } from '../src/db.js'
 import { lookupResonance, lookupC } from '../src/lookup.js'
-import { decayCheck, allowedIntermediateJP } from '../src/decay-check.js'
-import { pairJPC, pairKind, jpcLabel } from '../src/jpc.js'
+import { decayCheck } from '../src/decay-check.js'
+import { analyzeIntermediateJPC } from '../src/intermediate-jpc.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
 import { parseConfig, applyResonanceAddition, dumpConfig, crossReferenceErrors, validateConfig } from '../src/config-edit.js'
 import { suggestFree } from '../src/float-policy.js'
 import { defaultFitRunnerConfig } from '../src/fit-runner.js'
-import { summarizeFitDir } from '../src/fit-summary.js'
+import { summarizeFitDir, parseFitJson } from '../src/fit-summary.js'
+import { suggestCandidates } from '../src/suggest.js'
+import { diagnoseFit } from '../src/diagnose.js'
 import { resolveEnv } from '../src/config.js'
-import { IterationLog, startIteration, iterationsRootOf, listIterations } from '../src/iteration-log.js'
+import { IterationLog, startIteration, iterationsRootOf, listIterations, createTrialDir } from '../src/iteration-log.js'
+import {
+  loadLoopState,
+  saveLoopState,
+  initLoopState,
+  convergenceVerdict,
+  previousDiaryNll,
+  previousIterDir,
+  writeFinalReport,
+  type LoopState,
+  type LoopEval,
+  type LoopObjective,
+} from '../src/loop-state.js'
 import type { IterationRecord } from '../src/report.js'
 import { spawnSync } from 'node:child_process'
 import type { JP, ResonanceProposal } from '../src/types.js'
@@ -71,6 +85,7 @@ const proposalParam = {
     free: { type: 'array' as const, items: { type: 'integer' as const }, description: 'float 的参数索引：0=质量, 1=宽度, -1=全部' },
     freeRange: { type: 'array' as const, items: { type: 'array' as const, items: { type: 'number' as const } }, description: '每个 free 参数一个 [lo, hi] GeV 区间，须包含初始值' },
     tex: { type: 'string' as const, description: 'LaTeX 标签' },
+    reference: { type: 'string' as const, description: '出处（可选）：参数遵循该实验/论文而非 PDG 平均值（如 DOI 或 "BESIII 2024"）。提供时跳过 PDG 平均一致性检查（质量/J^P 与 PDG 的偏离改为警告），物理可达性（阈值/J^P/C）仍强制。会写入 config.yml 的 reference 字段并随迭代继承' },
   },
   description: '共振态添加提议（强约束：物理校验与 YAML 渲染均由程序完成）',
 } as const
@@ -116,15 +131,40 @@ export function apply(ctx: Context) {
                 width: { oneOf: [{ type: 'number' }, { type: 'null' }] },
                 status: { type: 'string' },
                 decayModes: { type: 'array', items: { type: 'string' } },
+                measurements: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      year: { type: 'integer' },
+                      publication: { type: 'string' },
+                      doi: { type: 'string' },
+                      technique: { type: 'string' },
+                      value: { type: 'number' },
+                      errorPositive: { type: 'number' },
+                      statError: { type: 'number' },
+                      systError: { type: 'number' },
+                      usedInAverage: { type: 'boolean' },
+                    },
+                  },
+                  description: '单实验质量测量（新→旧，最多 8 条）——比 PDG 平均更新的实验结果在这里',
+                },
               },
             },
           },
           total: { type: 'integer', required: true },
         },
       },
-      render: (_args, value: { hits: { id: string; jp: JP; mass: number; width?: number }[]; total: number }) => {
+      render: (_args, value: { hits: { id: string; jp: JP; mass: number; width?: number; measurements?: { year?: number; publication?: string; value?: number; errorPositive?: number; statError?: number; systError?: number; usedInAverage?: boolean }[] }[]; total: number }) => {
         if (value.hits.length === 0) return text('(无命中)')
-        const lines = value.hits.map((h) => `${h.id.padEnd(16)} J^P=${h.jp.j}${h.jp.p > 0 ? '+' : '-'}  m=${h.mass.toFixed(4)} GeV  Γ=${h.width?.toFixed(4) ?? '-'} GeV`)
+        const lines = value.hits.map((h) => {
+          const base = `${h.id.padEnd(16)} J^P=${h.jp.j}${h.jp.p > 0 ? '+' : '-'}  m=${h.mass.toFixed(4)} GeV  Γ=${h.width?.toFixed(4) ?? '-'} GeV`
+          const ms = (h.measurements ?? []).slice(0, 4).map((m) =>
+            `      ${m.year ?? '?'} ${(m.publication ?? '?').slice(0, 28).padEnd(28)} m=${m.value?.toFixed(4) ?? '—'} GeV${m.errorPositive !== undefined ? ` ±${m.errorPositive.toFixed(4)}` : ''}${m.statError !== undefined ? ` (stat ${m.statError.toFixed(4)})` : ''}${m.systError !== undefined ? ` (syst ${m.systError.toFixed(4)})` : ''}${m.usedInAverage ? ' 入平均' : ''}`,
+          )
+          return ms.length > 0 ? `${base}\n    单实验测量:\n${ms.join('\n')}` : base
+        })
         return text(`PDG 命中 ${value.total} 条:\n${lines.join('\n')}`)
       },
     },
@@ -144,6 +184,17 @@ export function apply(ctx: Context) {
           width: h.width ?? null,
           status: h.status,
           decayModes: (h.decayModes ?? []).map((m) => m.daughters.join(' -> ')),
+          measurements: (h.measurements ?? []).slice(0, 8).map((m) => ({
+            year: m.year,
+            publication: m.publication,
+            doi: m.doi,
+            technique: m.technique,
+            value: m.value,
+            errorPositive: m.errorPositive,
+            statError: m.statError,
+            systError: m.systError,
+            usedInAverage: m.usedInAverage,
+          })),
         })),
       }
     },
@@ -378,7 +429,6 @@ export function apply(ctx: Context) {
     async execute(args: { configPath: string; target?: string; maxL?: number }, exec) {
       const cfg = parseConfig(readFileSync(args.configPath, 'utf8'))
       const maxL = args.maxL ?? cfg.constraints.maxL ?? 4
-      const identicalGroups = cfg.constraints.identical
       // Resolve target: chain name, intermediate name, or everything.
       let chains: string[]
       if (args.target === undefined) {
@@ -396,10 +446,8 @@ export function apply(ctx: Context) {
           }
         }
       }
-      const named = (n: string): { name: string; j: number; p: 1 | -1; c?: 1 | -1 } | undefined => {
-        const p = cfg.particles[n]
-        return p === undefined ? undefined : { name: n, j: p.j, p: p.p, c: lookupC(defaultDb, n) }
-      }
+      // The two-vertex analysis lives in the shared core (src/intermediate-jpc.ts)
+      // — the same code the write gate (validateResonanceAddition) enforces.
       const intermediates: {
         name: string
         chain: string
@@ -423,72 +471,44 @@ export function apply(ctx: Context) {
       for (const chainName of chains) {
         const chain = cfg.decayChains[chainName]
         for (const intName of Object.keys(chain.intermediates)) {
-          const kin = cfg.kinematics[intName]
-          const production = kin ? allowedIntermediateJP(kin.mother, kin.daughter, maxL) : []
-          const motherC = kin?.motherName !== undefined ? lookupC(defaultDb, kin.motherName) : undefined
-          const daughterC = kin?.daughterName !== undefined ? lookupC(defaultDb, kin.daughterName) : undefined
-          const cRequired = motherC !== undefined && daughterC !== undefined ? ((motherC * daughterC) as 1 | -1) : undefined
-          // Merge J^PC sets over all decay modes of this intermediate.
-          const byKey = new Map<string, { jpc: JP; sl: [number, number][] }>()
-          const stepInfos: { daughters: string[]; identical: boolean; cDefined: boolean; sl?: [number, number][]; jpc: string[] }[] = []
-          for (const step of chain.steps.filter((s) => s.mother === intName)) {
-            const d1 = named(step.daughters[0])
-            const d2 = named(step.daughters[1])
-            if (!d1 || !d2) continue
-            const waves = pairJPC(d1, d2, { maxL, identicalGroups, slFilter: step.sl })
-            const { kind, cDefined } = pairKind(d1, d2, identicalGroups)
-            stepInfos.push({
-              daughters: step.daughters,
-              identical: kind.startsWith('identical'),
-              cDefined,
-              sl: step.sl,
-              jpc: waves.map((w) => jpcLabel(w.jpc)),
-            })
-            for (const w of waves) {
-              const key = `${w.jpc.j}|${w.jpc.p}|${w.jpc.c ?? 'x'}`
-              const e = byKey.get(key) ?? { jpc: w.jpc, sl: [] }
-              e.sl.push(...w.sl.map((x) => [x.s, x.l] as [number, number]))
-              byKey.set(key, e)
-            }
-          }
-          const prodHas = (jpc: JP): boolean => production.some((p) => p.jp.j === jpc.j && p.jp.p === jpc.p)
+          const ana = analyzeIntermediateJPC(cfg, defaultDb, intName, { maxL })
+          if (ana === undefined) continue
           const allowed: { jpc: string; c: 1 | -1 | null; sl: [number, number][]; candidates: { id: string; mass: number; width: number | null; cMatch: string }[] }[] = []
-          const cBlocked: string[] = []
-          for (const e of byKey.values()) {
-            if (!prodHas(e.jpc)) continue
-            if (cRequired !== undefined && e.jpc.c !== undefined && e.jpc.c !== cRequired) {
-              cBlocked.push(jpcLabel(e.jpc))
-              continue
-            }
-            const c = e.jpc.c ?? null
-            const candidates = lookupResonance(defaultDb, { jp: { j: e.jpc.j, p: e.jpc.p } })
+          for (const w of ana.allowed) {
+            const candidates = lookupResonance(defaultDb, { jp: { j: w.j, p: w.p } })
               .filter((r) => {
-                if (c === null) return true
-                return r.c === c || r.c === undefined // undefined C = data gap, flagged
+                if (w.c === null) return true
+                return r.c === w.c || r.c === undefined // undefined C = data gap, flagged
               })
               .map((r) => ({
                 id: r.id,
                 mass: r.mass,
                 width: r.width ?? null,
-                cMatch: c === null ? 'n/a' : r.c === c ? 'yes' : 'unknown',
+                cMatch: w.c === null ? 'n/a' : r.c === w.c ? 'yes' : 'unknown',
               }))
-            allowed.push({ jpc: jpcLabel(e.jpc), c, sl: e.sl, candidates })
+            allowed.push({ jpc: w.jpc, c: w.c, sl: w.sl, candidates })
           }
           intermediates.push({
             name: intName,
-            chain: chainName,
-            production: kin
+            chain: ana.chain,
+            production: ana.production
               ? {
-                  mother: kin.motherName,
-                  daughter: kin.daughterName,
-                  threshold: kin.threshold,
-                  allowedJP: production.map((p) => `${p.jp.j}${p.jp.p > 0 ? '+' : '-'}`),
-                  cRequired: cRequired ?? null,
+                  mother: ana.production.mother,
+                  daughter: ana.production.daughter,
+                  threshold: ana.production.threshold,
+                  allowedJP: ana.production.allowedJP.map((a) => `${a.j}${a.p > 0 ? '+' : '-'}`),
+                  cRequired: ana.production.cRequired ?? null,
                 }
               : undefined,
-            decaySteps: stepInfos,
+            decaySteps: ana.decaySteps.map((s) => ({
+              daughters: s.daughters,
+              identical: s.identical,
+              cDefined: s.cDefined,
+              sl: s.sl ?? undefined,
+              jpc: s.jpc,
+            })),
             allowed,
-            cBlocked,
+            cBlocked: ana.cBlocked,
           })
         }
       }
@@ -620,6 +640,7 @@ export function apply(ctx: Context) {
             model: spec.model,
             parameters: spec.parameters,
             free: spec.free ?? null,
+            reference: spec.reference ?? null,
             pdg: hit ? { id: hit.id, jp: `${hit.jp.j}${hit.jp.p > 0 ? '+' : '-'}`, c: hit.c ?? null, mass: hit.mass } : null,
             jpcMatch: hit !== undefined && hit.jp.j === spec.j && hit.jp.p === spec.p,
             thresholdMargin,
@@ -643,6 +664,94 @@ export function apply(ctx: Context) {
       }
       const ref = await maybeSpill(ctx, exec, 'auto_pwa_config_view', JSON.stringify(out), null)
       return ref === null ? out : { ...out, spilled: ref }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_suggest（决策层：pull 驱动的候选发现）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_suggest',
+    description: '候选发现（只读）：把评估结果（evaluate.json 的 pull>3σ 质量区）与每个中间态的物理允许 J^PC 相交，列出质量落在 pull 区附近的 PDG 共振态候选，按对齐度排序并给出阈值余量。决策输入——先 suggest 再决定加什么，而不是凭空猜名字。',
+    parameters: {
+      configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
+      evaluateJsonPath: { type: 'string', required: true, description: 'evaluate.json 绝对路径（auto_pwa_evaluate 的输出）' },
+      decayTo: { type: 'array', items: { type: 'string' }, description: '末态粒子名（如 ["K+","eta"]），命中 PDG 衰变模式的候选会被标记' },
+      maxPerIntermediate: { type: 'integer', description: '每个中间态最多候选数（默认 8）' },
+      alignWindow: { type: 'number', description: 'pull 区对齐窗口 GeV（默认 0.5）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          configPath: { type: 'string', required: true },
+          evaluateJsonPath: { type: 'string', required: true },
+          suggestions: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                intermediate: { type: 'string', required: true },
+                chain: { type: 'string', required: true },
+                jpc: { type: 'string', required: true },
+                resonance: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, mass: { type: 'number', required: true }, width: { oneOf: [{ type: 'number' }, { type: 'null' }] } } },
+                alignGap: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                targetRegion: { oneOf: [{ type: 'array', items: { type: 'number' } }, { type: 'null' }] },
+                threshold: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                margin: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                decaysTo: { type: 'boolean' },
+                reason: { type: 'string', required: true },
+              },
+            },
+          },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        suggestions: {
+          intermediate: string
+          jpc: string
+          resonance: { id: string; mass: number }
+          alignGap: number | null
+          targetRegion: [number, number] | null
+          margin: number | null
+          decaysTo: boolean
+          reason: string
+        }[]
+        error?: string
+      }) => {
+        if (!value.ok) return text(`suggest 失败: ${value.error ?? '未知'}`)
+        if (value.suggestions.length === 0) return text('（无候选：没有 pull 区对齐或物理允许的 PDG 共振态）')
+        const lines = ['候选建议（按中间态 / 对齐度排序）:']
+        let last = ''
+        for (const s of value.suggestions) {
+          const head = s.intermediate !== last ? `\n[${s.intermediate}] ${s.jpc}:` : ''
+          last = s.intermediate
+          lines.push(
+            `${head} ${s.resonance.id} m=${s.resonance.mass.toFixed(4)}${s.margin !== null ? ` 阈值余量 ${s.margin >= 0 ? '+' : ''}${s.margin.toFixed(4)}` : ''}${s.decaysTo ? ' ★衰变命中' : ''} — ${s.reason}`,
+          )
+        }
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { configPath: string; evaluateJsonPath: string; decayTo?: string[]; maxPerIntermediate?: number; alignWindow?: number }) {
+      try {
+        const cfg = parseConfig(readFileSync(args.configPath, 'utf8'))
+        const ev = JSON.parse(readFileSync(args.evaluateJsonPath, 'utf8')) as { distributions?: Record<string, unknown> }
+        const suggestions = suggestCandidates(cfg, defaultDb, ev as never, {
+          decayTo: args.decayTo,
+          maxPerIntermediate: args.maxPerIntermediate,
+          alignWindow: args.alignWindow,
+        })
+        return { ok: true, configPath: args.configPath, evaluateJsonPath: args.evaluateJsonPath, suggestions }
+      } catch (e) {
+        return { ok: false, configPath: args.configPath, evaluateJsonPath: args.evaluateJsonPath, suggestions: [], error: (e as Error).message }
+      }
     },
   }))
 
@@ -718,7 +827,10 @@ export function apply(ctx: Context) {
       if (kin) out.threshold = kin.threshold
       if (result.ok && kin) {
         const pdg = lookupResonance(defaultDb, { name: args.proposal.name })[0]
-        out.floatSuggestion = suggestFree(pdg, args.proposal, { threshold: kin.threshold })
+        out.floatSuggestion = suggestFree(pdg, args.proposal, {
+          threshold: kin.threshold,
+          centerOnProposal: args.proposal.reference !== undefined && args.proposal.reference.trim() !== '',
+        })
       }
       return out
     },
@@ -788,6 +900,22 @@ export function apply(ctx: Context) {
       if (applied.errors.length > 0) {
         return { ok: false, written: false, changed: [], errors: applied.errors, warnings: v.warnings, configPath, resonanceCount: Object.keys(cfg.resonances).length }
       }
+      // Final gate: the WHOLE resulting config must pass the structural
+      // validation (identical groups, trans refs, maxL ...) and the
+      // cross-reference check before anything is written to disk.
+      const finalV = validateConfig(applied.config)
+      const finalXref = crossReferenceErrors(applied.config)
+      if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
+        return {
+          ok: false,
+          written: false,
+          changed: [],
+          errors: [...finalV.errors, ...finalXref.errors],
+          warnings: v.warnings,
+          configPath,
+          resonanceCount: Object.keys(cfg.resonances).length,
+        }
+      }
       const rendered = dumpConfig(applied.config)
       // Atomic write: backup, tmp file, rename.
       const backupPath = `${configPath}.bak`
@@ -795,13 +923,12 @@ export function apply(ctx: Context) {
       const tmpPath = join(dirname(configPath), `.config.yml.tmp-${Date.now().toString(36)}`)
       writeFileSync(tmpPath, rendered)
       renameSync(tmpPath, configPath)
-      const xref = crossReferenceErrors(applied.config)
       return {
         ok: true,
         written: true,
         changed: applied.changed,
-        errors: [],
-        warnings: [...v.warnings, ...xref.warnings],
+        errors: [...finalV.errors, ...finalXref.errors],
+        warnings: [...v.warnings, ...finalXref.warnings, ...finalV.warnings],
         configPath,
         backupPath,
         resonanceCount: Object.keys(applied.config.resonances).length,
@@ -979,7 +1106,7 @@ export function apply(ctx: Context) {
           errors.push(...v.errors)
           return out
         }
-        let started: { iterDir: string; iter: number; changed: string[] }
+        let started: { iterDir: string; iter: number; changed: string[]; warnings: string[] }
         try {
           started = startIteration({
             iterationsRoot,
@@ -991,6 +1118,7 @@ export function apply(ctx: Context) {
           errors.push({ code: 'iter-start-failed', message: (e as Error).message })
           return out
         }
+        warnings.push(...started.warnings.map((w) => ({ code: 'data-path-unabsolutized', message: w })))
         changed.push(...started.changed)
         out.iter = started.iter
         out.iterDir = started.iterDir
@@ -1001,13 +1129,21 @@ export function apply(ctx: Context) {
           return out
         }
         const target = `${started.iterDir}/config.yml`
+        // Final gate: the whole resulting config must pass structural +
+        // cross-reference validation before the write (same gate as
+        // auto_pwa_edit_config).
+        const finalV = validateConfig(applied.config)
+        const finalXref = crossReferenceErrors(applied.config)
+        if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
+          errors.push(...finalV.errors, ...finalXref.errors)
+          return out
+        }
         copyFileSync(target, `${target}.bak`)
         const tmp = `${target}.tmp-${Date.now().toString(36)}`
         writeFileSync(tmp, dumpConfig(applied.config))
         renameSync(tmp, target)
         changed.push(...applied.changed)
-        const xref = crossReferenceErrors(applied.config)
-        warnings.push(...xref.warnings)
+        warnings.push(...finalXref.warnings, ...finalV.warnings)
         try {
           out.jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
         } catch (e) {
@@ -1040,11 +1176,19 @@ export function apply(ctx: Context) {
           iter: { type: 'integer', required: true },
           iterDir: { type: 'string', required: true },
           changed: { type: 'array', required: true, items: { type: 'string' } },
+          warnings: { type: 'array', items: { type: 'string' } },
           error: { type: 'string' },
         },
       },
-      render: (_args, value: { iter: number; iterDir: string; changed: string[]; error?: string }) =>
-        text(value.error ? `迭代目录创建失败: ${value.error}` : `iter-${String(value.iter).padStart(3, '0')}: ${value.iterDir}\n${value.changed.map((c) => '  ' + c).join('\n')}`),
+      render: (_args, value: { iter: number; iterDir: string; changed: string[]; warnings?: string[]; error?: string }) => {
+        const warn = value.warnings ?? []
+        return text(
+          value.error
+            ? `迭代目录创建失败: ${value.error}`
+            : `iter-${String(value.iter).padStart(3, '0')}: ${value.iterDir}\n${value.changed.map((c) => '  ' + c).join('\n')}` +
+                (warn.length > 0 ? `\n${warn.map((w) => '  [warn] ' + w).join('\n')}` : ''),
+        )
+      },
     },
     async execute(args: { iterationsRoot: string; baseConfigPath: string; fitScriptPath?: string; plotScriptPath?: string }) {
       try {
@@ -1054,7 +1198,7 @@ export function apply(ctx: Context) {
           fitScriptPath: args.fitScriptPath ?? resolveEnv().fitScript,
           plotScriptPath: args.plotScriptPath ?? resolveEnv().plotScript,
         })
-        return { iter: r.iter, iterDir: r.iterDir, changed: r.changed }
+        return { iter: r.iter, iterDir: r.iterDir, changed: r.changed, warnings: r.warnings }
       } catch (e) {
         return { iter: -1, iterDir: '', changed: [], error: (e as Error).message }
       }
@@ -1297,7 +1441,7 @@ export function apply(ctx: Context) {
         return { ok: false, iter: -1, iterDir: '', changed: [], errors: v.errors, warnings: v.warnings }
       }
       // 2. new iteration dir (config copied + Data paths absolutized)
-      let started: { iterDir: string; iter: number; changed: string[] }
+      let started: { iterDir: string; iter: number; changed: string[]; warnings: string[] }
       try {
         started = startIteration({
           iterationsRoot,
@@ -1308,6 +1452,7 @@ export function apply(ctx: Context) {
       } catch (e) {
         return { ok: false, iter: -1, iterDir: '', changed: [], errors: [{ code: 'iter-start-failed', message: (e as Error).message }], warnings: [] }
       }
+      const startWarnings = started.warnings
       // 3. apply + write config in the new dir
       const newCfg = parseConfig(readFileSync(`${started.iterDir}/config.yml`, 'utf8'))
       const applied = applyResonanceAddition(newCfg, args.proposal)
@@ -1315,11 +1460,24 @@ export function apply(ctx: Context) {
         return { ok: false, iter: started.iter, iterDir: started.iterDir, changed: started.changed, errors: applied.errors, warnings: v.warnings }
       }
       const target = `${started.iterDir}/config.yml`
+      // Final gate: whole-config structural + cross-reference validation
+      // before the write (same gate as auto_pwa_edit_config).
+      const finalV = validateConfig(applied.config)
+      const finalXref = crossReferenceErrors(applied.config)
+      if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
+        return {
+          ok: false,
+          iter: started.iter,
+          iterDir: started.iterDir,
+          changed: started.changed,
+          errors: [...finalV.errors, ...finalXref.errors],
+          warnings: [...v.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
+        }
+      }
       copyFileSync(target, `${target}.bak`)
       const tmp = `${target}.tmp-${Date.now().toString(36)}`
       writeFileSync(tmp, dumpConfig(applied.config))
       renameSync(tmp, target)
-      const xref = crossReferenceErrors(applied.config)
       // 4. submit fit
       let jobId: string | undefined
       try {
@@ -1331,7 +1489,7 @@ export function apply(ctx: Context) {
           iterDir: started.iterDir,
           changed: [...started.changed, ...applied.changed],
           errors: [{ code: 'fit-submit-failed', message: (e as Error).message }],
-          warnings: [...v.warnings, ...xref.warnings],
+          warnings: [...v.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
         }
       }
       return {
@@ -1341,7 +1499,7 @@ export function apply(ctx: Context) {
         jobId,
         changed: [...started.changed, ...applied.changed],
         errors: [],
-        warnings: [...v.warnings, ...xref.warnings],
+        warnings: [...v.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
       }
     },
   }))
@@ -1491,6 +1649,71 @@ export function apply(ctx: Context) {
       // mapped summary itself grows large, spill it for on-demand reads.
       const ref = await maybeSpill(ctx, exec, 'auto_pwa_evaluate', JSON.stringify(out), null)
       return ref === null ? out : { ...out, spilled: ref }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_diagnose（决策层：fit.json 诊断假设）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_diagnose',
+    description: '拟合诊断（只读）：解析 results/fit.json，把参数撞边界、份额不显著（<2σ）、强干涉对、Hessian 不正定等数值事实转成"可行动的假设"清单（含删除/换模型/浮耦合建议）。决策输入——判断当前拟合好不好、下一步该动什么。',
+    parameters: {
+      iterDir: { type: 'string', required: true, description: '迭代目录（读其 results/fit.json）' },
+      configPath: { type: 'string', description: 'config.yml 绝对路径（用于把共振态名映射到链/组，给出删除建议上下文）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          iterDir: { type: 'string', required: true },
+          hasFitJson: { type: 'boolean', required: true },
+          items: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                severity: { type: 'string', required: true, enum: ['info', 'warn', 'danger'] },
+                code: { type: 'string', required: true },
+                message: { type: 'string', required: true },
+                suggestion: { type: 'string' },
+              },
+            },
+          },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        hasFitJson: boolean
+        items: { severity: string; code: string; message: string; suggestion?: string }[]
+        error?: string
+      }) => {
+        if (!value.ok) return text(`诊断失败: ${value.error ?? '未知'}`)
+        if (!value.hasFitJson) return text('（该迭代没有 results/fit.json —— 拟合可能未完成或失败）')
+        if (value.items.length === 0) return text('（无诊断项：拟合干净）')
+        const icon = { info: 'ℹ️', warn: '⚠️', danger: '🚨' } as Record<string, string>
+        const lines = value.items.map((i) => `${icon[i.severity] ?? '·'} [${i.code}] ${i.message}${i.suggestion ? `\n    建议: ${i.suggestion}` : ''}`)
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { iterDir: string; configPath?: string }) {
+      const fitJsonPath = `${args.iterDir}/results/fit.json`
+      if (!existsSync(fitJsonPath)) {
+        return { ok: true, iterDir: args.iterDir, hasFitJson: false, items: [] }
+      }
+      try {
+        const fitJson = parseFitJson(readFileSync(fitJsonPath, 'utf8'))
+        const cfg = args.configPath !== undefined ? parseConfig(readFileSync(args.configPath, 'utf8')) : undefined
+        const items = diagnoseFit(fitJson, cfg)
+        return { ok: true, iterDir: args.iterDir, hasFitJson: true, items }
+      } catch (e) {
+        return { ok: false, iterDir: args.iterDir, hasFitJson: true, items: [], error: (e as Error).message }
+      }
     },
   }))
 
@@ -1745,6 +1968,650 @@ export function apply(ctx: Context) {
         }
       }
       return out
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_try_candidates（第二批：并行候选短拟合）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_try_candidates',
+    description: '并行试探多个候选（执行层）：在同一基座 config 上各加一个候选，建独立 trial 目录（iterations/_trials/，不进 iter-N 序列），以短拟合（--runs 1 --max-iter 500，可用 PWA_AIFIT_RUNS 风格参数调整）提交后台任务。全部完成后用 auto_pwa_compare 比较 ΔNLL 选出最优者。物理门禁与写前总闸与正式迭代一致。',
+    parameters: {
+      baseIterDir: { type: 'string', required: true, description: '基座迭代目录（其 config.yml 作为所有候选的公共起点）' },
+      candidates: {
+        type: 'array',
+        required: true,
+        maxItems: 5,
+        items: proposalParam,
+        description: '要试探的共振态候选（每个都会被独立验证；无效的会被跳过并说明原因）',
+      },
+      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
+      shortRuns: { type: 'integer', description: '短拟合运行次数（默认 1）' },
+      shortMaxIter: { type: 'integer', description: '短拟合单次最大迭代（默认 500）' },
+      timeoutMin: { type: 'integer', description: '每个拟合的超时分钟数（默认无）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          baseIterDir: { type: 'string', required: true },
+          jobs: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                candidate: { type: 'string', required: true },
+                iterDir: { type: 'string', required: true },
+                jobId: { type: 'string', required: true },
+                changed: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+          skipped: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                candidate: { type: 'string', required: true },
+                errors: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } } },
+              },
+            },
+          },
+          warnings: { type: 'array', items: { type: 'string' } },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        jobs: { candidate: string; iterDir: string; jobId: string }[]
+        skipped: { candidate: string; errors: { code: string; message: string }[] }[]
+        warnings?: string[]
+        error?: string
+      }) => {
+        if (!value.ok) return text(`trial 提交失败: ${value.error ?? '未知'}`)
+        const lines: string[] = []
+        if (value.jobs.length > 0) {
+          lines.push(`已提交 ${value.jobs.length} 个候选短拟合:`)
+          for (const j of value.jobs) lines.push(`  ${j.candidate}: job ${j.jobId} — ${j.iterDir}`)
+        }
+        for (const s of value.skipped) {
+          lines.push(`  ✗ ${s.candidate} 被物理门禁拦截: ${s.errors.map((e) => `${e.code}`).join(', ')}`)
+        }
+        for (const w of value.warnings ?? []) lines.push(`  [warn] ${w}`)
+        if (value.jobs.length === 0) lines.push('（没有可提交的候选）')
+        else lines.push('完成后用 auto_pwa_compare 比较 ΔNLL 决定晋级者。')
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: {
+      baseIterDir: string
+      candidates: ResonanceProposal[]
+      fitScriptPath?: string
+      shortRuns?: number
+      shortMaxIter?: number
+      timeoutMin?: number
+    }, exec) {
+      const baseConfig = `${args.baseIterDir}/config.yml`
+      if (!existsSync(baseConfig)) {
+        return { ok: false, baseIterDir: args.baseIterDir, jobs: [], skipped: [], error: `base config not found: ${baseConfig}` }
+      }
+      const iterationsRoot = iterationsRootOf(args.baseIterDir)
+      const env = resolveEnv()
+      const fitScriptPath = args.fitScriptPath ?? env.fitScript
+      const runs = String(args.shortRuns ?? 1)
+      const maxIter = String(args.shortMaxIter ?? 500)
+      const jobs: { candidate: string; iterDir: string; jobId: string; changed: string[] }[] = []
+      const skipped: { candidate: string; errors: { code: string; message: string }[] }[] = []
+      const warnings: string[] = []
+      const baseIterName = args.baseIterDir.split(/[\\/]/).pop() ?? 'base'
+      let idx = 0
+      for (const proposal of args.candidates) {
+        idx += 1
+        try {
+          const cfg = parseConfig(readFileSync(baseConfig, 'utf8'))
+          const v = validateResonanceAddition(defaultDb, cfg, proposal)
+          if (!v.ok) {
+            skipped.push({ candidate: proposal.name, errors: v.errors })
+            continue
+          }
+          const applied = applyResonanceAddition(cfg, proposal)
+          if (applied.errors.length > 0) {
+            skipped.push({ candidate: proposal.name, errors: applied.errors })
+            continue
+          }
+          const finalV = validateConfig(applied.config)
+          const finalXref = crossReferenceErrors(applied.config)
+          if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
+            skipped.push({ candidate: proposal.name, errors: [...finalV.errors, ...finalXref.errors] })
+            continue
+          }
+          const { trialDir, changed, warnings: trialWarnings } = createTrialDir({
+            iterationsRoot,
+            baseConfigPath: baseConfig,
+            label: `${baseIterName}-${idx}-${proposal.name}`,
+            fitScriptPath,
+          })
+          warnings.push(...trialWarnings)
+          const target = `${trialDir}/config.yml`
+          copyFileSync(target, `${target}.bak`)
+          const tmp = `${target}.tmp-${Date.now().toString(36)}`
+          writeFileSync(tmp, dumpConfig(applied.config))
+          renameSync(tmp, target)
+          const jobId = ctx.pwaFit.submit(
+            {
+              iterDir: trialDir,
+              scriptArgs: ['--runs', runs, '--max-iter', maxIter],
+              timeoutMin: args.timeoutMin,
+            },
+            ownerOf(exec),
+          )
+          jobs.push({ candidate: proposal.name, iterDir: trialDir, jobId, changed: [...changed, ...applied.changed] })
+        } catch (e) {
+          skipped.push({ candidate: proposal.name, errors: [{ code: 'trial-failed', message: (e as Error).message }] })
+        }
+      }
+      return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_compare（第二批：候选显著性比较）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_compare',
+    description: '比较基座与各 trial 的 ΔNLL 并给显著性判定（决策层）：新共振态约 2 个自由参数，|ΔNLL| >= threshold（默认 3，可调）才认为显著。输出每个 trial 的 NLL/ΔNLL/Hessian 正定性与裁决，并推荐晋级者（或都不推荐）。',
+    parameters: {
+      baseIterDir: { type: 'string', required: true, description: '基座迭代目录（参考 NLL 的来源）' },
+      trialDirs: { type: 'array', required: true, items: { type: 'string' }, description: 'auto_pwa_try_candidates 返回的 trial 目录列表' },
+      significanceThreshold: { type: 'number', description: '显著 ΔNLL 阈值（默认 3.0）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          baseNll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+          results: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                trialDir: { type: 'string', required: true },
+                nll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                deltaNll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                hessianPositive: { oneOf: [{ type: 'boolean' }, { type: 'null' }] },
+                verdict: { type: 'string', required: true, enum: ['significant-improvement', 'not-significant', 'significant-worsening', 'no-result'] },
+              },
+            },
+          },
+          recommendation: { type: 'string' },
+          threshold: { type: 'number', required: true },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        baseNll: number | null
+        results: { trialDir: string; nll: number | null; deltaNll: number | null; hessianPositive: boolean | null; verdict: string }[]
+        recommendation: string
+        threshold: number
+        error?: string
+      }) => {
+        if (!value.ok) return text(`compare 失败: ${value.error ?? '未知'}`)
+        const lines = [`基座 NLL = ${value.baseNll?.toFixed(2) ?? '—'}（显著阈值 |ΔNLL| >= ${value.threshold}）`]
+        for (const r of value.results) {
+          const name = r.trialDir.split(/[\\/]/).pop() ?? r.trialDir
+          const d = r.deltaNll === null ? '—' : `${r.deltaNll > 0 ? '+' : ''}${r.deltaNll.toFixed(2)}`
+          lines.push(
+            `  ${name}: NLL=${r.nll?.toFixed(2) ?? '—'} ΔNLL=${d}${r.hessianPositive === false ? ' ⚠️Hessian 不正定' : ''} — ${r.verdict}`,
+          )
+        }
+        lines.push(`推荐: ${value.recommendation}`)
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { baseIterDir: string; trialDirs: string[]; significanceThreshold?: number }) {
+      const threshold = args.significanceThreshold ?? 3.0
+      const base = summarizeFitDir(args.baseIterDir)
+      const baseNll = base.summary.bestNll
+      const results: {
+        trialDir: string
+        nll: number | null
+        deltaNll: number | null
+        hessianPositive: boolean | null
+        verdict: 'significant-improvement' | 'not-significant' | 'significant-worsening' | 'no-result'
+      }[] = []
+      for (const dir of args.trialDirs) {
+        const s = summarizeFitDir(dir)
+        const nll = s.summary.bestNll
+        const delta = baseNll !== null && nll !== null ? nll - baseNll : null
+        let verdict: (typeof results)[number]['verdict'] = 'no-result'
+        if (delta !== null) {
+          verdict = delta <= -threshold ? 'significant-improvement' : delta >= threshold ? 'significant-worsening' : 'not-significant'
+        }
+        results.push({ trialDir: dir, nll, deltaNll: delta, hessianPositive: s.summary.positiveDefinite, verdict })
+      }
+      results.sort((a, b) => {
+        const an = a.deltaNll ?? Number.POSITIVE_INFINITY
+        const bn = b.deltaNll ?? Number.POSITIVE_INFINITY
+        return an - bn
+      })
+      const best = results.find((r) => r.verdict === 'significant-improvement')
+      const recommendation = best !== undefined
+        ? `${best.trialDir.split(/[\\/]/).pop() ?? best.trialDir} 显著改进（ΔNLL ${best.deltaNll?.toFixed(2)}），建议晋级为正式迭代`
+        : results.some((r) => r.verdict === 'not-significant')
+          ? '所有候选均未达到显著阈值 —— 保持当前模型或换一批候选'
+          : results.some((r) => r.verdict === 'significant-worsening')
+            ? '有候选显著变差 —— 不要采纳'
+            : '没有可比较的结果（检查 trial 是否完成）'
+      return { ok: true, baseNll, results, recommendation, threshold }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_loop_next / auto_pwa_loop_status / auto_pwa_loop_decide
+  // （第三批：循环状态机 —— 显著性 / 停止 / 回滚 / 最终报告）
+  // ---------------------------------------------------------------------
+
+  /** Best-effort max|pull| from the iteration's evaluate.json (either
+   *  `<iter>/evaluate/evaluate.json` or `<iter>/results/evaluate/evaluate.json`). */
+  const readMaxPull = (iterDir: string): number | null => {
+    for (const p of [`${iterDir}/evaluate/evaluate.json`, `${iterDir}/results/evaluate/evaluate.json`]) {
+      if (!existsSync(p)) continue
+      try {
+        const ev = JSON.parse(readFileSync(p, 'utf8'))
+        const worst = ev.worst_distributions as { max_abs_pull?: number }[] | undefined
+        const pulls = (worst ?? []).map((w) => w.max_abs_pull ?? 0)
+        return pulls.length > 0 ? Math.max(...pulls) : null
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+
+  /** Evaluate one iteration against the diary + objective (shared by loop tools). */
+  const evaluateIteration = (state: LoopState): { evalResult: LoopEval; converged: boolean; reason?: string } => {
+    const { summary } = summarizeFitDir(state.currentIterDir)
+    const nll = summary.bestNll
+    const deltaNll = nll !== null ? (() => {
+      const prev = previousDiaryNll(state.iterationsRoot, state.iter)
+      return prev !== undefined ? nll - prev : null
+    })() : null
+    const maxPull = readMaxPull(state.currentIterDir)
+    const verdict: LoopEval['verdict'] =
+      deltaNll === null ? 'no-data' : deltaNll <= -state.objective.significanceThreshold ? 'significant-improvement' : 'not-significant'
+    const evalResult: LoopEval = {
+      iter: state.iter,
+      iterDir: state.currentIterDir,
+      nll,
+      deltaNll,
+      maxPull,
+      hessianPositive: summary.positiveDefinite,
+      verdict,
+    }
+    const c = convergenceVerdict(evalResult, state.objective, state.rounds)
+    return { evalResult, converged: c.converged, reason: c.reason }
+  }
+
+  /** Finalize the loop: diary + FINAL-REPORT.md + phase done. */
+  const finalizeLoop = (state: LoopState, reason: string): { reportPath: string } => {
+    const { summary } = summarizeFitDir(state.currentIterDir)
+    const reportPath = writeFinalReport(state.iterationsRoot, { iter: state.iter, iterDir: state.currentIterDir, nll: summary.bestNll }, reason)
+    state.finalized = { bestIter: state.iter, bestNll: summary.bestNll, reason, reportPath }
+    state.phase = 'done'
+    saveLoopState(state)
+    try {
+      const log = new IterationLog({ rootDir: state.iterationsRoot })
+      log.append({
+        iter: state.iter,
+        timestamp: new Date().toISOString(),
+        title: `收敛：最优拟合达成（iter-${String(state.iter).padStart(3, '0')}）`,
+        kind: 'converged',
+        configPath: `${state.currentIterDir}/config.yml`,
+        iterDir: state.currentIterDir,
+        nll: summary.bestNll ?? undefined,
+        conclusion: reason,
+        nextPlan: '已生成 FINAL-REPORT.md',
+      })
+    } catch {
+      // diary append is best-effort (duplicate iter / missing dir)
+    }
+    return { reportPath }
+  }
+
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_loop_next',
+    description: '循环状态机（执行面，主驱动器）：评估当前迭代（NLL/ΔNLL/max|pull|/Hessian）→ 按目标判据（max|pull|、|ΔNLL| 显著阈值、轮次预算）判定收敛 → 收敛则写 FINAL-REPORT.md 并宣告 done；未收敛则进入 propose 阶段等 AI 决策。首次调用传 baseIterDir 启动（状态持久化在 iterations/.loop-state.json，重启可续）。',
+    parameters: {
+      iterationsRoot: { type: 'string', description: 'iterations/ 目录（省略时从 baseIterDir 推导）' },
+      baseIterDir: { type: 'string', description: '起始基线迭代目录（仅首次/重启时必填；如 .../iterations/iter-004）' },
+      objective: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          stopMaxPull: { type: 'number', description: 'max|pull| 停止阈值（默认 5）' },
+          stopDeltaNll: { type: 'number', description: '|ΔNLL| 停止阈值（默认 10）' },
+          significanceThreshold: { type: 'number', description: '显著改进阈值（默认 3）' },
+          maxRounds: { type: 'integer', description: '轮次预算上限（默认 20）' },
+        },
+        description: '收敛目标（仅首次调用生效，之后沿用状态里的值）',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          phase: { type: 'string', required: true, enum: ['evaluate', 'propose', 'done'] },
+          iter: { type: 'integer', required: true },
+          iterDir: { type: 'string', required: true },
+          rounds: { type: 'integer', required: true },
+          eval: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              nll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+              deltaNll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+              maxPull: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+              hessianPositive: { oneOf: [{ type: 'boolean' }, { type: 'null' }] },
+              verdict: { type: 'string', required: true },
+            },
+          },
+          converged: { type: 'boolean', required: true },
+          reason: { type: 'string' },
+          reportPath: { type: 'string' },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        phase: string
+        iter: number
+        iterDir: string
+        rounds: number
+        eval?: { nll: number | null; deltaNll: number | null; maxPull: number | null; hessianPositive: boolean | null; verdict: string }
+        converged: boolean
+        reason?: string
+        reportPath?: string
+        error?: string
+      }) => {
+        if (!value.ok) return text(`loop 失败: ${value.error ?? '未知'}`)
+        const lines = [`loop: phase=${value.phase}, iter-${String(value.iter).padStart(3, '0')}（${value.iterDir}）, rounds=${value.rounds}`]
+        const e = value.eval
+        if (e !== undefined) {
+          lines.push(
+            `  评估: NLL=${e.nll?.toFixed(2) ?? '—'} ΔNLL=${e.deltaNll === null ? '—' : e.deltaNll.toFixed(2)} max|pull|=${e.maxPull?.toFixed(2) ?? '—'}${e.hessianPositive === false ? ' ⚠️Hessian 不正定' : ''}（${e.verdict}）`,
+          )
+        }
+        if (value.converged) {
+          lines.push(`  ✅ 收敛: ${value.reason ?? ''}`)
+          if (value.reportPath) lines.push(`  最终报告: ${value.reportPath}`)
+        } else if (value.reason !== undefined) {
+          lines.push(`  未收敛（${value.reason}）— 用 auto_pwa_suggest/diagnose 决策，然后 auto_pwa_loop_decide 执行`)
+        }
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { iterationsRoot?: string; baseIterDir?: string; objective?: Partial<LoopObjective> }) {
+      try {
+        let state: LoopState | undefined
+        if (args.iterationsRoot !== undefined) state = loadLoopState(args.iterationsRoot)
+        if (state === undefined) {
+          if (args.baseIterDir === undefined) {
+            return { ok: false, phase: 'propose' as const, iter: -1, iterDir: '', rounds: 0, converged: false, error: 'no loop state — pass baseIterDir on the first call to start the loop' }
+          }
+          const root = args.iterationsRoot ?? iterationsRootOf(args.baseIterDir)
+          state = initLoopState(root, args.baseIterDir, args.objective)
+        }
+        if (state.phase === 'done') {
+          return {
+            ok: true,
+            phase: 'done' as const,
+            iter: state.iter,
+            iterDir: state.currentIterDir,
+            rounds: state.rounds,
+            converged: true,
+            reason: state.finalized?.reason,
+            reportPath: state.finalized?.reportPath,
+          }
+        }
+        const { evalResult, converged, reason } = evaluateIteration(state)
+        state.lastEval = evalResult
+        if (converged) {
+          const { reportPath } = finalizeLoop(state, reason ?? '收敛判据满足')
+          return {
+            ok: true,
+            phase: 'done' as const,
+            iter: state.iter,
+            iterDir: state.currentIterDir,
+            rounds: state.rounds,
+            eval: evalResult,
+            converged: true,
+            reason,
+            reportPath,
+          }
+        }
+        state.phase = 'propose'
+        saveLoopState(state)
+        return {
+          ok: true,
+          phase: 'propose' as const,
+          iter: state.iter,
+          iterDir: state.currentIterDir,
+          rounds: state.rounds,
+          eval: evalResult,
+          converged: false,
+          reason,
+        }
+      } catch (e) {
+        return { ok: false, phase: 'propose' as const, iter: -1, iterDir: '', rounds: 0, converged: false, error: (e as Error).message }
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_loop_status',
+    description: '读取循环状态机（只读）：当前阶段、迭代、预算与最近一次评估。重启/断线后续跑前先查它。',
+    parameters: {
+      iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          phase: { type: 'string', required: true },
+          iter: { type: 'integer', required: true },
+          iterDir: { type: 'string', required: true },
+          rounds: { type: 'integer', required: true },
+          lastEval: { type: 'object', additionalProperties: false, properties: { nll: { oneOf: [{ type: 'number' }, { type: 'null' }] }, deltaNll: { oneOf: [{ type: 'number' }, { type: 'null' }] }, maxPull: { oneOf: [{ type: 'number' }, { type: 'null' }] }, verdict: { type: 'string' } } },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: { ok: boolean; phase: string; iter: number; iterDir: string; rounds: number; lastEval?: { nll: number | null; deltaNll: number | null; maxPull: number | null; verdict: string }; error?: string }) =>
+        text(
+          value.ok
+            ? `loop 状态: phase=${value.phase}, iter-${String(value.iter).padStart(3, '0')}（${value.iterDir}）, rounds=${value.rounds}${value.lastEval ? `, 上次评估 NLL=${value.lastEval.nll?.toFixed(2) ?? '—'} ΔNLL=${value.lastEval.deltaNll ?? '—'} pull=${value.lastEval.maxPull ?? '—'}` : ''}`
+            : `loop 未启动或读取失败: ${value.error ?? '未知'}`,
+        ),
+    },
+    async execute(args: { iterationsRoot: string }) {
+      const state = loadLoopState(args.iterationsRoot)
+      if (state === undefined) {
+        return { ok: false, phase: 'none', iter: -1, iterDir: '', rounds: 0, error: 'no loop state — call auto_pwa_loop_next with baseIterDir to start' }
+      }
+      return { ok: true, phase: state.phase, iter: state.iter, iterDir: state.currentIterDir, rounds: state.rounds, lastEval: state.lastEval }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_loop_decide',
+    description: '循环状态机（执行面）：把 AI 的决策落盘。action=iterate：验证 + 新建迭代 + 写 config（全部门禁）+ 提交拟合；action=rollback：把当前迭代标记失败（记入日记）、基线回退到上一轮；action=converge：强制收敛并出最终报告。',
+    parameters: {
+      iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
+      action: { type: 'string', required: true, enum: ['iterate', 'rollback', 'converge'], description: '决策动作' },
+      proposal: { ...proposalParam, description: 'action=iterate 时必填：要添加的共振态' },
+      reason: { type: 'string', description: 'rollback/converge 的原因说明（会写入日记/报告）' },
+      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
+      plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          action: { type: 'string', required: true },
+          iter: { type: 'integer', required: true },
+          iterDir: { type: 'string', required: true },
+          jobId: { type: 'string' },
+          phase: { type: 'string', required: true },
+          changed: { type: 'array', items: { type: 'string' } },
+          errors: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } } },
+          reportPath: { type: 'string' },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        action: string
+        iter: number
+        iterDir: string
+        jobId?: string
+        phase: string
+        changed?: string[]
+        errors?: { code: string; message: string }[]
+        reportPath?: string
+        error?: string
+      }) => {
+        if (!value.ok) return text(`loop_decide 失败: ${value.error ?? '未知'}`)
+        const lines = [`action=${value.action} → iter-${String(value.iter).padStart(3, '0')}（${value.iterDir}）, phase=${value.phase}`]
+        if (value.jobId !== undefined) lines.push(`  拟合已提交: job ${value.jobId}`)
+        for (const c of value.changed ?? []) lines.push(`  ${c}`)
+        for (const e of value.errors ?? []) lines.push(`  [error] ${e.code}: ${e.message}`)
+        if (value.reportPath !== undefined) lines.push(`  最终报告: ${value.reportPath}`)
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: {
+      iterationsRoot: string
+      action: 'iterate' | 'rollback' | 'converge'
+      proposal?: ResonanceProposal
+      reason?: string
+      fitScriptPath?: string
+      plotScriptPath?: string
+    }, exec) {
+      const state = loadLoopState(args.iterationsRoot)
+      if (state === undefined) {
+        return { ok: false, action: args.action, iter: -1, iterDir: '', phase: 'none', error: 'no loop state — start with auto_pwa_loop_next' }
+      }
+      try {
+        if (args.action === 'iterate') {
+          if (args.proposal === undefined) {
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: 'iterate 需要 proposal' }
+          }
+          const baseConfig = `${state.currentIterDir}/config.yml`
+          if (!existsSync(baseConfig)) {
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: `base config not found: ${baseConfig}` }
+          }
+          const env = resolveEnv()
+          const cfg = parseConfig(readFileSync(baseConfig, 'utf8'))
+          const v = validateResonanceAddition(defaultDb, cfg, args.proposal)
+          if (!v.ok) {
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: v.errors, error: 'proposal 未通过物理门禁' }
+          }
+          const started = startIteration({
+            iterationsRoot: state.iterationsRoot,
+            baseConfigPath: baseConfig,
+            fitScriptPath: args.fitScriptPath ?? env.fitScript,
+            plotScriptPath: args.plotScriptPath ?? env.plotScript,
+          })
+          const newCfg = parseConfig(readFileSync(`${started.iterDir}/config.yml`, 'utf8'))
+          const applied = applyResonanceAddition(newCfg, args.proposal)
+          if (applied.errors.length > 0) {
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: applied.errors, error: '应用 proposal 失败' }
+          }
+          const finalV = validateConfig(applied.config)
+          const finalXref = crossReferenceErrors(applied.config)
+          if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: [...finalV.errors, ...finalXref.errors], error: '写前总闸未通过' }
+          }
+          const target = `${started.iterDir}/config.yml`
+          copyFileSync(target, `${target}.bak`)
+          const tmp = `${target}.tmp-${Date.now().toString(36)}`
+          writeFileSync(tmp, dumpConfig(applied.config))
+          renameSync(tmp, target)
+          const jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
+          state.baseIterDir = state.currentIterDir
+          state.currentIterDir = started.iterDir
+          state.iter = started.iter
+          state.rounds += 1
+          state.phase = 'evaluate'
+          saveLoopState(state)
+          return {
+            ok: true,
+            action: args.action,
+            iter: started.iter,
+            iterDir: started.iterDir,
+            jobId,
+            phase: state.phase,
+            changed: [
+              ...started.changed,
+              ...started.warnings.map((w) => `[warn] ${w}`),
+              ...applied.changed,
+              ...[...v.warnings, ...finalXref.warnings, ...finalV.warnings].map((w) => `[warn] ${w.code}: ${w.message}`),
+            ],
+            errors: [],
+          }
+        }
+        if (args.action === 'rollback') {
+          const prev = previousIterDir(state.iterationsRoot, state.currentIterDir)
+          if (prev === undefined) {
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: '没有更早的迭代可回退' }
+          }
+          const m = /iter-(\d+)/.exec(prev)
+          try {
+            const log = new IterationLog({ rootDir: state.iterationsRoot })
+            log.append({
+              iter: state.iter,
+              timestamp: new Date().toISOString(),
+              title: `回滚 iter-${String(state.iter).padStart(3, '0')}：${args.reason ?? '拟合退化'}`,
+              kind: 'other',
+              configPath: `${state.currentIterDir}/config.yml`,
+              iterDir: state.currentIterDir,
+              conclusion: args.reason ?? '拟合退化（Hessian 不正定 / 撞边界 / 显著变差），已回退到上一轮',
+              nextPlan: `回退至 iter-${String(Number(m?.[1] ?? -1)).padStart(3, '0')}`,
+            })
+          } catch {
+            // duplicate-iter guard
+          }
+          state.baseIterDir = prev
+          state.currentIterDir = prev
+          state.iter = m !== null ? Number(m[1]) : state.iter - 1
+          state.phase = 'propose'
+          saveLoopState(state)
+          return { ok: true, action: args.action, iter: state.iter, iterDir: prev, phase: state.phase }
+        }
+        // converge (force finalization)
+        const reason = args.reason ?? 'AI 判定收敛'
+        const { reportPath } = finalizeLoop(state, reason)
+        return { ok: true, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, reportPath }
+      } catch (e) {
+        return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: (e as Error).message }
+      }
     },
   }))
 }

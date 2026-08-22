@@ -72,6 +72,26 @@ export interface DecayMode {
   partial?: boolean
 }
 
+/** One individual experimental measurement (pdg-2026 mass_measurements). */
+export interface MeasurementEntry {
+  /** Publication year (0/absent when unknown). */
+  year?: number
+  /** Publication short name, e.g. "PPN 56 405". */
+  publication?: string
+  doi?: string
+  inspireId?: number
+  technique?: string
+  comment?: string
+  /** Measured mass, GeV. */
+  value?: number
+  errorPositive?: number
+  errorNegative?: number
+  statError?: number
+  systError?: number
+  /** Whether this measurement entered the PDG average. */
+  usedInAverage?: boolean
+}
+
 /** One entry of the resonance table (data/pdg.json). */
 export interface ResonanceEntry {
   /** Canonical id, e.g. "phi(1020)". */
@@ -93,6 +113,8 @@ export interface ResonanceEntry {
   status: 'seed' | 'pdg'
   tex?: string
   decayModes?: DecayMode[]
+  /** Individual mass measurements (newest first; from the pdg-2026 package). */
+  measurements?: MeasurementEntry[]
 }
 
 /** The resonance database as serialized in data/pdg.json. */
@@ -189,6 +211,10 @@ export interface ResonanceSpec {
   tex?: string | string[]
   /** Flatte only: channel thresholds/couplings metadata. */
   channels?: number[][]
+  /** Provenance: parameters follow this experiment/paper instead of the PDG
+   * average (e.g. a DOI, "BESIII 2024", or a free-text citation). When set,
+   * the write gate skips the PDG-average agreement checks. */
+  reference?: string
 }
 
 /** One [J, P] group of an intermediate, listing the resonance names in it. */
@@ -294,6 +320,9 @@ export interface ResonanceProposal {
   tex?: string
   /** Flatte only. */
   channels?: number[][]
+  /** Provenance (see ResonanceSpec.reference): parameters follow this
+   * experiment/paper instead of the PDG average. */
+  reference?: string
 }
 
 /** One structured finding from validation. */

@@ -16,6 +16,8 @@ export interface FitRequest {
   iterDir: string
   /** 超时分钟数；省略 = 不设超时。 */
   timeoutMin?: number
+  /** 追加在脚本名后的 CLI 参数（如 aifit 的 --runs/--max-iter 短拟合）。 */
+  scriptArgs?: string[]
 }
 
 /** 一次拟合的状态视图（Provider -> Consumer）。 */
