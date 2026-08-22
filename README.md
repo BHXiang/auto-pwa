@@ -50,6 +50,7 @@ patch 挂载四个插件文件（服务 Provider + 硬门禁 + 斜杠命令；`p
 | `auto_pwa_suggest` | **候选发现**：pull>3σ 质量区 × 允许 J^PC → 按质量对齐度排序的 PDG 候选（含阈值余量） | 决策·发现 |
 | `auto_pwa_diagnose` | **拟合诊断**：fit.json 事实 → 可行动假设（撞边界/份额不显著/强干涉/**参数高相关简并**/Hessian） | 决策·诊断 |
 | `auto_pwa_root_view` | **ROOT 直方图直读**（AI 的眼睛）：list 列全部直方图 / read 取任意直方图逐 bin 数据——每个共振态的波谱 `h_<chain>-<int>-<res>`（大小与形状）、角分布 `cosbeta_*`、data/fit/bkg 对比 | 决策·视力 |
+| `auto_pwa_wave_view` | **任意分波组合分布**（干涉视力）：writeResult(waves) 画选中波组合的拟合分布（与全波同归一化直接对比）；`eventWeights` 时才用逐事件 TTree（大文件，慎用）并输出选中波对干涉分布 | 决策·视力 |
 | `auto_pwa_compare` | 基座 vs 候选 trial 的 ΔNLL 显著性裁决（默认阈值 3，2 自由度），推荐晋级者 | 决策·裁决 |
 | `auto_pwa_validate_add` | "添加共振态"只读门禁（PDG 依据、JPC、阈值、衰变顶点 J^P、C 守恒、全同选择定则、重复、free 结构） | 执行·门禁 |
 | `auto_pwa_edit_config` | 强约束 config.yml 编辑：校验 → 结构化修改 → **写前总闸（全文 validateConfig + 交叉引用）** → 原子写（+ .bak） | 执行 |

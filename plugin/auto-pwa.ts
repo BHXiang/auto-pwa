@@ -1832,6 +1832,134 @@ export function apply(ctx: Context) {
   }))
 
   // ---------------------------------------------------------------------
+  // auto_pwa_wave_view（决策层·干涉视力：任意分波组合的分布）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_wave_view',
+    description:
+      '画出任意分波组合的分布（决策层）：从 fit.json 重建 best 参数 → ctpwa writeResult(waves) → ' +
+      '只含选中分波的组合拟合分布（hdata/hfit/hbkg 同尺度归一化，可与全波 weight_best.root 直接对比）。' +
+      '用途：①"这几个波加起来长什么样"——与数据谱对比判断缺什么；②"去掉某波后的分布"——该态贡献的形状；' +
+      '③ h_<name> 波谱逐 bin 值（每个选中波自己的形状）。默认直方图模式（小文件）；' +
+      'eventWeights=true 时才用逐事件 TTree（大文件，慎用），输出选中波对的干涉分布并自动删除大文件。' +
+      '波名取 weight_best.root 的 h_ 名（如 chain1-R_KK-phi1020），可先 auto_pwa_root_view list 查看。',
+    parameters: {
+      iterDir: { type: 'string', required: true, description: '迭代目录（须含 config.yml 与 results/fit.json、results/weight_best.root）' },
+      waves: { type: 'array', required: true, items: { type: 'string' }, maxItems: 6, description: '要组合的波名（h_ 名去掉前缀，如 chain1-R_KK-phi1020）' },
+      eventWeights: { type: 'boolean', description: 'true 时用逐事件 saved_weight TTree 输出干涉分布（大文件，慎用；默认 false）' },
+      interfWaves: { type: 'array', items: { type: 'string' }, description: 'eventWeights=true 时额外直方图化的干涉对波名' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          iterDir: { type: 'string', required: true },
+          outRoot: { type: 'string' },
+          waves: { type: 'array', items: { type: 'string' } },
+          histograms: {
+            type: 'object',
+            additionalProperties: false,
+            description: 'key=hdata/hfit/hbkg/h_<name>：选中组合与各波谱的逐 bin 数据（与全波拟合同归一化）',
+          },
+          waveDecomp: {
+            type: 'object',
+            additionalProperties: false,
+            description: 'eventWeights=true 时：按质量轴的各波强度与选中波对干涉分布',
+          },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        waves: string[]
+        histograms?: Record<string, { integral?: number; bins?: number; range?: number[] }>
+        waveDecomp?: { massAxis?: { name?: string; centers?: number[] }; waves?: Record<string, number[]>; pairs?: Record<string, number[]> }
+        error?: string
+      }) => {
+        if (!value.ok) return text(`wave_view 失败: ${value.error ?? '未知'}`)
+        const lines = [`组合波谱: ${value.waves.join(' + ')}`]
+        const h = value.histograms ?? {}
+        const fit = h['hfit']
+        const data = h['hdata']
+        if (fit !== undefined && data !== undefined) {
+          const ratio = data.integral !== undefined && data.integral > 0 && fit.integral !== undefined ? fit.integral / data.integral : null
+          lines.push(`  组合拟合 integral=${fit.integral?.toFixed(0)} vs 数据 ${data.integral?.toFixed(0)}（占比 ${ratio !== null ? (ratio * 100).toFixed(1) : '?'}%）`)
+        }
+        for (const [k, v] of Object.entries(h)) {
+          if (k === 'hdata' || k === 'hfit' || k === 'hbkg') continue
+          lines.push(`  ${k}: integral=${v.integral?.toFixed(0)} ${v.range ? `[${v.range[0].toFixed(2)}, ${v.range[1].toFixed(2)}]` : ''}`)
+        }
+        const d = value.waveDecomp
+        if (d !== undefined && d.massAxis !== undefined) {
+          const axis = d.massAxis.centers ?? []
+          const pairs = Object.entries(d.pairs ?? {})
+          lines.push(`  干涉分解（${d.massAxis.name ?? '?'} 轴，${Object.keys(d.waves ?? {}).length} 波 + ${pairs.length} 对）:`)
+          for (const [pair, vals] of pairs) {
+            if (vals.length === 0) continue
+            const maxAbs = Math.max(...vals.map(Math.abs))
+            const peakIdx = vals.findIndex((x) => Math.abs(x) === maxAbs)
+            const peak = axis[peakIdx] !== undefined ? axis[peakIdx]?.toFixed(3) : '?'
+            lines.push(`    ${pair}: 干涉峰 ${maxAbs.toFixed(3)} @ ${peak} GeV`)
+          }
+        }
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { iterDir: string; waves: string[]; eventWeights?: boolean; interfWaves?: string[] }, exec) {
+      const configPath = `${args.iterDir}/config.yml`
+      const fitJson = `${args.iterDir}/results/fit.json`
+      if (!existsSync(configPath) || !existsSync(fitJson)) {
+        return { ok: false, iterDir: args.iterDir, error: `迭代目录缺少 config.yml 或 results/fit.json: ${args.iterDir}` }
+      }
+      const py = defaultFitRunnerConfig().python
+      const script = new URL('../scripts/wave_view.py', import.meta.url).pathname
+      const outJson = `${args.iterDir}/_wave_view.json`
+      const argv = [
+        script,
+        '--config', configPath,
+        '--fit-json', fitJson,
+        '--waves', args.waves.join(','),
+        '--json', outJson,
+      ]
+      if (args.eventWeights === true) {
+        argv.push('--event-weights')
+        if ((args.interfWaves ?? []).length > 0) argv.push('--interf-waves', args.interfWaves!.join(','))
+      }
+      const r = spawnSync(py, argv, { encoding: 'utf8', timeout: 300_000, env: { ...process.env } })
+      if (r.status !== 0) {
+        return { ok: false, iterDir: args.iterDir, error: (r.stderr || r.stdout || '').slice(0, 500) }
+      }
+      try {
+        const parsed = JSON.parse(readFileSync(outJson, 'utf8')) as { ok?: boolean; error?: string; outRoot?: string; waves?: string[]; histograms?: unknown; waveDecomp?: unknown }
+        const out: { ok: boolean; iterDir: string; outRoot?: string; waves?: string[]; histograms?: unknown; waveDecomp?: unknown; error?: string } = {
+          ok: parsed.ok !== false,
+          iterDir: args.iterDir,
+        }
+        if (parsed.error !== undefined) out.ok = false
+        if (parsed.outRoot !== undefined) out.outRoot = parsed.outRoot
+        if (parsed.waves !== undefined) out.waves = parsed.waves
+        if (parsed.histograms !== undefined) out.histograms = parsed.histograms
+        if (parsed.waveDecomp !== undefined) out.waveDecomp = parsed.waveDecomp
+        if (!out.ok) out.error = parsed.error
+        const ref = await maybeSpill(ctx, exec, 'auto_pwa_wave_view', JSON.stringify(out), null)
+        return ref === null ? out : { ...out, spilled: ref }
+      } catch (e) {
+        return { ok: false, iterDir: args.iterDir, error: `解析 wave_view 输出失败: ${(e as Error).message}` }
+      } finally {
+        try {
+          // 临时 JSON 用完即删（迭代目录保持干净）
+          const { rmSync } = await import('node:fs')
+          rmSync(outJson, { force: true })
+        } catch {
+          // best-effort
+        }
+      }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
   // auto_pwa_run_fit（Consumer：经 ctx.pwaFit -> ctx.jobs 提交）
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({

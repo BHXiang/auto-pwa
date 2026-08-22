@@ -41,6 +41,7 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_evaluate',
       'auto_pwa_diagnose',
       'auto_pwa_root_view',
+      'auto_pwa_wave_view',
       'auto_pwa_run_fit',
       'auto_pwa_fit_status',
       'auto_pwa_try_candidates',
@@ -519,5 +520,66 @@ describe.skipIf(!HAS_UPROOT || !HAS_ROOT_FILE)('auto_pwa_root_view (real weight_
     // The phi(1020) wave contributes a fraction of the total data spectrum.
     expect(phi.integral).toBeLessThan(data.integral)
     expect(phi.integral).toBeGreaterThan(data.integral * 0.01)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// auto_pwa_wave_view: python pure-logic tests (uproot only, no GPU needed)
+// ---------------------------------------------------------------------------
+
+const HAS_UPROOT2 = HAS_UPROOT
+const WAVE_CFG = '/home/whitewash/pwa/Jpsi2KKeta/solve3/config.yml'
+const WAVE_ROOT = '/home/whitewash/pwa/Jpsi2KKeta/solve3/results/weight_best.root'
+
+describe.skipIf(!HAS_UPROOT2 || !existsSync(WAVE_ROOT) || !existsSync(WAVE_CFG))('auto_pwa_wave_view pure logic', () => {
+  const runPy = (code: string) => {
+    const r = spawnSync(PY, ['-c', code], { encoding: 'utf8', env: { ...process.env } })
+    if (r.status !== 0) throw new Error(r.stderr || r.stdout)
+    return r.stdout.trim()
+  }
+
+  it('rebuilds writeResult params from fit.json in aifit layout', () => {
+    const out = runPy(`
+import sys; sys.path.insert(0, ${JSON.stringify(join(process.cwd(), 'scripts'))})
+import wave_view as wv
+fit = {'fit': {'best': {'params': [
+  {'kind': 'coupling', 'real': 1.0, 'imag': 0.0},
+  {'kind': 'coupling', 'real': 0.5, 'imag': -0.3},
+  {'kind': 'resonance', 'value': 1.0195},
+  {'kind': 'resonance', 'value': 1.275},
+]}}}
+p = wv.rebuild_params_from_fit_json(fit)
+assert list(p) == [1.0, 0.5, 0.0, -0.3, 1.0195, 1.275], list(p)
+print('ok')
+`)
+    expect(out).toBe('ok')
+  })
+
+  it('maps wave names to partial indices from the real weight_best.root', () => {
+    const out = runPy(`
+import sys; sys.path.insert(0, ${JSON.stringify(join(process.cwd(), 'scripts'))})
+import wave_view as wv
+names = wv.partial_names_from_root(${JSON.stringify(WAVE_ROOT)})
+assert len(names) > 20, len(names)
+idx, missing = wv.resolve_wave_indices(names, ['chain1-R_KK-phi1020', 'chain1-R_KK-X1750'])
+assert len(idx) == 2 and not missing, (idx, missing)
+idx2, miss2 = wv.resolve_wave_indices(names, ['does-not-exist'])
+assert not idx2 and miss2 == ['does-not-exist']
+print('ok', len(names))
+`)
+    expect(out.startsWith('ok')).toBe(true)
+  })
+
+  it('parses decay steps from the real solve3 config (decay-list style)', () => {
+    const out = runPy(`
+import sys; sys.path.insert(0, ${JSON.stringify(join(process.cwd(), 'scripts'))})
+import wave_view as wv
+steps = wv.chain_steps_from_config(open(${JSON.stringify(WAVE_CFG)}).read())
+assert steps.get('R_KK') == ['Kp', 'Km'], steps.get('R_KK')
+assert steps.get('R_Kpeta') == ['Kp', 'eta'], steps.get('R_Kpeta')
+assert wv.wave_intermediate_from_name('chain1-R_KK-phi1020') == 'R_KK'
+print('ok')
+`)
+    expect(out).toBe('ok')
   })
 })
