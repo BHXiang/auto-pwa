@@ -583,3 +583,75 @@ print('ok')
     expect(out).toBe('ok')
   })
 })
+
+// ---------------------------------------------------------------------------
+// evaluate.py Plot meta parsing (new expr format + legacy mass/cosbeta)
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!HAS_UPROOT || !existsSync(WAVE_CFG))('evaluate.py Plot meta parsing', () => {
+  const runPy = (code: string) => {
+    const r = spawnSync(PY, ['-c', code], { encoding: 'utf8', env: { ...process.env } })
+    if (r.status !== 0) throw new Error(r.stderr || r.stdout)
+    return r.stdout.trim()
+  }
+
+  it('parses the legacy mass/cosbeta format from the real solve3 config', () => {
+    const out = runPy(`
+import sys; sys.path.insert(0, ${JSON.stringify(join(process.cwd(), 'scripts'))})
+import auto_pwa_evaluate as ev
+meta = ev.parse_plot_meta(open(${JSON.stringify(WAVE_CFG)}).read())
+m = meta.get('mass0_Kp_Km')
+assert m and m['kind'] == 'mass' and m['intermediate'] == 'R_KK', m
+c = meta.get('cosbeta0_Jpsi_KpKm_Kp')
+assert c and c['kind'] == 'cosbeta' and c['intermediate'] == 'R_KK', c
+assert c['display'], c
+print('ok', len(meta))
+`)
+    expect(out.startsWith('ok')).toBe(true)
+  })
+
+  it('parses the new expr/expression format with custom names', () => {
+    const cfg = `
+Particles:
+  Kp: {J: 0, P: -1, mass: 0.4937}
+  Km: {J: 0, P: -1, mass: 0.4937}
+  eta: {J: 0, P: -1, mass: 0.5478}
+  Jpsi: {J: 1, P: -1, mass: 3.0969}
+DecayChains:
+  chain1:
+    decay:
+      - Jpsi: [eta, R_KK]
+      - Jpsi: [Kp, R_Kpeta]
+      - R_KK: [Kp, Km]
+      - R_Kpeta: [Kp, eta]
+    R_KK:
+      - [J: 1, P: -1]: [phi1020]
+Plot:
+  - expr: "M([Kp,Km])"
+    bins: [60]
+    ranges: [[1.0, 2.6]]
+    name: m_kk
+  - expression: ["M([Kp,Km])", "CosAngle([Kp], [Kp,Km])"]
+    bins: [60, 50]
+    ranges: [[1.0, 2.6], [-1, 1]]
+    name: m_kk_cos
+  - expr: "M([Kp,eta])"
+    bins: [60]
+    ranges: [[1.0, 2.6]]
+`
+    const out = runPy(`
+import sys; sys.path.insert(0, ${JSON.stringify(join(process.cwd(), 'scripts'))})
+import auto_pwa_evaluate as ev
+meta = ev.parse_plot_meta(${JSON.stringify(cfg)})
+m = meta.get('m_kk')
+assert m and m['kind'] == 'mass' and m['intermediate'] == 'R_KK', m
+c = meta.get('m_kk_cos')
+assert c and c['kind'] == '2d', c
+# unnamed third item -> obs2, intermediate R_Kpeta
+u = meta.get('obs2')
+assert u and u['intermediate'] == 'R_Kpeta', u
+print('ok', len(meta))
+`)
+    expect(out).toBe('ok 3')
+  })
+})

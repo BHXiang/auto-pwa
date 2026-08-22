@@ -21,6 +21,14 @@ export interface EvaluateDistribution {
   pull_regions_over_3sigma?: [number, number][] | null
   worst_bin?: { center?: number; pull?: number } | null
   range?: [number, number] | null
+  /** Plot metadata from the config's Plot section (new expr/old mass/cosbeta
+   * formats): kind + the matched intermediate, when identifiable. */
+  meta?: {
+    kind?: string
+    particles?: string[]
+    intermediate?: string
+    display?: string[]
+  }
 }
 
 export interface EvaluateData {
@@ -57,18 +65,28 @@ export interface SuggestOptions {
   alignWindow?: number
 }
 
-/** Mass distributions whose name embeds `intName` (e.g. "mass_R_KK"). */
+/** Mass distributions belonging to `intName`: prefer the Plot metadata
+ * (new expr configs name directories obs0/obs1... with no mass hint), fall
+ * back to the legacy "mass_<int>" basename matching. */
 function massDistributionsFor(evaluate: EvaluateData, intName: string): EvaluateDistribution[] {
   const out: EvaluateDistribution[] = []
   for (const [name, d] of Object.entries(evaluate.distributions ?? {})) {
+    const meta = d.meta
+    if (meta?.kind === 'mass' && meta.intermediate === intName) {
+      const { name: _ignored, ...rest } = d
+      out.push({ name, ...rest })
+      continue
+    }
+    if (meta?.kind !== undefined && meta.kind !== 'mass') continue
     if (!/mass/i.test(name)) continue
-    // Match "mass_R_KK" / "massR_KK" style suffixes, case-insensitively.
+    // Legacy match: "mass_R_KK" / "massR_KK" style suffixes, case-insensitively.
     const norm = name.toLowerCase().replace(/[^a-z0-9]/g, '')
     const int = intName.toLowerCase().replace(/[^a-z0-9]/g, '')
     if (int.length > 0 && norm.endsWith(int)) {
       const { name: _ignored, ...rest } = d
       out.push({ name, ...rest })
-    }  }
+    }
+  }
   return out
 }
 

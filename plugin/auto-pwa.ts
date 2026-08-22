@@ -1064,7 +1064,10 @@ export function apply(ctx: Context) {
             const evalDir = `${evalRoot}/round-${Date.now().toString(36)}`
             const script = new URL('../scripts/auto_pwa_evaluate.py', import.meta.url).pathname
             const py = defaultFitRunnerConfig().python
-            const r = spawnSync(py, [script, rootFile, evalDir], { encoding: 'utf8', timeout: 120_000, env: { ...process.env } })
+            const cfgPath = `${args.baseIterDir}/config.yml`
+            const evalArgv = [script, rootFile, evalDir]
+            if (existsSync(cfgPath)) evalArgv.push(cfgPath)
+            const r = spawnSync(py, evalArgv, { encoding: 'utf8', timeout: 120_000, env: { ...process.env } })
             if (r.status === 0 && existsSync(`${evalDir}/evaluate.json`)) {
               const ev = JSON.parse(readFileSync(`${evalDir}/evaluate.json`, 'utf8'))
               out.worst = (ev.worst_distributions ?? []).slice(0, 3).map((w: { name: string; max_abs_pull: number; chi2_ndf?: number; bins_over_5sigma: number }) => ({
@@ -1548,6 +1551,17 @@ export function apply(ctx: Context) {
                 bins_over_3sigma: { type: 'integer' },
                 pull_regions_over_3sigma: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
                 worst_bin: { type: 'object', additionalProperties: false, properties: { center: { type: 'number' }, pull: { type: 'number' } } },
+                meta: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    kind: { type: 'string' },
+                    particles: { type: 'array', items: { type: 'string' } },
+                    intermediate: { type: 'string' },
+                    display: { type: 'array', items: { type: 'string' } },
+                  },
+                  description: 'Plot 段元信息（kind=mass/cosbeta/angle/custom，intermediate=匹配到的中间态）——新 expr 画图格式下分布目录名不再含质量/角度信息，靠它识别',
+                },
               },
             },
           },
@@ -1583,7 +1597,12 @@ export function apply(ctx: Context) {
       const script = new URL('../scripts/auto_pwa_evaluate.py', import.meta.url).pathname
       const outDir = args.outDir ?? `${dirname(args.rootPath)}/evaluate`
       const py = defaultFitRunnerConfig().python
-      const r = spawnSync(py, [script, args.rootPath, outDir], {
+      // config.yml（若有）传给 evaluate.py 做 Plot 段解析——新 expr 格式的
+      // 分布目录名（obs0/...）需要它才知道"这是哪个中间态的什么分布"。
+      const configPath = join(dirname(dirname(args.rootPath)), 'config.yml')
+      const argv = [script, args.rootPath, outDir]
+      if (existsSync(configPath)) argv.push(configPath)
+      const r = spawnSync(py, argv, {
         encoding: 'utf8',
         timeout: 120_000,
         env: { ...process.env },
@@ -1611,6 +1630,7 @@ export function apply(ctx: Context) {
         bins_over_3sigma?: number
         pull_regions_over_3sigma?: number[][]
         worst_bin?: { center?: number; pull?: number }
+        meta?: { kind?: string; intermediate?: string; particles?: string[]; display?: string[] }
       }[] = []
       for (const [name, d] of Object.entries(ev.distributions ?? {})) {
         if (d === null || typeof d !== 'object') continue
@@ -1618,6 +1638,14 @@ export function apply(ctx: Context) {
         const rec = d as Record<string, unknown>
         for (const k of ['chi2_ndf', 'max_abs_pull', 'bins_over_5sigma', 'bins_over_3sigma', 'pull_regions_over_3sigma', 'worst_bin'] as const) {
           if (typeof rec[k] === 'number' || typeof rec[k] === 'object') (item as Record<string, unknown>)[k] = rec[k]
+        }
+        if (rec.meta !== null && typeof rec.meta === 'object') {
+          const m = rec.meta as Record<string, unknown>
+          const meta: Record<string, unknown> = {}
+          for (const k of ['kind', 'intermediate'] as const) if (typeof m[k] === 'string') meta[k] = m[k]
+          if (Array.isArray(m.particles)) meta.particles = m.particles.filter((x): x is string => typeof x === 'string')
+          if (Array.isArray(m.display)) meta.display = m.display.filter((x): x is string => typeof x === 'string')
+          if (Object.keys(meta).length > 0) item.meta = meta
         }
         distributions.push(item)
       }
