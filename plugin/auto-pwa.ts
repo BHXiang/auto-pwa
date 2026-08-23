@@ -582,11 +582,11 @@ export function apply(ctx: Context) {
         additionalProperties: false,
         properties: {
           configPath: { type: 'string', required: true },
-          particles: { type: 'array', items: { type: 'object', additionalProperties: false } },
-          chains: { type: 'array', items: { type: 'object', additionalProperties: false } },
-          resonances: { type: 'array', items: { type: 'object', additionalProperties: false } },
-          kinematics: { type: 'array', items: { type: 'object', additionalProperties: false } },
-          constraints: { type: 'object', additionalProperties: false },
+          particles: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          chains: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          resonances: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          kinematics: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          constraints: { type: 'object', additionalProperties: true },
           validation: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' }, errors: { type: 'array', items: { type: 'object', additionalProperties: false } }, warnings: { type: 'array', items: { type: 'object', additionalProperties: false } } } },
           spilled: {
             type: 'object',
@@ -738,6 +738,7 @@ export function apply(ctx: Context) {
                 intermediate: { type: 'string', required: true },
                 chain: { type: 'string', required: true },
                 jpc: { type: 'string', required: true },
+                c: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
                 resonance: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, mass: { type: 'number', required: true }, width: { oneOf: [{ type: 'number' }, { type: 'null' }] } } },
                 alignGap: { oneOf: [{ type: 'number' }, { type: 'null' }] },
                 targetRegion: { oneOf: [{ type: 'array', items: { type: 'number' } }, { type: 'null' }] },
@@ -2661,6 +2662,17 @@ export function apply(ctx: Context) {
     return { maxPull: null, pullRegions: [] }
   }
 
+  /** Schema-compliant view of a LoopEval (loop tools' output schemas declare
+   * a subset; iter/iterDir already exist at the top level). */
+  const evalView = (e: LoopEval): { nll: number | null; deltaNll: number | null; maxPull: number | null; hessianPositive: boolean | null; verdict: string; pullRegions?: [number, number][] } => ({
+    nll: e.nll,
+    deltaNll: e.deltaNll,
+    maxPull: e.maxPull,
+    hessianPositive: e.hessianPositive,
+    verdict: e.verdict,
+    pullRegions: e.pullRegions,
+  })
+
   /** Evaluate one iteration against the diary + objective (shared by loop tools). */
   const evaluateIteration = (state: LoopState): { evalResult: LoopEval; converged: boolean; reason?: string } => {
     const { summary } = summarizeFitDir(state.currentIterDir)
@@ -2749,6 +2761,7 @@ export function apply(ctx: Context) {
               maxPull: { oneOf: [{ type: 'number' }, { type: 'null' }] },
               hessianPositive: { oneOf: [{ type: 'boolean' }, { type: 'null' }] },
               verdict: { type: 'string', required: true },
+              pullRegions: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: 'pull>3σ 质量区间（regionPull 预测验证用）' },
             },
           },
           converged: { type: 'boolean', required: true },
@@ -2839,7 +2852,7 @@ export function apply(ctx: Context) {
             iter: state.iter,
             iterDir: state.currentIterDir,
             rounds: state.rounds,
-            eval: evalResult,
+            eval: evalView(evalResult),
             converged: false,
             reason,
             verification,
@@ -2853,7 +2866,7 @@ export function apply(ctx: Context) {
             iter: state.iter,
             iterDir: state.currentIterDir,
             rounds: state.rounds,
-            eval: evalResult,
+            eval: evalView(evalResult),
             converged: true,
             reason,
             reportPath,
@@ -2867,7 +2880,7 @@ export function apply(ctx: Context) {
           iter: state.iter,
           iterDir: state.currentIterDir,
           rounds: state.rounds,
-          eval: evalResult,
+          eval: evalView(evalResult),
           converged: false,
           reason,
         }
@@ -2909,7 +2922,22 @@ export function apply(ctx: Context) {
       if (state === undefined) {
         return { ok: false, phase: 'none', iter: -1, iterDir: '', rounds: 0, error: 'no loop state — call auto_pwa_loop_next with baseIterDir to start' }
       }
-      return { ok: true, phase: state.phase, iter: state.iter, iterDir: state.currentIterDir, rounds: state.rounds, lastEval: state.lastEval }
+      const lastEval = state.lastEval
+      return {
+        ok: true,
+        phase: state.phase,
+        iter: state.iter,
+        iterDir: state.currentIterDir,
+        rounds: state.rounds,
+        lastEval: lastEval === undefined
+          ? undefined
+          : {
+              nll: lastEval.nll,
+              deltaNll: lastEval.deltaNll,
+              maxPull: lastEval.maxPull,
+              verdict: lastEval.verdict,
+            },
+      }
     },
   }))
 
