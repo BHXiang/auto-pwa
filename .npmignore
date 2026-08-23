@@ -1,0 +1,8 @@
+# npm 发布排除项（files 白名单之外的补充黑名单）
+__pycache__/
+*.pyc
+tests/
+*.test.ts
+.dsh-test/
+.npm-cache/
+*.tgz

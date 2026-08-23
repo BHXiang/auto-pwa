@@ -1,0 +1,50 @@
+# Publish auto-pwa to npmjs.org on version tags.
+#
+# 触发方式:
+#   git tag v0.2.0 && git push origin v0.2.0
+#   （或用 npm version patch/minor/major —— 自动改版本 + commit + 打 tag）
+#   也可在 Actions 页面手动 Run workflow。
+#
+# 需要 GitHub secret: NPM_TOKEN（npmjs.com → Access Tokens → Automation token）
+#
+# 产物: 无编译的纯 TS/JS 包（files 白名单控制内容），平台无关；
+#       @deepseek-ai/* 为 peerDependencies 由 DSH 提供。
+#       --provenance 让 npmjs 显示构建来源（需要 OIDC，GitHub Actions 自动）。
+
+name: publish-npm
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build (lib)
+        run: npm run build
+
+      - name: Inspect package contents
+        run: npm pack --dry-run
+
+      - name: Publish to npmjs
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
