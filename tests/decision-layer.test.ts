@@ -11,6 +11,7 @@ import { freeParamCount, compareModels } from '../src/model-selection.js'
 import { verifyPrediction } from '../src/loop-state.js'
 import { defaultDb } from '../src/db.js'
 import { parseConfig } from '../src/config-edit.js'
+import { validateResonanceAddition } from '../src/resonance-validate.js'
 import type { FitJsonView } from '../src/fit-summary.js'
 
 const CONFIG = `Particles:
@@ -318,5 +319,93 @@ describe('prediction verification', () => {
       { maxPull: 2, deltaNll: -1, pullRegions: [[1.5, 1.6]] },
     )
     expect(r2.passed).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// cascade topologies: intermediate mothers (psip -> gamma + R_chic1 -> ...)
+// ---------------------------------------------------------------------------
+
+describe('cascade topology kinematics', () => {
+  const CASCADE = `Particles:
+  psip:
+    J: 1
+    P: -1
+    mass: 3.0686
+  gamma:
+    J: 1
+    P: -1
+    mass: 0.0
+  eta:
+    J: 0
+    P: -1
+    mass: 0.5478
+  Kp:
+    J: 0
+    P: -1
+    mass: 0.4937
+  Km:
+    J: 0
+    P: -1
+    mass: 0.4937
+
+DecayChains:
+  decay1:
+    psip:
+      - [gamma, R_chic1]
+    R_chic1:
+      - [eta, R_KK]
+      - [Kp, R_Keta]
+    R_KK: [Kp, Km]
+    R_Keta:
+      - [Km, eta]
+    intermediates:
+      R_chic1:
+        - [J: 1, P: 1]: [chic1]
+      R_KK:
+        - [J: 2, P: 1]: [f2_1525]
+      R_Keta:
+        - [J: 1, P: -1]: [K1_1410]
+
+Resonances:
+  chic1:
+    J: 1
+    P: 1
+    model: ONE
+    parameters: [3.51]
+  f2_1525:
+    J: 2
+    P: 1
+    model: BWR
+    parameters: [1.525, 0.075]
+  K1_1410:
+    J: 1
+    P: -1
+    model: BWR
+    parameters: [1.403, 0.174]
+`
+
+  it('parses kinematics for intermediates whose mother is another intermediate', () => {
+    const cfg = parseConfig(CASCADE)
+    const rk = cfg.kinematics['R_KK']!
+    expect(rk.threshold).toBeCloseTo(3.51 - 0.5478, 6)
+    expect(rk.mother.j).toBe(1)
+    expect(rk.mother.p).toBe(1)
+    const rketa = cfg.kinematics['R_Keta']!
+    expect(rketa.threshold).toBeCloseTo(3.51 - 0.4937, 6)
+  })
+
+  it('validate_add accepts a resonance on a cascade intermediate (no unknown-chain)', () => {
+    const cfg = parseConfig(CASCADE)
+    const r = validateResonanceAddition(defaultDb, cfg, {
+      name: 'f0(1500)',
+      chain: 'R_KK',
+      jpGroup: { j: 0, p: 1 },
+      model: 'BWR',
+      parameters: [1.505, 0.109],
+    })
+    expect(r.errors.map((e) => e.code)).not.toContain('unknown-chain')
+    // f0(1500) mass below the cascade threshold 2.962.
+    expect(r.errors.map((e) => e.code)).not.toContain('above-threshold')
   })
 })

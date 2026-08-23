@@ -154,9 +154,21 @@ export function rebuildViews(
 
       // --- kinematics: production steps A -> R + B ------------------------
       for (const step of decayChains[chainName].steps) {
-        const motherParticle = particles[step.mother]
-        if (!motherParticle) continue
         const intermediatesNames = new Set(Object.keys(intermediates))
+        let motherParticle = particles[step.mother]
+        if (!motherParticle) {
+          // Cascade topologies: the mother is itself an intermediate
+          // (e.g. psip -> gamma + R_chic1, then R_chic1 -> eta + R_KK).
+          // Resolve its J^P from the group and its mass from the group's
+          // first resonance's config spec (chic1: parameters [3.51]).
+          const intGroups = intermediates[step.mother]?.groups
+          const resName = intGroups?.[0]?.names?.[0]
+          const spec = resName !== undefined ? resonances[resName] : undefined
+          if (intGroups !== undefined && spec !== undefined) {
+            motherParticle = { j: intGroups[0]!.jp.j, p: intGroups[0]!.jp.p, mass: spec.parameters[0] }
+          }
+        }
+        if (!motherParticle) continue
         const res = step.daughters.filter((d) => intermediatesNames.has(d))
         const siblings = step.daughters.filter((d) => !intermediatesNames.has(d))
         if (res.length !== 1 || siblings.length !== 1) continue // 2-body production only
