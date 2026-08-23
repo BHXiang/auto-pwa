@@ -4,18 +4,22 @@
 #   pnpm dsh plugin --profile web add auto-pwa
 #   # + add "auto-pwa" to the profile's dsh.profile.bundles list
 #
-# Relative entry names resolve against THIS file's directory (the package
-# root), so the same plugin files serve both the dev overlay
-# (patch/auto-pwa.cordis.yml) and the published bundle.
+# Bundle patches are applied over the profile root config, so the Loader
+# resolves entry names from the PROFILE directory (the loader baseUrl), not
+# from this file or the package root. Plugins are therefore referenced as bare
+# subpath specifiers ("auto-pwa/plugin/<name>"), resolved through the package
+# exports map to the compiled lib/plugin/<name>.js — the same convention the
+# in-box bundles use. The dev overlay (patch/auto-pwa.cordis.yml) keeps
+# absolute source-dir paths instead, so iterative development runs the TS.
 #
 # 注意：pwa-fit.ts 是服务定义库（由 pwa-fit-local 导入并注册 ctx.pwaFit），
 # 不作为插件挂载——挂载它会被 loader 当类插件实例化导致重复注册。
 - insert:
     - id: pwa-fit-local
-      name: './plugin/pwa-fit-local.ts'
+      name: 'auto-pwa/plugin/pwa-fit-local'
     - id: pwa-guard
-      name: './plugin/pwa-guard.ts'
+      name: 'auto-pwa/plugin/pwa-guard'
     - id: pwa-commands
-      name: './plugin/pwa-commands.ts'
+      name: 'auto-pwa/plugin/pwa-commands'
     - id: auto-pwa
-      name: './plugin/auto-pwa.ts'
+      name: 'auto-pwa/plugin/auto-pwa'

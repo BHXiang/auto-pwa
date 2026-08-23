@@ -217,17 +217,21 @@ export function apply(ctx: Context) {
           width: h.width ?? null,
           status: h.status,
           decayModes: (h.decayModes ?? []).map((m) => m.daughters.join(' -> ')),
-          measurements: (h.measurements ?? []).slice(0, 8).map((m) => ({
-            year: m.year,
-            publication: m.publication,
-            doi: m.doi,
-            technique: m.technique,
-            value: m.value,
-            errorPositive: m.errorPositive,
-            statError: m.statError,
-            systError: m.systError,
-            usedInAverage: m.usedInAverage,
-          })),
+          measurements: (h.measurements ?? []).slice(0, 8).map((m) => {
+            // Lossless-JSON: undefined values are rejected by the tool
+            // framework, so only defined fields are carried.
+            const out: Record<string, number | string | boolean> = {}
+            if (m.year !== undefined) out.year = m.year
+            if (m.publication !== undefined) out.publication = m.publication
+            if (m.doi !== undefined) out.doi = m.doi
+            if (m.technique !== undefined) out.technique = m.technique
+            if (m.value !== undefined) out.value = m.value
+            if (m.errorPositive !== undefined) out.errorPositive = m.errorPositive
+            if (m.statError !== undefined) out.statError = m.statError
+            if (m.systError !== undefined) out.systError = m.systError
+            if (m.usedInAverage !== undefined) out.usedInAverage = m.usedInAverage
+            return out
+          }),
         })),
       }
     },
@@ -533,13 +537,16 @@ export function apply(ctx: Context) {
                   cRequired: ana.production.cRequired ?? null,
                 }
               : undefined,
-            decaySteps: ana.decaySteps.map((s) => ({
-              daughters: s.daughters,
-              identical: s.identical,
-              cDefined: s.cDefined,
-              sl: s.sl ?? undefined,
-              jpc: s.jpc,
-            })),
+            decaySteps: ana.decaySteps.map((s) => {
+              const step: { daughters: string[]; identical: boolean; cDefined: boolean; sl?: [number, number][]; jpc: string[] } = {
+                daughters: s.daughters,
+                identical: s.identical,
+                cDefined: s.cDefined,
+                jpc: s.jpc,
+              }
+              if (s.sl !== null) step.sl = s.sl
+              return step
+            }),
             allowed,
             cBlocked: ana.cBlocked,
           })
@@ -1980,7 +1987,7 @@ export function apply(ctx: Context) {
       '波名取 weight_best.root 的 h_ 名（如 chain1-R_KK-phi1020），可先 auto_pwa_root_view list 查看。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录（须含 config.yml 与 results/fit.json、results/weight_best.root）' },
-      waves: { type: 'array', required: true, items: { type: 'string' }, maxItems: 6, description: '要组合的波名（h_ 名去掉前缀，如 chain1-R_KK-phi1020）' },
+      waves: { type: 'array', required: true, items: { type: 'string' }, description: '要组合的波名（h_ 名去掉前缀，如 chain1-R_KK-phi1020），最多 6 个' },
       eventWeights: { type: 'boolean', description: 'true 时用逐事件 saved_weight TTree 输出干涉分布（大文件，慎用；默认 false）' },
       interfWaves: { type: 'array', items: { type: 'string' }, description: 'eventWeights=true 时额外直方图化的干涉对波名' },
     },
@@ -2307,13 +2314,11 @@ export function apply(ctx: Context) {
       if ((view.state === 'done' || view.state === 'failed') && view.iterDir !== '') {
         try {
           const { summary, history, files, fitJson } = summarizeFitDir(view.iterDir)
-          out.summary = {
-            bestNll: summary.bestNll ?? undefined,
-            lastNll: history.lastNll ?? undefined,
-            totalRuns: summary.totalRuns ?? undefined,
-            positiveDefinite: summary.positiveDefinite ?? undefined,
-            files,
-          }
+          out.summary = { files }
+          if (summary.bestNll !== null) out.summary.bestNll = summary.bestNll
+          if (history.lastNll !== null) out.summary.lastNll = history.lastNll
+          if (summary.totalRuns !== null) out.summary.totalRuns = summary.totalRuns
+          if (summary.positiveDefinite !== null) out.summary.positiveDefinite = summary.positiveDefinite
           const best = fitJson?.fit?.best
           if (best !== undefined) {
             const params = (best.params ?? [])
@@ -2359,9 +2364,8 @@ export function apply(ctx: Context) {
       candidates: {
         type: 'array',
         required: true,
-        maxItems: 5,
         items: proposalParam,
-        description: '要试探的共振态候选（每个都会被独立验证；无效的会被跳过并说明原因）',
+        description: '要试探的共振态候选（每个都会被独立验证；无效的会被跳过并说明原因），最多 5 个',
       },
       fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
       shortRuns: { type: 'integer', description: '短拟合运行次数（默认 1）' },

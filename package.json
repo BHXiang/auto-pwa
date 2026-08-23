@@ -40,9 +40,9 @@
       "types": "./lib/src/index.d.ts",
       "default": "./lib/src/index.js"
     },
-    "./plugin": {
-      "types": "./lib/plugin/pwa-tools.d.ts",
-      "default": "./lib/plugin/pwa-tools.js"
+    "./plugin/*": {
+      "types": "./lib/plugin/*.d.ts",
+      "default": "./lib/plugin/*.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"

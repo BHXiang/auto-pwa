@@ -60,6 +60,21 @@ describe('auto-pwa plugin', () => {
 })
 
 describe('auto-pwa plugin tools (smoke)', () => {
+  it('auto_pwa_lookup returns lossless JSON with measurement history', async () => {
+    const defs = collectDefinitions()
+    const tool = defs.find((d) => d.name === 'auto_pwa_lookup')!
+    const out = (await tool.execute!({ name: 'phi(1020)' } as never, {} as never)) as {
+      total: number
+      hits: { id: string; measurements: Record<string, unknown>[] }[]
+    }
+    expect(out.total).toBeGreaterThan(0)
+    const phi = out.hits.find((h) => h.id === 'phi(1020)')!
+    expect(phi.measurements.length).toBeGreaterThan(0)
+    // No undefined values anywhere (the tool framework rejects them).
+    const bad = phi.measurements.filter((m) => Object.values(m).some((v) => v === undefined))
+    expect(bad).toHaveLength(0)
+  })
+
   const CONFIG = `Particles:
   Jpsi:
     J: 1
