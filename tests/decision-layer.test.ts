@@ -10,7 +10,7 @@ import { IterationLog } from '../src/iteration-log.js'
 import { freeParamCount, compareModels } from '../src/model-selection.js'
 import { verifyPrediction } from '../src/loop-state.js'
 import { defaultDb } from '../src/db.js'
-import { parseConfig } from '../src/config-edit.js'
+import { parseConfig, validateConfig } from '../src/config-edit.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
 import type { FitJsonView } from '../src/fit-summary.js'
 
@@ -356,6 +356,7 @@ DecayChains:
     R_chic1:
       - [eta, R_KK]
       - [Kp, R_Keta]
+      - [Km, R_Keta]
     R_KK: [Kp, Km]
     R_Keta:
       - [Km, eta]
@@ -366,6 +367,10 @@ DecayChains:
         - [J: 2, P: 1]: [f2_1525]
       R_Keta:
         - [J: 1, P: -1]: [K1_1410]
+
+Constraints:
+  trans:
+    - [R_Keta_0, R_Keta_1]: -1
 
 Resonances:
   chic1:
@@ -407,5 +412,21 @@ Resonances:
     expect(r.errors.map((e) => e.code)).not.toContain('unknown-chain')
     // f0(1500) mass below the cascade threshold 2.962.
     expect(r.errors.map((e) => e.code)).not.toContain('above-threshold')
+  })
+
+
+  it('validateConfig accepts amplitude-block indices in cascade trans (2 channels × 1 group)', () => {
+    const cfg = parseConfig(CASCADE)
+    const v = validateConfig(cfg)
+    expect(v.errors.filter((e) => e.code === 'trans-group-index')).toHaveLength(0)
+  })
+
+  it('validateConfig still rejects genuinely out-of-range trans indices', () => {
+    const cfg = parseConfig(CASCADE)
+    const bad = { ...cfg, constraints: { ...cfg.constraints, trans: [{ names: ['R_KK_1'], value: [-1] }] } }
+    const v = validateConfig(bad)
+    const errs = v.errors.filter((e) => e.code === 'trans-group-index')
+    expect(errs).toHaveLength(1)
+    expect(errs[0]!.message).toContain('1 amplitude block')
   })
 })

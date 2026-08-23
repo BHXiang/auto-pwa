@@ -806,11 +806,26 @@ export function validateConfig(config: PwaConfig): { errors: ValidationIssue[]; 
           code: 'trans-unknown-intermediate',
           message: `trans references "${name}" but no intermediate "${intName}" is defined in any chain`,
         })
-      } else if (idx >= found.intermediates[intName].groups.length) {
-        errors.push({
-          code: 'trans-group-index',
-          message: `trans references "${name}" but ${intName} has only ${found.intermediates[intName].groups.length} [J,P] group(s) (indices 0..${found.intermediates[intName].groups.length - 1})`,
-        })
+      } else {
+        // Amplitude blocks = [J,P] groups × production channels: cascade
+        // chains expand one group into one block per production step
+        // (e.g. R_Keta produced via both chic1→Kp+R_Keta and
+        // chic1→Km+R_Keta → indices 0..1, as fit.json's per-channel
+        // coupling names confirm).
+        const nGroups = found.intermediates[intName].groups.length
+        const nChannels = Math.max(
+          Object.values(config.decayChains)
+            .flatMap((c) => c.steps)
+            .filter((s) => s.daughters.includes(intName)).length,
+          1,
+        )
+        const nBlocks = nGroups * nChannels
+        if (idx >= nBlocks) {
+          errors.push({
+            code: 'trans-group-index',
+            message: `trans references "${name}" but ${intName} has only ${nBlocks} amplitude block(s) (${nGroups} [J,P] group(s) × ${nChannels} production channel(s), indices 0..${nBlocks - 1})`,
+          })
+        }
       }
     }
   }
