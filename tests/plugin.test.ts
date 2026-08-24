@@ -718,5 +718,7 @@ describe('auto-pwa skill self-registration', () => {
     expect(registered[0]!.name).toBe('auto-pwa-analysis')
     expect(registered[0]!.content).toContain('PWA 分波分析作业规则')
     expect((registered[0]!.invocation as { modelInvocable: boolean }).modelInvocable).toBe(true)
+    // source is required by SkillSummary — its absence breaks skill loading.
+    expect(registered[0]!.source).toBe('runtime')
   })
 })

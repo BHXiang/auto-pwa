@@ -115,6 +115,9 @@ export function apply(ctx: Context) {
             description,
             whenToUse: 'Performing partial wave analysis with the auto_pwa_* tools.',
             content,
+            // source is REQUIRED by SkillSummary — omitting it makes the
+            // loader fail with "source must be a string". provider defaults.
+            source: 'runtime',
             invocation: { modelInvocable: true, userInvocable: false },
           } as never),
         )
