@@ -111,6 +111,28 @@ auto_pwa_loop_next（评估 + 收敛判定）
 | `PWA_FIT_SCRIPT` | 插件自带 `scripts/aifit.py` | 拟合驱动来源（AI 适配：写 `results/fit.json` + `weight_best.root`） |
 | `PWA_PLOT_SCRIPT` | 空（不软链 plot.py） | 你的求解器 plot.py（需要出图时设置） |
 | `PWA_EVAL_OUT_DIR` | 空（用 `<cwd>/_auto-pwa-eval`） | `auto_pwa_evaluate` 输出目录 |
+| `PWA_FIT_TRANSPORT` | `auto` | `auto`/`local`/`slurm`：拟合在哪跑。auto = 本机 torch 看得到 CUDA → 本地；无 CUDA 但有 slurm 客户端 → 交作业（"无 GPU 但能 SLURM"规则）。 |
+| `PWA_SLURM_TEMPLATE` | `a100` | `a100`/`v100`：集群模板，决定 partition/qos/account/gres 默认 |
+| `PWA_SLURM_PARTITION` / `PWA_SLURM_QOS` / `PWA_SLURM_ACCOUNT` / `PWA_SLURM_GRES` | 模板默认 | 逐集群覆盖（如 `--partition=gpupwa --qos=pwadedicate --gres=gpu:a100:2`） |
+| `PWA_SLURM_NTASKS` / `PWA_SLURM_MEM_PER_CPU` / `PWA_SLURM_TIME` | `1` / `50000` / 无 | sbatch 资源覆盖 |
+| `PWA_SLURM_BATCH` | `auto` | `auto`/`one`/`script`/`off`：候选试探批处理。auto = 按基座拟合实测 `fit.json.timeSec` 判（<120s → script 多合一脚本；否则 → one 每候选一作业，全部完成才唤醒） |
+
+## 集群（SLURM）传输：无本地 GPU 也能跑
+
+大多数用户没有本地 GPU，但集群登录节点有 SLURM。插件按 `PWA_FIT_TRANSPORT` 自动路由：
+
+- **本机有 CUDA**（作者开发机）→ 本地 `python fit.py`（现状不变）。
+- **无 CUDA 但有 `sbatch`/`squeue`/`sacct`**（登录节点）→ 写 `fit.slurm` 并 `sbatch` 交作业；登录节点轮询直到作业离开队列，**DSH 后台任务的 `done` 在作业真正结束前不 resolve——所以跑完会唤醒 AI**（`background job ctpwa-N finished` 通知注入/打开下一轮）。`cancel` → `scancel`。
+- 两者都不可用 → 立即失败并给诊断。
+
+要点：
+
+- **唤醒 = 一个 DSH 后台任务（`ctpwa-N`）包住一个/一批 SLURM 作业**；批量（`auto_pwa_try_candidates`，SLURM transport）会把这些候选合成**一个** DSH 任务（`one` = 每候选一个 SLURM 作业并行，`script` = 一个脚本顺序跑），全部结束才 settle，**一次唤醒**，不会刷屏。
+- **本机 transport 不变**：作者开发机/测试仍走 `ctx.pwaFit.submit` 每候选一个 DSH 任务（`PWA_FIT_TRANSPORT` 未显式设 `slurm` 时不批处理）。
+- **共享文件系统是前提**：compute 节点要能读 `iterDir`（`config.yml`/`fit.py`）并写 `results/`；典型 NFS/Lustre 的 home/scratch 满足。
+- 脚本里 `#SBATCH` 用**前台** `python -u fit.py`（A100/V100 一致），并 `cd` 到迭代目录（aifit.py 从 cwd 读 config.yml）。
+- **每次提交/结束都写 `<iterations>/.slurm-jobs.json`**（状态记录：状态/批标记/子任务/submit 目录）。这是"AI 快速重建项目状态"的渠道之一：`/pwa-status <iterationsRoot>` 实时列出后台任务 + 迭代日记 + 集群作业，`auto_pwa_history` 读迭代日记（SUMMARY.jsonl），两者合起来即项目状态全景。
+- **DSH 后台任务在内存里**：登录节点重启/GUI 关闭会丢失唤醒锚点（SLURM 作业仍会在集群跑完、但 DSH 不知道要唤醒）。小时级作业建议在登录节点上保持 harness 会话存活；跨重启的自动重挂 `done` 在确认重启后可作为后续增强。
 
 ## AI 优先拟合驱动（`scripts/aifit.py`，默认拟合程序）
 
@@ -135,7 +157,7 @@ python aifit.py --interference results/weight_best.root --json results/interfere
 
 ## 开发
 
-- 纯核心无环境依赖、单测覆盖（123 个测试）：`npm test`。
+- 纯核心无环境依赖、单测覆盖（160+ 测试）：`npm test`。
 - 插件导入 `@deepseek-ai/dsh-tools` / `@deepseek-ai/cordis` / `@deepseek-ai/dsh-jobs`；测试解析 **vendored stubs**（`vendor/dsh/`），无需 DSH 检出。stub 恰好覆盖插件用到的 API 面；DSH API 变化时保持同步。
 - `scripts/fetch_pdg.py` 从官方 PDG-2026 包重新生成 `data/pdg.json`（需在 ctpwa 环境 `pip install pdg`）。
 - 拟合需要 CUDA GPU（ctpwa 无 CPU 后端）；运行器探测并快速失败给出明确诊断。

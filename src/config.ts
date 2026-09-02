@@ -21,6 +21,19 @@
  *   PWA_EVAL_OUT_DIR    directory for auto_pwa_evaluate output packages.
  *                       Default: empty — evaluated under
  *                       `<cwd>/_auto-pwa-eval`.
+ *
+ * Cluster transport (SLURM) environment:
+ *   PWA_FIT_TRANSPORT auto|local|slurm  where a fit runs. auto = local if torch
+ *                       sees CUDA, else slurm if the slurm clients are on PATH
+ *                       (the "no local GPU but have SLURM -> submit a job" rule).
+ *                       Default: auto.
+ *   PWA_SLURM_TEMPLATE a100|v100         cluster shape for partition/qos/account/
+ *                       gres defaults (Default: a100).
+ *   PWA_SLURM_PARTITION/QOS/ACCOUNT/GRES/NTASKS/MEM_PER_CPU/TIME
+ *                       per-cluster overrides (fall back to template defaults).
+ *   PWA_SLURM_BATCH  auto|one|script|off  candidate exploration batching (see the
+ *                       try_candidates tool). auto chooses one vs script from the
+ *                       baseline fit's measured timeSec (Default: auto).
  */
 export interface AutoPwaEnv {
   ctpwaPython?: string

@@ -214,13 +214,15 @@ describe('diagnoseFit (fit.json hypotheses)', () => {
 })
 
 describe('loop-state (convergence / persistence / report)', () => {
-  it('convergenceVerdict: pulls + significance + budget', () => {
-    expect(convergenceVerdict({ nll: 10, deltaNll: -0.5, maxPull: 2 }, DEFAULT_OBJECTIVE, 1).converged).toBe(true)
-    expect(convergenceVerdict({ nll: 10, deltaNll: -5, maxPull: 2 }, DEFAULT_OBJECTIVE, 1).converged).toBe(false) // significant gain left
-    expect(convergenceVerdict({ nll: 10, deltaNll: -0.5, maxPull: 7 }, DEFAULT_OBJECTIVE, 1).converged).toBe(false) // pulls remain
-    expect(convergenceVerdict({ nll: 10, deltaNll: -0.5, maxPull: 2 }, DEFAULT_OBJECTIVE, 20).converged).toBe(true) // budget exhausted
+  it('convergenceVerdict: pulls + pull-distribution chi2/ndf + significance + budget', () => {
+    expect(convergenceVerdict({ nll: 10, deltaNll: -0.5, maxPull: 2, maxChi2Ndf: 1 }, DEFAULT_OBJECTIVE, 1).converged).toBe(true)
+    expect(convergenceVerdict({ nll: 10, deltaNll: -5, maxPull: 2, maxChi2Ndf: 1 }, DEFAULT_OBJECTIVE, 1).converged).toBe(false) // significant gain left
+    expect(convergenceVerdict({ nll: 10, deltaNll: -0.5, maxPull: 7, maxChi2Ndf: 1 }, DEFAULT_OBJECTIVE, 1).converged).toBe(false) // pulls remain
+    expect(convergenceVerdict({ nll: 10, deltaNll: -0.5, maxPull: 2, maxChi2Ndf: 1 }, DEFAULT_OBJECTIVE, 20).converged).toBe(true) // budget exhausted
+    // pull distribution biased even though max|pull| < 5: must NOT converge.
+    expect(convergenceVerdict({ nll: 10, deltaNll: -0.5, maxPull: 2, maxChi2Ndf: 3 }, DEFAULT_OBJECTIVE, 1).converged).toBe(false) // chi2/ndf still biased
     // First evaluation without a previous round: cannot judge convergence yet.
-    expect(convergenceVerdict({ nll: 10, deltaNll: null, maxPull: 2 }, DEFAULT_OBJECTIVE, 1).converged).toBe(false)
+    expect(convergenceVerdict({ nll: 10, deltaNll: null, maxPull: 2, maxChi2Ndf: 1 }, DEFAULT_OBJECTIVE, 1).converged).toBe(false)
   })
 
   it('init -> save -> load -> final report roundtrip', () => {

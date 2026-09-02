@@ -9,6 +9,7 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { IterationLog } from '../src/iteration-log.js'
+import { readSlurmRegistryAt } from '../src/fit-runner-sbatch.js'
 
 export const name = 'pwa-commands'
 export const inject = ['commands', 'jobs']
@@ -50,6 +51,18 @@ export function apply(ctx: Context): void {
               const n = r.nll === undefined ? '' : ` NLL=${r.nll.toFixed(1)}`
               const c = r.conclusion ? ` | ${r.conclusion.split('\n')[0].slice(0, 100)}` : ''
               lines.push(`    iter-${String(r.iter).padStart(3, '0')} ${r.title}${n}${d}${c}`)
+            }
+          }
+          // 3) persistent cluster (SLURM) job registry — the AI/user state record.
+          const slurm = readSlurmRegistryAt(root)
+          const slurmJobs = Object.values(slurm)
+          if (slurmJobs.length === 0) {
+            lines.push('  集群作业: 无')
+          } else {
+            const running = slurmJobs.filter((j) => j.state === 'running')
+            lines.push(`  集群作业: ${slurmJobs.length} 个（运行中 ${running.length}）`)
+            for (const j of slurmJobs.slice(-6)) {
+              lines.push(`    ${j.key} [${j.batch ? 'batch' : 'slurm'}] ${j.state} — ${j.iterDir}`)
             }
           }
         } catch (e) {

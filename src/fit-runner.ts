@@ -69,7 +69,9 @@ export function detectGpuAvailability(python: string, ldLibraryPath: string): st
   const out = (r.stdout ?? '').trim()
   if (r.status === 0 && out === 'True') return undefined
   return `no CUDA device available to torch (probe said "${out || (r.error ? r.error.message : 'no output')}"); ` +
-    'ctpwa requires a GPU (CPU backend not implemented). Fits will fail on this host.'
+    'ctpwa requires a GPU (CPU backend not implemented). Fits will fail on this host. ' +
+    'If the probe says "no output" / module-not-found, the host process is not running inside the ctpwa env — ' +
+    'restart the harness with `conda activate ctpwa` or set PWA_CTPWA_PYTHON and PWA_LD_LIBRARY_PATH (see auto-pwa-env.sh).'
 }
 
 export class LocalFitRunner {

@@ -14,6 +14,9 @@ import type { Context } from '@deepseek-ai/cordis'
 export interface FitRequest {
   /** 迭代目录绝对路径（须含 fit.py 与 config.yml）。 */
   iterDir: string
+  /** 批量提交：多个迭代目录共享一个后台任务（全部完成才唤醒）。
+   * Provider 仅在当前 transport 支持批次时接受（否则抛错）。 */
+  iterDirs?: string[]
   /** 超时分钟数；省略 = 不设超时。 */
   timeoutMin?: number
   /** 追加在脚本名后的 CLI 参数（如 aifit 的 --runs/--max-iter 短拟合）。 */
@@ -55,6 +58,13 @@ export abstract class FitService extends Service {
 
   /** 提交拟合并立即注册后台任务，返回 job id（`ctpwa-N`）。 */
   abstract submit(request: FitRequest, owner?: FitOwner): string
+
+  /**
+   * 批量提交：多个迭代目录共享一个后台任务（全部完成才 settle，即一次唤醒）。
+   * 仅当所用 transport 支持批次时可用；否则抛错。Consumer 需先判
+   * `typeof ctx.pwaFit.submitBatch === 'function'`（测试/降级直接走 submit）。
+   */
+  submitBatch?(request: FitRequest, owner?: FitOwner): string
 
   /** 查询任务状态（含最终日志尾部与迭代目录）。 */
   abstract status(jobId: string, caller?: FitOwner): FitStatusView

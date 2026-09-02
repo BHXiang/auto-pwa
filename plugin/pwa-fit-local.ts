@@ -17,7 +17,8 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
-import { LocalFitRunner, defaultFitRunnerConfig, type FitStatus } from '../src/fit-runner.js'
+import type { FitStatus } from '../src/fit-runner.js'
+import { pickFitRunner, type FitTransport } from '../src/fit-transport.js'
 import { FitService, type FitOwner, type FitRequest, type FitStatusView } from './pwa-fit.js'
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -38,9 +39,12 @@ export const inject = ['jobs']
 /** 拟合 job 的模型可见输出字节帽（完成通知 + job_output）。 */
 export const FIT_OUTPUT_LIMIT_BYTES = 32 * 1024
 
-/** The runner surface the provider needs (LocalFitRunner satisfies it; tests inject fakes). */
+/** The runner surface the provider needs (LocalFitRunner/SbatchFitRunner satisfy it; tests inject fakes). */
 export interface FitSpawner {
   submit(iterDir: string, options?: { timeoutMs?: number; scriptArgs?: string[] }): FitStatus
+  /** Batch (multiple iteration dirs under one DSH job). Optional: the provider
+   * falls back to single submit when the transport has no batch support. */
+  submitBatch?(iterDirs: string[], options?: { timeoutMs?: number; scriptArgs?: string[] }): FitStatus
   settled(jobId: string): Promise<FitStatus>
   cancel(jobId: string): boolean
 }
@@ -54,15 +58,24 @@ function exitCodeOf(detail: string | undefined): number | undefined {
 
 export class PwaFitLocalService extends FitService {
   private readonly runner: FitSpawner
+  /** Resolved transport ('local' | 'slurm') — readable by consumers to decide
+   * batching. Injected runners default to 'local' (tests). */
+  readonly transport: FitTransport
   /** ctx.jobs 注册表（构造时从 Context 捕获，stub/真实签名一致）。 */
   private readonly jobs: import('@deepseek-ai/dsh-jobs').JobRegistry
   /** jobId -> iterDir（提交时记录，status 时供 Consumer 做 summarizeFitDir）。 */
   private readonly iterDirs = new Map<string, string>()
+  /** batch jobId -> iterDirs（status 时给出整批目录）。 */
+  private readonly batchIterDirs = new Map<string, string[]>()
 
-  constructor(ctx: Context, options: { runner?: FitSpawner } = {}) {
+  constructor(ctx: Context, options: { runner?: FitSpawner; transport?: FitTransport } = {}) {
     super(ctx)
     this.jobs = ctx.jobs
-    this.runner = options.runner ?? new LocalFitRunner(defaultFitRunnerConfig())
+    const picked = options.runner !== undefined
+      ? { transport: (options.transport ?? 'local') as FitTransport, runner: options.runner }
+      : pickFitRunner()
+    this.runner = picked.runner
+    this.transport = picked.transport
     // Producers may start work only while a controller is attached; tool-jobs
     // attaches its own, this is a defensive self-attach for mounts without it.
     if (typeof this.jobs.attachController === 'function') {
@@ -84,9 +97,44 @@ export class PwaFitLocalService extends FitService {
     return jobId
   }
 
+  submitBatch(request: FitRequest, owner?: FitOwner): string {
+    if (this.runner.submitBatch === undefined) {
+      throw new Error('batch submission is not supported on this transport (use single-job submit)')
+    }
+    const dirs = request.iterDirs ?? (request.iterDir !== '' ? [request.iterDir] : [])
+    if (dirs.length === 0) throw new Error('batch submission requires at least one iterDir')
+    const jobId = this.jobs.start({
+      kind: 'ctpwa',
+      label: `ctpwa batch ${dirs.length} (${dirs[0]})`,
+      outputLimitBytes: FIT_OUTPUT_LIMIT_BYTES,
+      owner,
+      run: () => this.spawnBatch(dirs, request),
+    })
+    this.batchIterDirs.set(jobId, dirs)
+    return jobId
+  }
+
   /** Spawn the process and return the JobHooks the registry controls. */
   private spawnFit(request: FitRequest): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
-    const status = this.runner.submit(request.iterDir, {
+    return this.spawnVia(
+      (options) => this.runner.submit(request.iterDir, options),
+      request,
+    )
+  }
+
+  private spawnBatch(dirs: string[], request: FitRequest): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
+    const submit = this.runner.submitBatch!
+    return this.spawnVia(
+      (options) => submit(dirs, options),
+      request,
+    )
+  }
+
+  private spawnVia(
+    launch: (opts: { timeoutMs?: number; scriptArgs?: string[] }) => FitStatus,
+    request: FitRequest,
+  ): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
+    const status = launch({
       timeoutMs: request.timeoutMin !== undefined ? request.timeoutMin * 60_000 : undefined,
       scriptArgs: request.scriptArgs,
     })
@@ -117,7 +165,7 @@ export class PwaFitLocalService extends FitService {
     const snap = this.jobs.get(jobId, caller)
     const out: FitStatusView = {
       jobId,
-      iterDir: this.iterDirs.get(jobId) ?? '',
+      iterDir: this.iterDirs.get(jobId) ?? this.batchIterDirs.get(jobId)?.join(',') ?? '',
       state: snap.status === 'completed' ? 'done' : snap.status === 'killed' ? 'canceled' : snap.status === 'failed' ? 'failed' : 'running',
       logTail: '',
     }

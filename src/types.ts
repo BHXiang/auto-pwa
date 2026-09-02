@@ -191,7 +191,7 @@ export interface DecayCheckResult {
 
 // ---------------------------------------------------------------------------
 // PWA config.yml model (the subset relevant to iteration).
-// Mirrors the format consumed by ctpwa (see /home/whitewash/pkgs/ctauto_pwa_0629/src/Config.cu).
+// Mirrors the format consumed by ctpwa (see ctpwa's src/Config.cu).
 // ---------------------------------------------------------------------------
 
 /** Resonance lineshape models supported by ctpwa (Resonance.cu type table). */

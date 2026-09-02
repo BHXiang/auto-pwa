@@ -4,7 +4,7 @@
  * constraints (physics validation, YAML rendering, atomic writes) live in the
  * core; this file only declares the model-facing surface.
  *
- * Mount via:  pnpm dsh web --patch /home/whitewash/pkgs/auto-pwa/patch/auto-pwa.cordis.yml
+ * Mount via:  pnpm dsh web --patch <auto-pwa>/patch/auto-pwa.bundle.yml
  *
  * Tools:
  *   auto_pwa_lookup        query the PDG resonance table
@@ -58,6 +58,24 @@ export const name = 'auto-pwa'
 export const inject = ['tools', 'pwaFit']
 
 const text = (t: string) => [{ type: 'text' as const, text: t }]
+
+/**
+ * Locate a bundled python script (auto_pwa_evaluate.py / root_view.py /
+ * wave_view.py) from the plugin source layout or the compiled lib layout.
+ *
+ * - plugin/auto-pwa.ts  (source, run via tsx):  '../scripts/x.py' -> scripts/x.py ✓
+ * - lib/plugin/auto-pwa.js (compiled, package): '../scripts/x.py' -> lib/scripts/x.py ✗,
+ *   so also try '../../scripts/x.py' -> scripts/x.py ✓ (package root).
+ * Resolution happens at call time, so creating the file at the returned path
+ * fixes an already-loaded plugin process without a restart.
+ */
+function bundledScriptPath(name: string): string {
+  const fromSource = new URL(`../scripts/${name}`, import.meta.url).pathname // plugin/ -> scripts/
+  const fromLib = new URL(`../../scripts/${name}`, import.meta.url).pathname // lib/plugin/ -> scripts/
+  if (existsSync(fromSource)) return fromSource
+  if (existsSync(fromLib)) return fromLib
+  return fromSource // best-effort; callers surface a clear "script not found"
+}
 
 /** Map a tool execution's agent to a pwaFit owner (jobs session fence). */
 const ownerOf = (exec: { agent?: { sessionId?: string } }): { sessionId: string } | undefined =>
@@ -1106,7 +1124,7 @@ export function apply(ctx: Context) {
           try {
             const evalRoot = env.evaluateOutDir !== '' ? env.evaluateOutDir : join(process.cwd(), '_auto-pwa-eval')
             const evalDir = `${evalRoot}/round-${Date.now().toString(36)}`
-            const script = new URL('../scripts/auto_pwa_evaluate.py', import.meta.url).pathname
+            const script = bundledScriptPath('auto_pwa_evaluate.py')
             const py = defaultFitRunnerConfig().python
             const cfgPath = `${args.baseIterDir}/config.yml`
             const evalArgv = [script, rootFile, evalDir]
@@ -1210,8 +1228,8 @@ export function apply(ctx: Context) {
     name: 'auto_pwa_iter_start',
     description: '创建下一轮迭代目录 iterations/iter-N/：复制基座 config.yml，软链 fit.py/plot.py，写 note.md 骨架。返回新目录路径。每轮拟合前先调用它。',
     parameters: {
-      iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录（如 .../Jpsi2KKeta/iterations）' },
-      baseConfigPath: { type: 'string', required: true, description: '本轮基座 config.yml（上一轮的 config 或 solve2/config.yml）' },
+      iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录（如 <分析目录>/iterations）' },
+      baseConfigPath: { type: 'string', required: true, description: '本轮基座 config.yml（上一轮的 config 或项目初始 config）' },
       fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
       plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
     },
@@ -1695,7 +1713,7 @@ export function apply(ctx: Context) {
       },
     },
     async execute(args: { rootPath: string; outDir?: string }, exec) {
-      const script = new URL('../scripts/auto_pwa_evaluate.py', import.meta.url).pathname
+      const script = bundledScriptPath('auto_pwa_evaluate.py')
       const outDir = args.outDir ?? `${dirname(args.rootPath)}/evaluate`
       const py = defaultFitRunnerConfig().python
       // config.yml（若有）传给 evaluate.py 做 Plot 段解析——新 expr 格式的
@@ -1945,7 +1963,7 @@ export function apply(ctx: Context) {
     },
     async execute(args: { rootPath: string; mode: 'list' | 'read'; objects?: string[] }, exec) {
       const py = defaultFitRunnerConfig().python
-      const script = new URL('../scripts/root_view.py', import.meta.url).pathname
+      const script = bundledScriptPath('root_view.py')
       const argv = [script, args.rootPath, args.mode]
       if (args.mode === 'read') {
         if ((args.objects ?? []).length === 0) {
@@ -2060,7 +2078,7 @@ export function apply(ctx: Context) {
         return { ok: false, iterDir: args.iterDir, error: `迭代目录缺少 config.yml 或 results/fit.json: ${args.iterDir}` }
       }
       const py = defaultFitRunnerConfig().python
-      const script = new URL('../scripts/wave_view.py', import.meta.url).pathname
+      const script = bundledScriptPath('wave_view.py')
       const outJson = `${args.iterDir}/_wave_view.json`
       const argv = [
         script,
@@ -2110,7 +2128,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_run_fit',
-    description: '在迭代目录提交拟合（pwa-fit-local 经 ctx.jobs 启动 ctpwa env 的 python fit.py，注入 ROOT/CUDA/torch 库路径）。返回 jobId（ctpwa-N），完成时 DSH 会自动通知（background job ctpwa-N finished），用 auto_pwa_fit_status 或 job_output 查结果。无 GPU 时立即失败并给出诊断。',
+    description: '在迭代目录提交拟合（pwa-fit-local 经 ctx.jobs 启动；自动探测 transport：本机有 CUDA -> 本地 spawn python fit.py；无 CUDA 但有 SLURM -> 写 fit.slurm 并 sbatch 交作业，登录节点轮询。返回 jobId（ctpwa-N），完成时 DSH 会自动通知（background job ctpwa-N finished），用 auto_pwa_fit_status 或 job_output 查结果。两种 transport 都不可用时立即失败并给出诊断。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录绝对路径（须含 fit.py 与 config.yml）' },
       timeoutMs: { type: 'integer', description: '超时毫秒，超过则终止（默认无）' },
@@ -2123,10 +2141,13 @@ export function apply(ctx: Context) {
           jobId: { type: 'string', required: true },
           state: { type: 'string', required: true, enum: ['running', 'done', 'failed', 'canceled'] },
           logPath: { type: 'string', required: true },
+          transport: { type: 'string', enum: ['local', 'slurm'] },
           error: { type: 'string' },
         },
       },
-      render: (_args, value) => text(value.error ? `拟合提交失败: ${value.error}` : `拟合已提交: job ${value.jobId} (${value.state}), 日志: ${value.logPath}`),
+      render: (_args, value) => text(value.error
+        ? `拟合提交失败: ${value.error}`
+        : `拟合已提交: job ${value.jobId} (${value.state}, ${value.transport ?? '?'} transport), 日志: ${value.logPath}`),
     },
     async execute(args: { iterDir: string; timeoutMs?: number }, exec) {
       try {
@@ -2134,7 +2155,8 @@ export function apply(ctx: Context) {
           { iterDir: args.iterDir, timeoutMin: args.timeoutMs !== undefined ? Math.ceil(args.timeoutMs / 60_000) : undefined },
           ownerOf(exec),
         )
-        return { jobId, state: 'running' as const, logPath: join(args.iterDir, 'fit.log') }
+        const transport = (ctx.pwaFit as { transport?: string }).transport ?? 'local'
+        return { jobId, state: 'running' as const, logPath: join(args.iterDir, 'fit.log'), transport }
       } catch (e) {
         return { jobId: '', state: 'failed' as const, logPath: join(args.iterDir, 'fit.log'), error: (e as Error).message }
       }
@@ -2360,6 +2382,30 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   // auto_pwa_try_candidates（第二批：并行候选短拟合）
   // ---------------------------------------------------------------------
+  // auto_pwa_try_candidates（第二批：并行候选短拟合）
+  // ---------------------------------------------------------------------
+  // Batch decision helpers (cluster transport): 'one' = each candidate is its
+  // own SLURM job tracked as one batch (for long fits); 'script' = one merged
+  // script (for short fits); 'off' = per-candidate single submit (local).
+  const SLURM_BATCH_SHORT_SEC = 120
+  const resolveSlurmBatchMode = (env: NodeJS.ProcessEnv, timeSec?: number): 'one' | 'script' | 'off' => {
+    const v = (env.PWA_SLURM_BATCH ?? 'auto').toLowerCase().trim()
+    if (v === 'one' || v === 'script') return v
+    if (v === 'off') return 'off'
+    if (timeSec === undefined) return 'one' // no baseline timing yet -> safe parallel batch
+    return timeSec < SLURM_BATCH_SHORT_SEC ? 'script' : 'one'
+  }
+  const readBaselineTimeSec = (iterDir: string): number | undefined => {
+    try {
+      const p = join(iterDir, 'results', 'fit.json')
+      if (!existsSync(p)) return undefined
+      const j = JSON.parse(readFileSync(p, 'utf8')) as { timeSec?: unknown }
+      return typeof j.timeSec === 'number' ? j.timeSec : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   ctx.tools.register(defineTool({
     name: 'auto_pwa_try_candidates',
     description: '并行试探多个候选（执行层）：在同一基座 config 上各加一个候选，建独立 trial 目录（iterations/_trials/，不进 iter-N 序列），以短拟合（--runs 1 --max-iter 500，可用 PWA_AIFIT_RUNS 风格参数调整）提交后台任务。全部完成后用 auto_pwa_compare 比较 ΔNLL 选出最优者。物理门禁与写前总闸与正式迭代一致。',
@@ -2410,6 +2456,7 @@ export function apply(ctx: Context) {
             },
           },
           warnings: { type: 'array', items: { type: 'string' } },
+          batchMode: { type: 'string', enum: ['one', 'script', 'off'] },
           error: { type: 'string' },
         },
       },
@@ -2418,12 +2465,16 @@ export function apply(ctx: Context) {
         jobs: { candidate: string; iterDir: string; jobId: string }[]
         skipped: { candidate: string; errors: { code: string; message: string }[] }[]
         warnings?: string[]
+        batchMode?: 'one' | 'script' | 'off'
         error?: string
       }) => {
         if (!value.ok) return text(`trial 提交失败: ${value.error ?? '未知'}`)
         const lines: string[] = []
         if (value.jobs.length > 0) {
-          lines.push(`已提交 ${value.jobs.length} 个候选短拟合:`)
+          const batch = value.batchMode === 'one' ? '（每个候选一个 SLURM 作业，全部完成才唤醒）'
+            : value.batchMode === 'script' ? '（多个候选合成一个 SLURM 脚本，顺序跑，一次唤醒）'
+              : ''
+          lines.push(`已提交 ${value.jobs.length} 个候选短拟合${batch}:`)
           for (const j of value.jobs) lines.push(`  ${j.candidate}: job ${j.jobId} — ${j.iterDir}`)
         }
         for (const s of value.skipped) {
@@ -2445,7 +2496,7 @@ export function apply(ctx: Context) {
     }, exec) {
       const baseConfig = `${args.baseIterDir}/config.yml`
       if (!existsSync(baseConfig)) {
-        return { ok: false, baseIterDir: args.baseIterDir, jobs: [], skipped: [], error: `base config not found: ${baseConfig}` }
+        return { ok: false, baseIterDir: args.baseIterDir, jobs: [], skipped: [], batchMode: 'off', error: `base config not found: ${baseConfig}` }
       }
       const iterationsRoot = iterationsRootOf(args.baseIterDir)
       const env = resolveEnv()
@@ -2456,6 +2507,9 @@ export function apply(ctx: Context) {
       const skipped: { candidate: string; errors: { code: string; message: string }[] }[] = []
       const warnings: string[] = []
       const baseIterName = args.baseIterDir.split(/[\\/]/).pop() ?? 'base'
+      // Validate + build trial dirs for every candidate first (skipping invalid),
+      // so we can decide to batch them under one job after the fact.
+      const pending: { candidate: string; iterDir: string; changed: string[] }[] = []
       let idx = 0
       for (const proposal of args.candidates) {
         idx += 1
@@ -2489,20 +2543,45 @@ export function apply(ctx: Context) {
           const tmp = `${target}.tmp-${Date.now().toString(36)}`
           writeFileSync(tmp, dumpConfig(applied.config))
           renameSync(tmp, target)
-          const jobId = ctx.pwaFit.submit(
-            {
-              iterDir: trialDir,
-              scriptArgs: ['--runs', runs, '--max-iter', maxIter],
-              timeoutMin: args.timeoutMin,
-            },
-            ownerOf(exec),
-          )
-          jobs.push({ candidate: proposal.name, iterDir: trialDir, jobId, changed: [...changed, ...applied.changed] })
+          pending.push({ candidate: proposal.name, iterDir: trialDir, changed: [...changed, ...applied.changed] })
         } catch (e) {
           skipped.push({ candidate: proposal.name, errors: [{ code: 'trial-failed', message: (e as Error).message }] })
         }
       }
-      return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings }
+      // Decide batching: only the SLURM transport batches (local stays one DSH
+      // job per candidate, the historical behavior).
+      const pwaFit = ctx.pwaFit as {
+        transport?: string
+        submitBatch?: (r: { iterDir: string; iterDirs?: string[]; timeoutMin?: number; scriptArgs?: string[] }, o?: { sessionId: string }) => string
+      }
+      const batchMode = pwaFit.transport === 'slurm'
+        ? resolveSlurmBatchMode(env, readBaselineTimeSec(args.baseIterDir))
+        : 'off'
+      const countsCandidate = pending.length
+      const canBatch = batchMode !== 'off' && countsCandidate > 1 && typeof pwaFit.submitBatch === 'function'
+      if (canBatch) {
+        const jobId = pwaFit.submitBatch!({
+          iterDir: pending[0]!.iterDir,
+          iterDirs: pending.map((p) => p.iterDir),
+          scriptArgs: ['--runs', runs, '--max-iter', maxIter],
+          timeoutMin: args.timeoutMin,
+        }, ownerOf(exec))
+        for (const p of pending) jobs.push({ candidate: p.candidate, iterDir: p.iterDir, jobId, changed: p.changed })
+        return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings, batchMode }
+      }
+      // Single-job path: local transport, batch='off', or a single candidate.
+      for (const p of pending) {
+        const jobId = ctx.pwaFit.submit(
+          {
+            iterDir: p.iterDir,
+            scriptArgs: ['--runs', runs, '--max-iter', maxIter],
+            timeoutMin: args.timeoutMin,
+          },
+          ownerOf(exec),
+        )
+        jobs.push({ candidate: p.candidate, iterDir: p.iterDir, jobId, changed: p.changed })
+      }
+      return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings, batchMode: 'off' }
     },
   }))
 
@@ -2643,9 +2722,11 @@ export function apply(ctx: Context) {
   // （第三批：循环状态机 —— 显著性 / 停止 / 回滚 / 最终报告）
   // ---------------------------------------------------------------------
 
-  /** Best-effort max|pull| from the iteration's evaluate.json (either
-   *  `<iter>/evaluate/evaluate.json` or `<iter>/results/evaluate/evaluate.json`). */
-  const readEvaluate = (iterDir: string): { maxPull: number | null; pullRegions: [number, number][] } => {
+  /** Best-effort max|pull| and max per-distribution chi2/ndf from the
+   *  iteration's evaluate.json (either `<iter>/evaluate/evaluate.json` or
+   *  `<iter>/results/evaluate/evaluate.json`). chi2/ndf ≈ 1 means the pull
+   *  distribution is fluctuations around 0 — the "pull 分布" criterion. */
+  const readEvaluate = (iterDir: string): { maxPull: number | null; maxChi2Ndf: number | null; pullRegions: [number, number][] } => {
     for (const p of [`${iterDir}/evaluate/evaluate.json`, `${iterDir}/results/evaluate/evaluate.json`]) {
       if (!existsSync(p)) continue
       try {
@@ -2653,24 +2734,27 @@ export function apply(ctx: Context) {
         const worst = ev.worst_distributions as { max_abs_pull?: number }[] | undefined
         const pulls = (worst ?? []).map((w) => w.max_abs_pull ?? 0)
         const regions: [number, number][] = []
-        const dists = ev.distributions as Record<string, { pull_regions_over_3sigma?: [number, number][] }> | undefined
+        const dists = ev.distributions as Record<string, { pull_regions_over_3sigma?: [number, number][]; chi2_ndf?: number | null }> | undefined
+        let maxChi2Ndf: number | null = null
         for (const d of Object.values(dists ?? {})) {
           for (const r of d.pull_regions_over_3sigma ?? []) regions.push(r)
+          if (typeof d.chi2_ndf === 'number' && d.chi2_ndf !== null && (maxChi2Ndf === null || d.chi2_ndf > maxChi2Ndf)) maxChi2Ndf = d.chi2_ndf
         }
-        return { maxPull: pulls.length > 0 ? Math.max(...pulls) : null, pullRegions: regions }
+        return { maxPull: pulls.length > 0 ? Math.max(...pulls) : null, maxChi2Ndf, pullRegions: regions }
       } catch {
-        return { maxPull: null, pullRegions: [] }
+        return { maxPull: null, maxChi2Ndf: null, pullRegions: [] }
       }
     }
-    return { maxPull: null, pullRegions: [] }
+    return { maxPull: null, maxChi2Ndf: null, pullRegions: [] }
   }
 
   /** Schema-compliant view of a LoopEval (loop tools' output schemas declare
    * a subset; iter/iterDir already exist at the top level). */
-  const evalView = (e: LoopEval): { nll: number | null; deltaNll: number | null; maxPull: number | null; hessianPositive: boolean | null; verdict: string; pullRegions?: [number, number][] } => ({
+  const evalView = (e: LoopEval): { nll: number | null; deltaNll: number | null; maxPull: number | null; maxChi2Ndf: number | null; hessianPositive: boolean | null; verdict: string; pullRegions?: [number, number][] } => ({
     nll: e.nll,
     deltaNll: e.deltaNll,
     maxPull: e.maxPull,
+    maxChi2Ndf: e.maxChi2Ndf,
     hessianPositive: e.hessianPositive,
     verdict: e.verdict,
     pullRegions: e.pullRegions,
@@ -2684,7 +2768,7 @@ export function apply(ctx: Context) {
       const prev = previousDiaryNll(state.iterationsRoot, state.iter)
       return prev !== undefined ? nll - prev : null
     })() : null
-    const { maxPull, pullRegions } = readEvaluate(state.currentIterDir)
+    const { maxPull, maxChi2Ndf, pullRegions } = readEvaluate(state.currentIterDir)
     const verdict: LoopEval['verdict'] =
       deltaNll === null ? 'no-data' : deltaNll <= -state.objective.significanceThreshold ? 'significant-improvement' : 'not-significant'
     const evalResult: LoopEval = {
@@ -2693,6 +2777,7 @@ export function apply(ctx: Context) {
       nll,
       deltaNll,
       maxPull,
+      maxChi2Ndf,
       hessianPositive: summary.positiveDefinite,
       verdict,
       pullRegions,
@@ -2729,7 +2814,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_next',
-    description: '循环状态机（执行面，主驱动器）：评估当前迭代（NLL/ΔNLL/max|pull|/Hessian）→ 按目标判据（max|pull|、|ΔNLL| 显著阈值、轮次预算）判定收敛 → 收敛则写 FINAL-REPORT.md 并宣告 done；未收敛则进入 propose 阶段等 AI 决策。首次调用传 baseIterDir 启动（状态持久化在 iterations/.loop-state.json，重启可续）。',
+    description: '循环状态机（执行面，主驱动器）：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 按目标判据（max|pull|、chi2/ndf≈1 的 pull 分布、|ΔNLL| 显著阈值、轮次预算）判定收敛 → 收敛则写 FINAL-REPORT.md 并宣告 done；未收敛则进入 propose 阶段等 AI 决策。首次调用传 baseIterDir 启动（状态持久化在 iterations/.loop-state.json，重启可续）。',
     parameters: {
       iterationsRoot: { type: 'string', description: 'iterations/ 目录（省略时从 baseIterDir 推导）' },
       baseIterDir: { type: 'string', description: '起始基线迭代目录（仅首次/重启时必填；如 .../iterations/iter-004）' },
@@ -2738,6 +2823,7 @@ export function apply(ctx: Context) {
         additionalProperties: false,
         properties: {
           stopMaxPull: { type: 'number', description: 'max|pull| 停止阈值（默认 5）' },
+          stopMaxChi2Ndf: { type: 'number', description: '逐分布 chi2/ndf 停止阈值（默认 2；≈1 即 pull 分布为 0 附近涨落，>2 判为仍有系统性偏差）' },
           stopDeltaNll: { type: 'number', description: '|ΔNLL| 停止阈值（默认 10）' },
           significanceThreshold: { type: 'number', description: '显著改进阈值（默认 3）' },
           maxRounds: { type: 'integer', description: '轮次预算上限（默认 20）' },
@@ -2762,6 +2848,7 @@ export function apply(ctx: Context) {
               nll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
               deltaNll: { oneOf: [{ type: 'number' }, { type: 'null' }] },
               maxPull: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+              maxChi2Ndf: { oneOf: [{ type: 'number' }, { type: 'null' }], description: '最大逐分布 chi2/ndf（≈1 即 pull 分布为 0 附近涨落）' },
               hessianPositive: { oneOf: [{ type: 'boolean' }, { type: 'null' }] },
               verdict: { type: 'string', required: true },
               pullRegions: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: 'pull>3σ 质量区间（regionPull 预测验证用）' },
@@ -2789,7 +2876,7 @@ export function apply(ctx: Context) {
         iter: number
         iterDir: string
         rounds: number
-        eval?: { nll: number | null; deltaNll: number | null; maxPull: number | null; hessianPositive: boolean | null; verdict: string }
+        eval?: { nll: number | null; deltaNll: number | null; maxPull: number | null; maxChi2Ndf: number | null; hessianPositive: boolean | null; verdict: string }
         converged: boolean
         reason?: string
         reportPath?: string
@@ -2801,7 +2888,7 @@ export function apply(ctx: Context) {
         const e = value.eval
         if (e !== undefined) {
           lines.push(
-            `  评估: NLL=${e.nll?.toFixed(2) ?? '—'} ΔNLL=${e.deltaNll === null ? '—' : e.deltaNll.toFixed(2)} max|pull|=${e.maxPull?.toFixed(2) ?? '—'}${e.hessianPositive === false ? ' ⚠️Hessian 不正定' : ''}（${e.verdict}）`,
+            `  评估: NLL=${e.nll?.toFixed(2) ?? '—'} ΔNLL=${e.deltaNll === null ? '—' : e.deltaNll.toFixed(2)} max|pull|=${e.maxPull?.toFixed(2) ?? '—'} chi2/ndf=${e.maxChi2Ndf?.toFixed(2) ?? '—'}${e.hessianPositive === false ? ' ⚠️Hessian 不正定' : ''}（${e.verdict}）`,
           )
         }
         if (value.verification !== undefined) {
@@ -2909,14 +2996,14 @@ export function apply(ctx: Context) {
           iter: { type: 'integer', required: true },
           iterDir: { type: 'string', required: true },
           rounds: { type: 'integer', required: true },
-          lastEval: { type: 'object', additionalProperties: false, properties: { nll: { oneOf: [{ type: 'number' }, { type: 'null' }] }, deltaNll: { oneOf: [{ type: 'number' }, { type: 'null' }] }, maxPull: { oneOf: [{ type: 'number' }, { type: 'null' }] }, verdict: { type: 'string' } } },
+          lastEval: { type: 'object', additionalProperties: false, properties: { nll: { oneOf: [{ type: 'number' }, { type: 'null' }] }, deltaNll: { oneOf: [{ type: 'number' }, { type: 'null' }] }, maxPull: { oneOf: [{ type: 'number' }, { type: 'null' }] }, maxChi2Ndf: { oneOf: [{ type: 'number' }, { type: 'null' }] }, verdict: { type: 'string' } } },
           error: { type: 'string' },
         },
       },
-      render: (_args, value: { ok: boolean; phase: string; iter: number; iterDir: string; rounds: number; lastEval?: { nll: number | null; deltaNll: number | null; maxPull: number | null; verdict: string }; error?: string }) =>
+      render: (_args, value: { ok: boolean; phase: string; iter: number; iterDir: string; rounds: number; lastEval?: { nll: number | null; deltaNll: number | null; maxPull: number | null; maxChi2Ndf: number | null; verdict: string }; error?: string }) =>
         text(
           value.ok
-            ? `loop 状态: phase=${value.phase}, iter-${String(value.iter).padStart(3, '0')}（${value.iterDir}）, rounds=${value.rounds}${value.lastEval ? `, 上次评估 NLL=${value.lastEval.nll?.toFixed(2) ?? '—'} ΔNLL=${value.lastEval.deltaNll ?? '—'} pull=${value.lastEval.maxPull ?? '—'}` : ''}`
+            ? `loop 状态: phase=${value.phase}, iter-${String(value.iter).padStart(3, '0')}（${value.iterDir}）, rounds=${value.rounds}${value.lastEval ? `, 上次评估 NLL=${value.lastEval.nll?.toFixed(2) ?? '—'} ΔNLL=${value.lastEval.deltaNll ?? '—'} max|pull|=${value.lastEval.maxPull ?? '—'} chi2/ndf=${value.lastEval.maxChi2Ndf ?? '—'}` : ''}`
             : `loop 未启动或读取失败: ${value.error ?? '未知'}`,
         ),
     },
@@ -2938,6 +3025,7 @@ export function apply(ctx: Context) {
               nll: lastEval.nll,
               deltaNll: lastEval.deltaNll,
               maxPull: lastEval.maxPull,
+              maxChi2Ndf: lastEval.maxChi2Ndf,
               verdict: lastEval.verdict,
             },
       }

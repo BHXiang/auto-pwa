@@ -17,6 +17,11 @@ import { IterationLog, listIterations } from './iteration-log.js'
 export interface LoopObjective {
   /** max|pull| below which pulls are acceptable; default 5. */
   stopMaxPull: number
+  /** Per-distribution chi2/ndf below which the pull distribution counts as
+   *  "fluctuations around 0" (chi2/ndf ≈ 1 is ideal, i.e. pulls ~ N(0,1));
+   *  > 2 marks a clearly biased distribution even when max|pull| < 5.
+   *  Default 2. */
+  stopMaxChi2Ndf: number
   /** |ΔNLL| below which the last change is not worth keeping; default 10. */
   stopDeltaNll: number
   /** |ΔNLL| >= threshold counts as a significant change; default 3. */
@@ -27,6 +32,7 @@ export interface LoopObjective {
 
 export const DEFAULT_OBJECTIVE: LoopObjective = {
   stopMaxPull: 5,
+  stopMaxChi2Ndf: 2,
   stopDeltaNll: 10,
   significanceThreshold: 3,
   maxRounds: 20,
@@ -40,6 +46,8 @@ export interface LoopEval {
   nll: number | null
   deltaNll: number | null
   maxPull: number | null
+  /** Largest per-distribution chi2/ndf (pull distribution quality ≈ N(0,1) when ≈ 1). */
+  maxChi2Ndf: number | null
   hessianPositive: boolean | null
   verdict: 'significant-improvement' | 'not-significant' | 'no-data'
   /** pull>3σ regions of the worst distributions (for regionPull checks). */
@@ -138,7 +146,11 @@ export function loadLoopState(iterationsRoot: string): LoopState | undefined {
   const p = loopStatePath(iterationsRoot)
   if (!existsSync(p)) return undefined
   try {
-    return JSON.parse(readFileSync(p, 'utf8')) as LoopState
+    const state = JSON.parse(readFileSync(p, 'utf8')) as LoopState
+    // Backward compatibility: objective fields added after the state file was
+    // written (e.g. stopMaxChi2Ndf) fall back to defaults.
+    state.objective = { ...DEFAULT_OBJECTIVE, ...state.objective }
+    return state
   } catch {
     return undefined
   }
@@ -181,12 +193,13 @@ export function initLoopState(
 
 /**
  * Pure convergence judgment for one evaluated iteration:
- * converged when pulls are acceptable AND the last change was NOT a
- * significant improvement (nothing more to gain from this direction) — or
- * when the round budget is exhausted.
+ * converged when pulls are acceptable (max|pull| AND per-distribution
+ * chi2/ndf, i.e. the pull distribution is fluctuations around 0) AND the
+ * last change was NOT a significant improvement (nothing more to gain from
+ * this direction) — or when the round budget is exhausted.
  */
 export function convergenceVerdict(
-  evalResult: { nll: number | null; deltaNll: number | null; maxPull: number | null },
+  evalResult: { nll: number | null; deltaNll: number | null; maxPull: number | null; maxChi2Ndf: number | null },
   objective: LoopObjective,
   rounds: number,
 ): { converged: boolean; reason?: string } {
@@ -197,9 +210,16 @@ export function convergenceVerdict(
     return { converged: false, reason: '缺少上一轮 ΔNLL（首次评估或日记为空）——先执行一轮迭代再判断' }
   }
   const pullOk = evalResult.maxPull === null || evalResult.maxPull < objective.stopMaxPull
+  const chi2Ok = evalResult.maxChi2Ndf === null || evalResult.maxChi2Ndf < objective.stopMaxChi2Ndf
   const changedSignificantly = Math.abs(evalResult.deltaNll) >= objective.significanceThreshold
   if (!pullOk) {
     return { converged: false, reason: `max|pull| = ${evalResult.maxPull?.toFixed(2) ?? '?'} >= ${objective.stopMaxPull}：仍有偏差区待处理` }
+  }
+  if (!chi2Ok) {
+    return {
+      converged: false,
+      reason: `逐分布 chi2/ndf = ${evalResult.maxChi2Ndf?.toFixed(2) ?? '?'} >= ${objective.stopMaxChi2Ndf}：pull 分布偏离 0 附近涨落（仍系统性偏差）`,
+    }
   }
   if (changedSignificantly) {
     return {
@@ -209,7 +229,7 @@ export function convergenceVerdict(
   }
   return {
     converged: true,
-    reason: `max|pull| < ${objective.stopMaxPull} 且 |ΔNLL| < ${objective.significanceThreshold}：收敛判据满足`,
+    reason: `max|pull| < ${objective.stopMaxPull} 且逐分布 chi2/ndf < ${objective.stopMaxChi2Ndf} 且 |ΔNLL| < ${objective.significanceThreshold}：收敛判据满足（pull 分布为 0 附近涨落）`,
   }
 }
 

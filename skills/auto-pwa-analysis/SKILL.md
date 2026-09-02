@@ -7,11 +7,26 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 本 skill 是与 `auto_pwa_*` 工具配套的物理知识。工具负责强制（强约束），本文件负责解释**为什么**并指导**如何决策**。所有写入 config.yml 的操作都必须走 `auto_pwa_edit_config`（内部先 `auto_pwa_validate_add`），绝不用文本编辑器直接改 config.yml。
 
+## 0. 项目启动（第一优先：先定位项目、直接开跑，禁止探索）
+
+**定位项目**：你的项目 = 用户明确指定的分析目录（通常在会话上下文/工作区里给出路径），由该目录的 `init_config.yml`（或已建立的 `iterations/`）决定。**禁止**为了"找项目"去浏览磁盘上其他分析目录——它们与本项目无关，翻看只会浪费大量时间。用户给了目录但你没把握时，**最多问一次**确认路径，然后立刻开跑。
+
+**全新项目（该目录没有 iterations/）**，动作序列一次到位：
+1. `auto_pwa_config_view` 读 `init_config.yml` 全文（一次调用覆盖 Particles/DecayChains/intermediates/Resonances/Constraints）。
+2. 用一两句话向自己复述衰变链与已有模型（形式如"母→子1+子2；中间态 X 经哪些 [J,P] 组、各组含哪些共振态"；具体粒子以 config.yml 为准）——复述不出来就是没读懂，重读视图。
+3. `auto_pwa_lookup` 核对已有共振态的 J^P/质量/宽度（读懂了才谈得上加新的）。
+4. **立即** `auto_pwa_iter_start`（基座 = init_config.yml）建 `iter-000` → `auto_pwa_run_fit` 提交首轮拟合。
+5. 等拟合期间再补物理检查（`jpc_check`/`decay_check`/`suggest`）——**不要**先做完所有检查才开跑。
+
+**已有 iterations/（续跑）**：`auto_pwa_history` + `auto_pwa_loop_status` 恢复上下文（上一轮结论 → 本轮方向），直接进 §5.1 主循环；不重新探索目录、不看旧项目。
+
+**禁止手动调试环境**：GPU/CUDA/ctpwa/ROOT 环境由 `auto_pwa_run_fit` 自动探测并给出权威诊断。**不要**手动跑 `nvidia-smi`、`torch.cuda.is_available()`、查 `/dev/dxg`、拼 `LD_LIBRARY_PATH`、翻 ctpwa 源码——这是最常见的整段浪费。**transport 自动路由**：`auto_pwa_run_fit` 探测到本机无 CUDA 但有 `sbatch`/`squeue`/`sacct`（集群登录节点）时会 **交作业到 SLURM**（写 `fit.slurm`、`sbatch`、登录节点轮询，跑完唤醒——无需本地 GPU）。若 `auto_pwa_run_fit` 报 no-gpu/找不到 torch，多半是宿主进程没有运行在插件要求的 python 环境里（设 `PWA_CTPWA_PYTHON` 与 `PWA_LD_LIBRARY_PATH`，或在对应环境里重启 harness）——把这条提示给用户即可，不要自己修环境。
+
 ## 1. 分波基本框架
 
-当前分析通道（示例）：
-- **Jpsi2KKeta**：J/ψ(1⁻, 3.0969) → η + R_KK（R_KK → K⁺K⁻）以及 J/ψ → K + R_Keta（R_Keta → K η）。
-- **pipieta**：J/ψ → η + R（R → π⁺π⁻）。
+**以下只是物理概念说明，与你的具体项目无关**（你的项目由 §0 定位的 init_config.yml 决定）：
+- 一个典型级联：母粒子 A → 子粒子 B + 中间态 R（R → 两末态），例如 ψ(2S) → γ + χc1、χc1 → η + R_KK（R_KK → K⁺K⁻）——只示意中间态如何嵌入衰变链，具体通道/粒子以你的 config.yml 为准。
+- 中间态命名（R_KK、R_Keta 等）是常见分析惯例（R_<子粒子>），不同项目可不同。
 
 每个 intermediate（如 R_KK）有若干 [J,P] 组，每组列出共振态名。**组顺序决定振幅索引**（`Constraints.trans` 引用如 `R_Keta_0` 按此索引）——所以新组只能追加到末尾，不能插队。
 
@@ -52,7 +67,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - **PDG 依据**：BWR/BW/Flatte 共振态必须能在 PDG 表命中（名字匹配 id/别名）。**PDG 上没有的新粒子一律拒绝**——分波分析不能发明粒子。唯一例外：`model: ONE`（相空间项），其振幅 = 势垒因子，mass 参数不参与振幅，命名惯例 `NR*`（如 NR1_KK）。
 - **出处（reference）例外**：若参数来自**最新实验结果**（而非 PDG 平均）或该态尚未被 PDG 收录，提案必须带 `reference`（DOI 或论文名）——此时 PDG 平均一致性检查（质量/J^P/未收录）降为警告并记录出处，但**物理门禁（阈值/衰变顶点 J^P/C 守恒）绝不豁免**。reference 会写入 config.yml 并随迭代继承。用 `auto_pwa_lookup` 看单实验测量历史（stat/syst 分离 + DOI），确认引用的实验值真实存在。
 - **JPC 一致性**：提案 (J,P) 必须与 PDG 条目一致。ρ(770) 是 1⁻，写成 0⁺ 会被拒。
-- **运动学阈值**：m_R ≤ m_A − m_B（on-shell）。R_KK 链阈值 ≈ 2.549 GeV，R_Keta 链 ≈ 2.603 GeV。接近阈值 → off-shell 风险 → 建议 float 质量。
+- **运动学阈值**：m_R ≤ m_A − m_B（on-shell）。接近阈值 → off-shell 风险 → 建议 float 质量；具体阈值随通道而变，用 `auto_pwa_decay_check` 查你的通道。
 - **参数结构**：BWR/BW 恰好 [质量, 宽度] GeV；ONE 恰好 1 个参数；Flatte 需要 channels 字段。参数长度错 ctpwa 直接崩溃。
 - **J^P 可达性**：J/ψ(1⁻) → 0⁻ + R 时，可达 J^P 为 0⁻, 1±, 2±, 3±, 4±, 5⁺（maxL=4）。**0⁺ 不可达**（需要 L=0 但角动量要求 L=1）。
 - **衰变顶点门禁（规则 10）**：提案 J^P 必须在 R→d1+d2 的 pairJPC 集合里（见 §2.1），否则振幅恒为零（ctpwa 零-SL 诊断同源）。
@@ -70,9 +85,10 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 ## 5. 迭代文件夹与拟合执行规则
 
-- 迭代目录：`<分析目录>/iterations/iter-N/`，每轮完整自包含：`config.yml`、`fit.py`（链接到 solve2）、`results/`、`note.md`（本轮决策记录）。
+- 迭代目录：`<分析目录>/iterations/iter-N/`，每轮完整自包含：`config.yml`、`fit.py`（链接到插件自带 `scripts/aifit.py`）、`results/`、`note.md`（本轮决策记录）。
+- **不要**从其他分析目录/旧迭代抄 fit.py 或 config 写法——`auto_pwa_iter_start` 已把 fit.py 链到插件自带脚本，config 写法以本项目 init_config.yml + `config_view` 视图为准。
 - **config.yml 必须放运行目录**：`ctpwa.analysis()` 从**当前工作目录**读 config.yml（fit.py 不接收 config 参数）。Data 段用绝对路径。
-- 拟合程序：`<ctpwa env>/bin/python fit.py`，需要 LD_LIBRARY_PATH 含 ROOT lib + CUDA lib64 + torch/lib（插件已注入）。**ctpwa 仅支持 GPU**（CPU 后端未实现），无 GPU 立即失败——先 `auto_pwa_run_fit` 会探测并给出明确诊断。
+- 拟合程序：`<ctpwa env>/bin/python fit.py`，需要 LD_LIBRARY_PATH 含 ROOT lib + CUDA lib64 + torch/lib（插件已注入）。**ctpwa 仅支持 GPU**（CPU 后端未实现）——本机无 GPU 时 `auto_pwa_run_fit` 走 **SLURM**：写 `fit.slurm`（`cd` 到迭代目录、前台 `python -u fit.py`）、`sbatch`、登录节点轮询、跑完唤醒。只有本机既无 CUDA 也无 SLURM 才立即失败并给诊断。
 - **AI 优先驱动 `scripts/aifit.py`**（`PWA_FIT_SCRIPT` 指向它）：同一引擎、零改动，但输出 `results/fit.json`——每 run NLL/正定性、**best 参数±误差与撞边界标记**、分波贡献（config 有 `phsp_truth` 时）、结构化错误码（config-error/no-gpu/fit-failed）。`auto_pwa_fit_status` 自动优先读 fit.json；`--validate-only` 可无 GPU 快速校验 config（DecayInfo）。短拟合：`PWA_AIFIT_RUNS=1 PWA_AIFIT_MAX_ITER=500`（多候选并行的基础）。
 - fit.py 默认 10 个随机初值各跑到收敛（最高 10000 次 LBFGS 迭代），输出到 `results/`：`nll_history.txt`（每次运行一段）、`parameters.txt`、`optimization_summary.txt`（最佳 NLL/正定性/分支比）、`weight_best.root`。
 - 拟合是**长任务**（10–30 分钟级）：`auto_pwa_run_fit` 返回 jobId 后后台运行，用 `auto_pwa_fit_status` 轮询；不要阻塞等待。
@@ -80,7 +96,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 ## 5.1 迭代主循环：状态机 + 同会话 goal
 
 **主路径（推荐）用循环状态机工具**（持久化在 `iterations/.loop-state.json`，重启可续）：
-- `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/Hessian）→ 按判据（`stopMaxPull`、`stopDeltaNll`、显著阈值、`maxRounds` 预算）判定收敛 → **收敛则写 `FINAL-REPORT.md` 并 phase=done**；未收敛则进入 propose 阶段。首次调用传 `baseIterDir` 启动。
+- `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 按判据（`stopMaxPull`、`stopMaxChi2Ndf`、显著阈值、`maxRounds` 预算）判定收敛 → **收敛则写 `FINAL-REPORT.md` 并 phase=done**；未收敛则进入 propose 阶段。首次调用传 `baseIterDir` 启动。
 - `auto_pwa_loop_decide`：把 AI 决策落盘——`iterate`（验证+建轮+写 config+提交拟合）、`rollback`（当前轮标记失败、基线回退到上一轮）、`converge`（强制收敛出报告）。
 - 每轮循环：`loop_next`（评估/判收敛）→ 决策（`suggest`/`diagnose`/`compare` 辅助）→ `loop_decide iterate` → 等拟合完成通知 → 回到 `loop_next`。
 
@@ -88,7 +104,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 **结论传递首选"同一个会话里连续上下文"，不是"写摘要给下一个会话"。** 跨会话传递（A 写 conclusion → B 读）会丢失推理细节（为什么选这个态、排除了什么），压缩即损失。
 
-- 会话开始时用 `create_goal` 建立目标：objective 写明收敛判据（所有分布 max|pull| < 5 且 ΔNLL < 10）、时间预算（如"总时间预算 3 小时，每轮在 note 中记录耗时"）、轮数上限（`max_goal_rounds`，建议 15）。
+- 会话开始时用 `create_goal` 建立目标：objective 写明收敛判据（**所有分布 chi2/ndf ≤ 2（≈1 即 pull 分布为 0 附近涨落）且 max|pull| < 5、|ΔNLL| < 3**）、时间预算（如"总时间预算 3 小时，每轮在 note 中记录耗时"）、轮数上限（`max_goal_rounds`，建议 15）。
 - 之后 DSH 自动续回合：**每轮结束自动开始下一轮，上下文连续**——模型记得自己上轮的全部推理，不需要重新读文件重建理解。
 - **拟合是 DSH 后台任务（ctpwa-N，owner=当前 agent）**：提交后**不要轮询**——完成时 DSH 自动通知（"background job ctpwa-N finished"），收到通知或自动续回合后再查结果；`job_list`/`job_output`/`job_kill` 可随时用。
 - 每轮动作序列（goal 回合内）：
@@ -112,6 +128,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 ## 6. 拟合质量判断（第二步，迭代决策）
 
+- **pull 分布（收敛主判据）**：`auto_pwa_evaluate` 对每个分布输出 `chi2_ndf`（chi2 = Σ pull²，ndf = bin 数−1）。**chi2/ndf ≈ 1 就是"pull 分布为 0 附近涨落"**（各 bin pull 是 N(0,1) 噪声）；> 2 判为仍有系统性偏差。**chi2/ndf 与 max|pull| 不是一回事**：所有 bin 系统性偏 +2σ（chi2/ndf≈4）时 max|pull| 可能仍 < 5；反之 100 个 bin 里 1 个 5.5σ 离群在统计上正常却会卡住 max|pull|。循环收敛要求两者都过：逐分布 chi2/ndf < `stopMaxChi2Ndf`（默认 2）且 max|pull| < `stopMaxPull`（默认 5）且 |ΔNLL| < 显著阈值。
 - **ΔNLL 显著性**：新共振态约 2 个自由参数——|ΔNLL| ≥ 3（≈ 2σ）才算显著改进；|ΔNLL| < 3 不显著，考虑删除或换方案；ΔNLL < 10 的旧判据仅作为"不再值得继续"的停止参考（`loop` 的 `significanceThreshold`/`stopDeltaNll` 可调）。
 - **Hessian 正定性**：`fit.json` 里 best run 正定才有参数误差可信；不正定 → 参数不可靠（loop 会提示）。
 - **撞边界**：float 参数贴 range 端点 = 数据不支持该自由度的信号（`auto_pwa_diagnose` 直接给建议）。
@@ -125,4 +142,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 ## 7. 注意
 
 - 每次只做一个决策并跑一轮拟合，用 ΔNLL 判断，不要一次性堆多个新共振态（无法归因）。
+- **不要翻其他项目/旧迭代文件夹**来"学习"或"找依据"——init_config.yml 与 `auto_pwa_config_view` 就是全部依据（§0）。
+- 目标目录不确定时**只问一次**，然后按答案开跑；不要再做一轮文件夹考古才回来确认。
+- 拟合环境问题（GPU 等）按 `auto_pwa_run_fit` 的诊断处理或问用户，不要自己手动探测（§0）。
 - 所有工具输出都是规范 JSON；模型负责科学判断，工具负责确定性执行。
