@@ -3,6 +3,366 @@
   "source": "pdg-2026 official package (fetch_pdg.py)",
   "resonances": [
     {
+      "id": "Delta(1750)-",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(1750)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2000)-",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2000)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2150)-",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2150)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2300)-",
+      "aliases": [],
+      "jp": {
+        "j": 4.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2300)0",
+      "aliases": [],
+      "jp": {
+        "j": 4.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2350)-",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2350)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2390)-",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2390)0",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2400)-",
+      "aliases": [],
+      "jp": {
+        "j": 4.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2400)0",
+      "aliases": [],
+      "jp": {
+        "j": 4.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2750)-",
+      "aliases": [],
+      "jp": {
+        "j": 6.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2750)0",
+      "aliases": [],
+      "jp": {
+        "j": 6.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2950)-",
+      "aliases": [],
+      "jp": {
+        "j": 7.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "Delta(2950)0",
+      "aliases": [],
+      "jp": {
+        "j": 7.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(1860)+",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(1860)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2000)+",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2000)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2040)+",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2040)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2300)+",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2300)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2570)+",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2570)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2700)+",
+      "aliases": [],
+      "jp": {
+        "j": 6.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
+      "id": "N(2700)0",
+      "aliases": [],
+      "jp": {
+        "j": 6.5,
+        "p": 1
+      },
+      "mass": 0.0,
+      "width": 0.0,
+      "status": "pdg",
+      "decayModes": []
+    },
+    {
       "id": "pi0",
       "aliases": [],
       "jp": {
@@ -904,105 +1264,6 @@
       ]
     },
     {
-      "id": "K(0)*(700)0",
-      "aliases": [],
-      "jp": {
-        "j": 0,
-        "p": 1
-      },
-      "mass": 0.838104,
-      "width": 0.462962,
-      "status": "pdg",
-      "tex": "K_{0}^{*}(700)^{0}",
-      "decayModes": [],
-      "mass_error": 0.011343,
-      "width_error": 0.026994,
-      "measurements": [
-        {
-          "year": 2024,
-          "publication": "PL B856 138915",
-          "doi": "10.1016/j.physletb.2024.138915",
-          "inspireId": "2739149",
-          "technique": "ALCE",
-          "comment": "p p --> K0S pi+- X, 13 TeV",
-          "value": 0.833,
-          "errorPositive": 0.015,
-          "errorNegative": 0.015,
-          "usedInAverage": true
-        },
-        {
-          "year": 2011,
-          "publication": "PL B698 183",
-          "doi": "10.1016/j.physletb.2011.03.011",
-          "inspireId": "866286",
-          "technique": "BES2",
-          "comment": "J/psi --> K0S K0S pi+ pi-",
-          "value": 0.826,
-          "errorPositive": 0.069296,
-          "errorNegative": 0.059641,
-          "statError": 0.049,
-          "systError": 0.049,
-          "usedInAverage": true
-        },
-        {
-          "year": 2010,
-          "publication": "PL B693 88",
-          "doi": "10.1016/j.physletb.2010.08.015",
-          "inspireId": "845221",
-          "technique": "BES2",
-          "comment": "J/psi --> K+- K0S pi-+ pi0",
-          "value": 0.81,
-          "errorPositive": 0.069635,
-          "errorNegative": 0.072111,
-          "statError": 0.068,
-          "systError": 0.015,
-          "usedInAverage": true
-        },
-        {
-          "year": 2007,
-          "publication": "PL B653 1",
-          "doi": "10.1016/j.physletb.2007.06.070",
-          "inspireId": "750701",
-          "technique": "FOCS",
-          "comment": "D+ --> K- pi+ pi+",
-          "value": 0.856,
-          "errorPositive": 0.021401,
-          "errorNegative": 0.021401,
-          "statError": 0.017,
-          "systError": 0.013,
-          "usedInAverage": true
-        },
-        {
-          "year": 2006,
-          "publication": "PL B633 681",
-          "doi": "10.1016/j.physletb.2005.12.062",
-          "inspireId": "685902",
-          "technique": "BES2",
-          "comment": "J/psi --> Kbar^*(892)0 K+ pi-",
-          "value": 0.878,
-          "errorPositive": 0.068007,
-          "errorNegative": 0.059615,
-          "statError": 0.023,
-          "systError": 0.064,
-          "usedInAverage": true
-        },
-        {
-          "year": 2002,
-          "publication": "PRL 89 121801",
-          "doi": "10.1103/PhysRevLett.89.121801",
-          "inspireId": "585322",
-          "technique": "E791",
-          "comment": "D+ --> K- pi+ pi+",
-          "value": 0.797,
-          "errorPositive": 0.047011,
-          "errorNegative": 0.047011,
-          "statError": 0.019,
-          "systError": 0.043,
-          "usedInAverage": true
-        }
-      ]
-    },
-    {
       "id": "K(0)*(700)~0",
       "aliases": [],
       "jp": {
@@ -1125,6 +1386,105 @@
       "width": 0.462962,
       "status": "pdg",
       "tex": "K_{0}^{*}(700)^{-}",
+      "decayModes": [],
+      "mass_error": 0.011343,
+      "width_error": 0.026994,
+      "measurements": [
+        {
+          "year": 2024,
+          "publication": "PL B856 138915",
+          "doi": "10.1016/j.physletb.2024.138915",
+          "inspireId": "2739149",
+          "technique": "ALCE",
+          "comment": "p p --> K0S pi+- X, 13 TeV",
+          "value": 0.833,
+          "errorPositive": 0.015,
+          "errorNegative": 0.015,
+          "usedInAverage": true
+        },
+        {
+          "year": 2011,
+          "publication": "PL B698 183",
+          "doi": "10.1016/j.physletb.2011.03.011",
+          "inspireId": "866286",
+          "technique": "BES2",
+          "comment": "J/psi --> K0S K0S pi+ pi-",
+          "value": 0.826,
+          "errorPositive": 0.069296,
+          "errorNegative": 0.059641,
+          "statError": 0.049,
+          "systError": 0.049,
+          "usedInAverage": true
+        },
+        {
+          "year": 2010,
+          "publication": "PL B693 88",
+          "doi": "10.1016/j.physletb.2010.08.015",
+          "inspireId": "845221",
+          "technique": "BES2",
+          "comment": "J/psi --> K+- K0S pi-+ pi0",
+          "value": 0.81,
+          "errorPositive": 0.069635,
+          "errorNegative": 0.072111,
+          "statError": 0.068,
+          "systError": 0.015,
+          "usedInAverage": true
+        },
+        {
+          "year": 2007,
+          "publication": "PL B653 1",
+          "doi": "10.1016/j.physletb.2007.06.070",
+          "inspireId": "750701",
+          "technique": "FOCS",
+          "comment": "D+ --> K- pi+ pi+",
+          "value": 0.856,
+          "errorPositive": 0.021401,
+          "errorNegative": 0.021401,
+          "statError": 0.017,
+          "systError": 0.013,
+          "usedInAverage": true
+        },
+        {
+          "year": 2006,
+          "publication": "PL B633 681",
+          "doi": "10.1016/j.physletb.2005.12.062",
+          "inspireId": "685902",
+          "technique": "BES2",
+          "comment": "J/psi --> Kbar^*(892)0 K+ pi-",
+          "value": 0.878,
+          "errorPositive": 0.068007,
+          "errorNegative": 0.059615,
+          "statError": 0.023,
+          "systError": 0.064,
+          "usedInAverage": true
+        },
+        {
+          "year": 2002,
+          "publication": "PRL 89 121801",
+          "doi": "10.1103/PhysRevLett.89.121801",
+          "inspireId": "585322",
+          "technique": "E791",
+          "comment": "D+ --> K- pi+ pi+",
+          "value": 0.797,
+          "errorPositive": 0.047011,
+          "errorNegative": 0.047011,
+          "statError": 0.019,
+          "systError": 0.043,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
+      "id": "K(0)*(700)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.838104,
+      "width": 0.462962,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(700)^{0}",
       "decayModes": [],
       "mass_error": 0.011343,
       "width_error": 0.026994,
@@ -1537,21 +1897,6 @@
       "decayModes": []
     },
     {
-      "id": "a(0)(980)0",
-      "aliases": [],
-      "jp": {
-        "j": 0,
-        "p": 1
-      },
-      "mass": 0.98,
-      "width": 0.075,
-      "status": "pdg",
-      "tex": "a_{0}(980)^{0}",
-      "decayModes": [],
-      "mass_error": 0.02,
-      "c": 1
-    },
-    {
       "id": "a(0)(980)+",
       "aliases": [],
       "jp": {
@@ -1578,6 +1923,21 @@
       "tex": "a_{0}(980)^{-}",
       "decayModes": [],
       "mass_error": 0.02
+    },
+    {
+      "id": "a(0)(980)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 0.98,
+      "width": 0.075,
+      "status": "pdg",
+      "tex": "a_{0}(980)^{0}",
+      "decayModes": [],
+      "mass_error": 0.02,
+      "c": 1
     },
     {
       "id": "f(0)(980)",
@@ -1868,96 +2228,6 @@
       ]
     },
     {
-      "id": "b(1)(1235)0",
-      "aliases": [],
-      "jp": {
-        "j": 1,
-        "p": 1
-      },
-      "mass": 1.229483,
-      "width": 0.142375,
-      "status": "pdg",
-      "tex": "b_{1}(1235)^{0}",
-      "decayModes": [],
-      "mass_error": 0.003169,
-      "width_error": 0.008506,
-      "c": -1,
-      "measurements": [
-        {
-          "year": 1993,
-          "publication": "ZPHY C59 387",
-          "doi": "10.1007/BF01498619",
-          "inspireId": "364822",
-          "technique": "ASTE",
-          "comment": "pbar p --> 2pi+ 2pi- pi0",
-          "value": 1.225,
-          "errorPositive": 0.005,
-          "errorNegative": 0.005,
-          "usedInAverage": true
-        },
-        {
-          "year": 1992,
-          "publication": "ZPHY C54 553",
-          "doi": "10.1007/BF01559478",
-          "inspireId": "333332",
-          "technique": "GAM2",
-          "comment": "38,100 pi- p --> omega pi0 n",
-          "value": 1.235,
-          "errorPositive": 0.015,
-          "errorNegative": 0.015,
-          "usedInAverage": true
-        },
-        {
-          "year": 1991,
-          "publication": "PL B257 241",
-          "doi": "10.1016/0370-2693(91)90888-W",
-          "inspireId": "301817",
-          "technique": "SPEC",
-          "comment": "8.95 pi- p --> omega pi0 n",
-          "value": 1.236,
-          "errorPositive": 0.016,
-          "errorNegative": 0.016,
-          "usedInAverage": true
-        },
-        {
-          "year": 1984,
-          "publication": "PL 138B 459",
-          "doi": "10.1016/0370-2693(84)91939-7",
-          "inspireId": "199415",
-          "technique": "OMEG",
-          "comment": "25-55 gamma p --> omega piX",
-          "value": 1.222,
-          "errorPositive": 0.006,
-          "errorNegative": 0.006,
-          "usedInAverage": true
-        },
-        {
-          "year": 1984,
-          "publication": "PL 138B 459",
-          "doi": "10.1016/0370-2693(84)91939-7",
-          "inspireId": "199415",
-          "technique": "OMEG",
-          "comment": "25-55 gamma p --> omega piX",
-          "value": 1.237,
-          "errorPositive": 0.007,
-          "errorNegative": 0.007,
-          "usedInAverage": true
-        },
-        {
-          "year": 1981,
-          "publication": "NP B178 197",
-          "doi": "10.1016/0550-3213(81)90407-7",
-          "inspireId": "153471",
-          "technique": "OMEG",
-          "comment": "12 pi- p --> omega pi p",
-          "value": 1.239,
-          "errorPositive": 0.005,
-          "errorNegative": 0.005,
-          "usedInAverage": true
-        }
-      ]
-    },
-    {
       "id": "b(1)(1235)+",
       "aliases": [],
       "jp": {
@@ -2136,99 +2406,92 @@
       ]
     },
     {
-      "id": "a(1)(1260)0",
+      "id": "b(1)(1235)0",
       "aliases": [],
       "jp": {
         "j": 1,
         "p": 1
       },
-      "mass": 1.23,
-      "width": 0.42,
+      "mass": 1.229483,
+      "width": 0.142375,
       "status": "pdg",
-      "tex": "a_{1}(1260)^{0}",
+      "tex": "b_{1}(1235)^{0}",
       "decayModes": [],
-      "mass_error": 0.04,
-      "c": 1,
+      "mass_error": 0.003169,
+      "width_error": 0.008506,
+      "c": -1,
       "measurements": [
         {
-          "year": 2018,
-          "publication": "EPJ C78 443",
-          "doi": "10.1140/epjc/s10052-018-5758-4",
-          "inspireId": "1644791",
-          "technique": "LHCB",
-          "comment": "D0 --> K-+ pi+- pi+- pi-+",
-          "value": 1.19505,
-          "errorPositive": 0.006416,
-          "errorNegative": 0.006416,
-          "statError": 0.00105,
-          "systError": 0.00633,
-          "usedInAverage": true
-        },
-        {
-          "year": 2018,
-          "publication": "PR D98 092003",
-          "doi": "10.1103/PhysRevD.98.092003",
-          "inspireId": "1655631",
-          "technique": "COMP",
-          "comment": "190 pi- p --> pi- pi+ pi- p",
-          "value": 1.299,
-          "errorPositive": 0.012,
-          "errorNegative": 0.028,
-          "usedInAverage": true
-        },
-        {
-          "year": 2017,
-          "publication": "JHEP 1705 143",
-          "doi": "10.1007/JHEP05(2017)143",
-          "inspireId": "1519168",
-          "technique": "RVUE",
-          "comment": "D0 --> pi- pi+ pi- pi+",
+          "year": 1993,
+          "publication": "ZPHY C59 387",
+          "doi": "10.1007/BF01498619",
+          "inspireId": "364822",
+          "technique": "ASTE",
+          "comment": "pbar p --> 2pi+ 2pi- pi0",
           "value": 1.225,
-          "errorPositive": 0.021932,
-          "errorNegative": 0.021932,
-          "statError": 0.009,
-          "systError": 0.02,
+          "errorPositive": 0.005,
+          "errorNegative": 0.005,
           "usedInAverage": true
         },
         {
-          "year": 2010,
-          "publication": "PRL 104 241803",
-          "doi": "10.1103/PhysRevLett.104.241803",
-          "inspireId": "835613",
-          "technique": "COMP",
-          "comment": "190 pi- Pb --> pi- pi- pi+ Pb^'()",
-          "value": 1.255,
-          "errorPositive": 0.00922,
-          "errorNegative": 0.018028,
-          "statError": 0.006,
-          "systError": 0.007,
-          "usedInAverage": false
+          "year": 1992,
+          "publication": "ZPHY C54 553",
+          "doi": "10.1007/BF01559478",
+          "inspireId": "333332",
+          "technique": "GAM2",
+          "comment": "38,100 pi- p --> omega pi0 n",
+          "value": 1.235,
+          "errorPositive": 0.015,
+          "errorNegative": 0.015,
+          "usedInAverage": true
         },
         {
-          "year": 2007,
-          "publication": "PR D76 092005",
-          "doi": "10.1103/PhysRevD.76.092005",
-          "inspireId": "758568",
-          "technique": "BABR",
-          "comment": "10.6 e+ e- --> rho0 rho+- pi-+ gamma",
-          "value": 1.243,
-          "errorPositive": 0.023324,
-          "errorNegative": 0.023324,
-          "statError": 0.012,
-          "systError": 0.02,
-          "usedInAverage": false
+          "year": 1991,
+          "publication": "PL B257 241",
+          "doi": "10.1016/0370-2693(91)90888-W",
+          "inspireId": "301817",
+          "technique": "SPEC",
+          "comment": "8.95 pi- p --> omega pi0 n",
+          "value": 1.236,
+          "errorPositive": 0.016,
+          "errorNegative": 0.016,
+          "usedInAverage": true
         },
         {
-          "year": 2004,
-          "publication": "PR D69 073002",
-          "doi": "10.1103/PhysRevD.69.073002",
-          "inspireId": "635557",
-          "technique": "RVUE",
-          "comment": "tau+ --> pi+ pi+ pi- nu_tau",
-          "value": 1.203,
-          "errorPositive": 0.003,
-          "errorNegative": 0.003,
-          "usedInAverage": false
+          "year": 1984,
+          "publication": "PL 138B 459",
+          "doi": "10.1016/0370-2693(84)91939-7",
+          "inspireId": "199415",
+          "technique": "OMEG",
+          "comment": "25-55 gamma p --> omega piX",
+          "value": 1.222,
+          "errorPositive": 0.006,
+          "errorNegative": 0.006,
+          "usedInAverage": true
+        },
+        {
+          "year": 1984,
+          "publication": "PL 138B 459",
+          "doi": "10.1016/0370-2693(84)91939-7",
+          "inspireId": "199415",
+          "technique": "OMEG",
+          "comment": "25-55 gamma p --> omega piX",
+          "value": 1.237,
+          "errorPositive": 0.007,
+          "errorNegative": 0.007,
+          "usedInAverage": true
+        },
+        {
+          "year": 1981,
+          "publication": "NP B178 197",
+          "doi": "10.1016/0550-3213(81)90407-7",
+          "inspireId": "153471",
+          "technique": "OMEG",
+          "comment": "12 pi- p --> omega pi p",
+          "value": 1.239,
+          "errorPositive": 0.005,
+          "errorNegative": 0.005,
+          "usedInAverage": true
         }
       ]
     },
@@ -2425,97 +2688,127 @@
       ]
     },
     {
-      "id": "K(1)(1270)0",
+      "id": "a(1)(1260)0",
       "aliases": [],
       "jp": {
         "j": 1,
         "p": 1
       },
-      "mass": 1.275,
-      "width": 0.075,
+      "mass": 1.23,
+      "width": 0.42,
       "status": "pdg",
-      "tex": "K_{1}(1270)^{0}",
+      "tex": "a_{1}(1260)^{0}",
       "decayModes": [],
-      "mass_error": 0.01,
-      "width_error": 0.015,
+      "mass_error": 0.04,
+      "c": 1,
       "measurements": [
         {
-          "year": 1978,
-          "publication": "PL 76B 517",
-          "doi": "10.1016/0370-2693(78)90919-X",
-          "inspireId": "130237",
-          "technique": "HBC",
-          "comment": "4.2 K- p --> Xi- (K pi pi)^+",
-          "value": 1.275,
-          "errorPositive": 0.01,
-          "errorNegative": 0.01,
+          "year": 2018,
+          "publication": "EPJ C78 443",
+          "doi": "10.1140/epjc/s10052-018-5758-4",
+          "inspireId": "1644791",
+          "technique": "LHCB",
+          "comment": "D0 --> K-+ pi+- pi+- pi-+",
+          "value": 1.19505,
+          "errorPositive": 0.006416,
+          "errorNegative": 0.006416,
+          "statError": 0.00105,
+          "systError": 0.00633,
           "usedInAverage": true
         },
         {
-          "year": 1981,
-          "publication": "NP B187 1",
-          "doi": "10.1016/0550-3213(81)90114-0",
-          "inspireId": "164180",
-          "technique": "CNTR",
-          "comment": "63 K- p --> K- 2pi p",
-          "value": 1.27,
-          "errorPositive": 0.01,
-          "errorNegative": 0.01,
-          "usedInAverage": true
-        },
-        {
-          "year": 1977,
-          "publication": "NP B127 509",
-          "doi": "10.1016/0550-3213(77)90454-0",
-          "inspireId": "108966",
-          "technique": "ASPK",
-          "comment": "13 K+- p --> (K pi pi)^+- p",
-          "value": 1.289,
-          "errorPositive": 0.025,
-          "errorNegative": 0.025,
-          "usedInAverage": false
-        },
-        {
-          "year": 1972,
-          "publication": "PR D5 505",
-          "doi": "10.1103/PhysRevD.5.505",
-          "inspireId": "74587",
-          "technique": "DBC",
-          "comment": "12 K+ d",
-          "value": 1.234,
+          "year": 2018,
+          "publication": "PR D98 092003",
+          "doi": "10.1103/PhysRevD.98.092003",
+          "inspireId": "1655631",
+          "technique": "COMP",
+          "comment": "190 pi- p --> pi- pi+ pi- p",
+          "value": 1.299,
           "errorPositive": 0.012,
-          "errorNegative": 0.012,
+          "errorNegative": 0.028,
+          "usedInAverage": true
+        },
+        {
+          "year": 2017,
+          "publication": "JHEP 1705 143",
+          "doi": "10.1007/JHEP05(2017)143",
+          "inspireId": "1519168",
+          "technique": "RVUE",
+          "comment": "D0 --> pi- pi+ pi- pi+",
+          "value": 1.225,
+          "errorPositive": 0.021932,
+          "errorNegative": 0.021932,
+          "statError": 0.009,
+          "systError": 0.02,
+          "usedInAverage": true
+        },
+        {
+          "year": 2010,
+          "publication": "PRL 104 241803",
+          "doi": "10.1103/PhysRevLett.104.241803",
+          "inspireId": "835613",
+          "technique": "COMP",
+          "comment": "190 pi- Pb --> pi- pi- pi+ Pb^'()",
+          "value": 1.255,
+          "errorPositive": 0.00922,
+          "errorNegative": 0.018028,
+          "statError": 0.006,
+          "systError": 0.007,
           "usedInAverage": false
         },
         {
-          "year": 2025,
-          "publication": "PRL 135 091801",
-          "doi": "",
-          "inspireId": "",
-          "technique": "BES3",
-          "comment": "D^+(0) --> K- pi+ pi^0(-) e+ nu_e",
-          "value": 1.271,
-          "errorPositive": 0.007616,
-          "errorNegative": 0.007616,
-          "statError": 0.003,
-          "systError": 0.007,
-          "usedInAverage": true
+          "year": 2007,
+          "publication": "PR D76 092005",
+          "doi": "10.1103/PhysRevD.76.092005",
+          "inspireId": "758568",
+          "technique": "BABR",
+          "comment": "10.6 e+ e- --> rho0 rho+- pi-+ gamma",
+          "value": 1.243,
+          "errorPositive": 0.023324,
+          "errorNegative": 0.023324,
+          "statError": 0.012,
+          "systError": 0.02,
+          "usedInAverage": false
         },
         {
-          "year": 2011,
-          "publication": "PR D83 032005",
-          "doi": "10.1103/PhysRevD.83.032005",
-          "inspireId": "871475",
-          "technique": "BELL",
-          "comment": "B+ --> J/psi K+ pi+ pi-",
-          "value": 1.2481,
-          "errorPositive": 0.003585,
-          "errorNegative": 0.003585,
-          "statError": 0.0033,
-          "systError": 0.0014,
-          "usedInAverage": true
+          "year": 2004,
+          "publication": "PR D69 073002",
+          "doi": "10.1103/PhysRevD.69.073002",
+          "inspireId": "635557",
+          "technique": "RVUE",
+          "comment": "tau+ --> pi+ pi+ pi- nu_tau",
+          "value": 1.203,
+          "errorPositive": 0.003,
+          "errorNegative": 0.003,
+          "usedInAverage": false
         }
       ]
+    },
+    {
+      "id": "Delta(1232)-",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.232,
+      "width": 0.117,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.002
+    },
+    {
+      "id": "Delta(1232)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.232,
+      "width": 0.117,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.002
     },
     {
       "id": "K(1)(1270)~0",
@@ -2651,6 +2944,99 @@
       "width": 0.075,
       "status": "pdg",
       "tex": "K_{1}(1270)^{-}",
+      "decayModes": [],
+      "mass_error": 0.01,
+      "width_error": 0.015,
+      "measurements": [
+        {
+          "year": 1978,
+          "publication": "PL 76B 517",
+          "doi": "10.1016/0370-2693(78)90919-X",
+          "inspireId": "130237",
+          "technique": "HBC",
+          "comment": "4.2 K- p --> Xi- (K pi pi)^+",
+          "value": 1.275,
+          "errorPositive": 0.01,
+          "errorNegative": 0.01,
+          "usedInAverage": true
+        },
+        {
+          "year": 1981,
+          "publication": "NP B187 1",
+          "doi": "10.1016/0550-3213(81)90114-0",
+          "inspireId": "164180",
+          "technique": "CNTR",
+          "comment": "63 K- p --> K- 2pi p",
+          "value": 1.27,
+          "errorPositive": 0.01,
+          "errorNegative": 0.01,
+          "usedInAverage": true
+        },
+        {
+          "year": 1977,
+          "publication": "NP B127 509",
+          "doi": "10.1016/0550-3213(77)90454-0",
+          "inspireId": "108966",
+          "technique": "ASPK",
+          "comment": "13 K+- p --> (K pi pi)^+- p",
+          "value": 1.289,
+          "errorPositive": 0.025,
+          "errorNegative": 0.025,
+          "usedInAverage": false
+        },
+        {
+          "year": 1972,
+          "publication": "PR D5 505",
+          "doi": "10.1103/PhysRevD.5.505",
+          "inspireId": "74587",
+          "technique": "DBC",
+          "comment": "12 K+ d",
+          "value": 1.234,
+          "errorPositive": 0.012,
+          "errorNegative": 0.012,
+          "usedInAverage": false
+        },
+        {
+          "year": 2025,
+          "publication": "PRL 135 091801",
+          "doi": "",
+          "inspireId": "",
+          "technique": "BES3",
+          "comment": "D^+(0) --> K- pi+ pi^0(-) e+ nu_e",
+          "value": 1.271,
+          "errorPositive": 0.007616,
+          "errorNegative": 0.007616,
+          "statError": 0.003,
+          "systError": 0.007,
+          "usedInAverage": true
+        },
+        {
+          "year": 2011,
+          "publication": "PR D83 032005",
+          "doi": "10.1103/PhysRevD.83.032005",
+          "inspireId": "871475",
+          "technique": "BELL",
+          "comment": "B+ --> J/psi K+ pi+ pi-",
+          "value": 1.2481,
+          "errorPositive": 0.003585,
+          "errorNegative": 0.003585,
+          "statError": 0.0033,
+          "systError": 0.0014,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
+      "id": "K(1)(1270)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.275,
+      "width": 0.075,
+      "status": "pdg",
+      "tex": "K_{1}(1270)^{0}",
       "decayModes": [],
       "mass_error": 0.01,
       "width_error": 0.015,
@@ -3020,101 +3406,6 @@
       ]
     },
     {
-      "id": "pi(1300)0",
-      "aliases": [],
-      "jp": {
-        "j": 0,
-        "p": -1
-      },
-      "mass": 1.3,
-      "width": 0.4,
-      "status": "pdg",
-      "tex": "\\pi(1300)^{0}",
-      "decayModes": [],
-      "mass_error": 0.1,
-      "c": 1,
-      "measurements": [
-        {
-          "year": 2017,
-          "publication": "JHEP 1705 143",
-          "doi": "10.1007/JHEP05(2017)143",
-          "inspireId": "1519168",
-          "technique": "RVUE",
-          "comment": "D0 --> pi- pi+ pi- pi+",
-          "value": 1.128,
-          "errorPositive": 0.074673,
-          "errorNegative": 0.074673,
-          "statError": 0.026,
-          "systError": 0.07,
-          "usedInAverage": false
-        },
-        {
-          "year": 2006,
-          "publication": "EPJ A27 199",
-          "doi": "10.1140/epja/i2005-10266-0",
-          "inspireId": "716653",
-          "technique": "RVUE",
-          "comment": "gamma gamma --> pi+ pi- pi0",
-          "value": 1.345,
-          "errorPositive": 0.012806,
-          "errorNegative": 0.012806,
-          "statError": 0.008,
-          "systError": 0.01,
-          "usedInAverage": false
-        },
-        {
-          "year": 2004,
-          "publication": "EPJ C35 21",
-          "doi": "10.1140/epjc/s2004-01811-8",
-          "inspireId": "656311",
-          "technique": "OBLX",
-          "comment": "pbar p --> 2pi+ 2pi-",
-          "value": 1.2,
-          "errorPositive": 0.04,
-          "errorNegative": 0.04,
-          "usedInAverage": false
-        },
-        {
-          "year": 2002,
-          "publication": "PR D65 072001",
-          "doi": "10.1103/PhysRevD.65.072001",
-          "inspireId": "584469",
-          "technique": "B852",
-          "comment": "18.3 pi- p --> pi+ pi- pi- p",
-          "value": 1.343,
-          "errorPositive": 0.028302,
-          "errorNegative": 0.028302,
-          "statError": 0.015,
-          "systError": 0.024,
-          "usedInAverage": false
-        },
-        {
-          "year": 2001,
-          "publication": "EPJ C19 667",
-          "doi": "10.1007/s100520100601",
-          "inspireId": "557501",
-          "technique": "CBAR",
-          "comment": "0.0 pbar d --> pi- 4pi0 p",
-          "value": 1.375,
-          "errorPositive": 0.04,
-          "errorNegative": 0.04,
-          "usedInAverage": false
-        },
-        {
-          "year": 1997,
-          "publication": "PL B414 220",
-          "doi": "10.1016/S0370-2693(97)01189-1",
-          "inspireId": "459101",
-          "technique": "OBLX",
-          "comment": "0.05",
-          "value": 1.275,
-          "errorPositive": 0.015,
-          "errorNegative": 0.015,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
       "id": "pi(1300)+",
       "aliases": [],
       "jp": {
@@ -3303,31 +3594,59 @@
       ]
     },
     {
-      "id": "a(2)(1320)0",
+      "id": "pi(1300)0",
       "aliases": [],
       "jp": {
-        "j": 2,
-        "p": 1
+        "j": 0,
+        "p": -1
       },
-      "mass": 1.318615,
-      "width": 0.104953,
+      "mass": 1.3,
+      "width": 0.4,
       "status": "pdg",
-      "tex": "a_{2}(1320)^{0}",
+      "tex": "\\pi(1300)^{0}",
       "decayModes": [],
-      "mass_error": 0.001317,
+      "mass_error": 0.1,
       "c": 1,
       "measurements": [
         {
-          "year": 2018,
-          "publication": "PR D98 092003",
-          "doi": "10.1103/PhysRevD.98.092003",
-          "inspireId": "1655631",
-          "technique": "COMP",
-          "comment": "190 pi- p --> pi- pi+ pi- p",
-          "value": 1.3145,
-          "errorPositive": 0.004,
-          "errorNegative": 0.0033,
-          "usedInAverage": true
+          "year": 2017,
+          "publication": "JHEP 1705 143",
+          "doi": "10.1007/JHEP05(2017)143",
+          "inspireId": "1519168",
+          "technique": "RVUE",
+          "comment": "D0 --> pi- pi+ pi- pi+",
+          "value": 1.128,
+          "errorPositive": 0.074673,
+          "errorNegative": 0.074673,
+          "statError": 0.026,
+          "systError": 0.07,
+          "usedInAverage": false
+        },
+        {
+          "year": 2006,
+          "publication": "EPJ A27 199",
+          "doi": "10.1140/epja/i2005-10266-0",
+          "inspireId": "716653",
+          "technique": "RVUE",
+          "comment": "gamma gamma --> pi+ pi- pi0",
+          "value": 1.345,
+          "errorPositive": 0.012806,
+          "errorNegative": 0.012806,
+          "statError": 0.008,
+          "systError": 0.01,
+          "usedInAverage": false
+        },
+        {
+          "year": 2004,
+          "publication": "EPJ C35 21",
+          "doi": "10.1140/epjc/s2004-01811-8",
+          "inspireId": "656311",
+          "technique": "OBLX",
+          "comment": "pbar p --> 2pi+ 2pi-",
+          "value": 1.2,
+          "errorPositive": 0.04,
+          "errorNegative": 0.04,
+          "usedInAverage": false
         },
         {
           "year": 2002,
@@ -3336,63 +3655,36 @@
           "inspireId": "584469",
           "technique": "B852",
           "comment": "18.3 pi- p --> pi+ pi- pi- p",
-          "value": 1.326,
-          "errorPositive": 0.002828,
-          "errorNegative": 0.002828,
-          "statError": 0.002,
-          "systError": 0.002,
-          "usedInAverage": true
+          "value": 1.343,
+          "errorPositive": 0.028302,
+          "errorNegative": 0.028302,
+          "statError": 0.015,
+          "systError": 0.024,
+          "usedInAverage": false
         },
         {
-          "year": 1998,
-          "publication": "PL B422 399",
-          "doi": "10.1016/S0370-2693(98)00063-X",
-          "inspireId": "466032",
-          "comment": "450 p p --> p_f pi+ pi- pi0 p_s",
-          "value": 1.317,
-          "errorPositive": 0.003,
-          "errorNegative": 0.003,
-          "usedInAverage": true
-        },
-        {
-          "year": 1997,
-          "publication": "PL B413 147",
-          "doi": "10.1016/S0370-2693(97)01091-5",
-          "inspireId": "445325",
-          "technique": "L3",
-          "comment": "e+ e- --> e+ e- pi+ pi- pi0",
-          "value": 1.323,
-          "errorPositive": 0.005,
-          "errorNegative": 0.005,
-          "statError": 0.004,
-          "systError": 0.003,
-          "usedInAverage": true
+          "year": 2001,
+          "publication": "EPJ C19 667",
+          "doi": "10.1007/s100520100601",
+          "inspireId": "557501",
+          "technique": "CBAR",
+          "comment": "0.0 pbar d --> pi- 4pi0 p",
+          "value": 1.375,
+          "errorPositive": 0.04,
+          "errorNegative": 0.04,
+          "usedInAverage": false
         },
         {
           "year": 1997,
-          "publication": "ZPHY C74 469",
-          "doi": "",
-          "inspireId": "420421",
-          "technique": "ARG",
-          "comment": "e+ e- --> e+ e- pi+ pi- pi0",
-          "value": 1.32,
-          "errorPositive": 0.007,
-          "errorNegative": 0.007,
-          "usedInAverage": true
-        },
-        {
-          "year": 1996,
-          "publication": "ZPHY C70 71",
-          "doi": "10.1007/s002880050082",
-          "inspireId": "404905",
-          "technique": "VES",
-          "comment": "36 pi- p --> pi+ pi- pi0 n",
-          "value": 1.3113,
-          "errorPositive": 0.0034,
-          "errorNegative": 0.0034,
-          "statError": 0.0016,
-          "systError": 0.003,
-          "usedInAverage": true
+          "publication": "PL B414 220",
+          "doi": "10.1016/S0370-2693(97)01189-1",
+          "inspireId": "459101",
+          "technique": "OBLX",
+          "comment": "0.05",
+          "value": 1.275,
+          "errorPositive": 0.015,
+          "errorNegative": 0.015,
+          "usedInAverage": false
         }
       ]
     },
@@ -3583,6 +3875,100 @@
       ]
     },
     {
+      "id": "a(2)(1320)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.318615,
+      "width": 0.104953,
+      "status": "pdg",
+      "tex": "a_{2}(1320)^{0}",
+      "decayModes": [],
+      "mass_error": 0.001317,
+      "c": 1,
+      "measurements": [
+        {
+          "year": 2018,
+          "publication": "PR D98 092003",
+          "doi": "10.1103/PhysRevD.98.092003",
+          "inspireId": "1655631",
+          "technique": "COMP",
+          "comment": "190 pi- p --> pi- pi+ pi- p",
+          "value": 1.3145,
+          "errorPositive": 0.004,
+          "errorNegative": 0.0033,
+          "usedInAverage": true
+        },
+        {
+          "year": 2002,
+          "publication": "PR D65 072001",
+          "doi": "10.1103/PhysRevD.65.072001",
+          "inspireId": "584469",
+          "technique": "B852",
+          "comment": "18.3 pi- p --> pi+ pi- pi- p",
+          "value": 1.326,
+          "errorPositive": 0.002828,
+          "errorNegative": 0.002828,
+          "statError": 0.002,
+          "systError": 0.002,
+          "usedInAverage": true
+        },
+        {
+          "year": 1998,
+          "publication": "PL B422 399",
+          "doi": "10.1016/S0370-2693(98)00063-X",
+          "inspireId": "466032",
+          "comment": "450 p p --> p_f pi+ pi- pi0 p_s",
+          "value": 1.317,
+          "errorPositive": 0.003,
+          "errorNegative": 0.003,
+          "usedInAverage": true
+        },
+        {
+          "year": 1997,
+          "publication": "PL B413 147",
+          "doi": "10.1016/S0370-2693(97)01091-5",
+          "inspireId": "445325",
+          "technique": "L3",
+          "comment": "e+ e- --> e+ e- pi+ pi- pi0",
+          "value": 1.323,
+          "errorPositive": 0.005,
+          "errorNegative": 0.005,
+          "statError": 0.004,
+          "systError": 0.003,
+          "usedInAverage": true
+        },
+        {
+          "year": 1997,
+          "publication": "ZPHY C74 469",
+          "doi": "",
+          "inspireId": "420421",
+          "technique": "ARG",
+          "comment": "e+ e- --> e+ e- pi+ pi- pi0",
+          "value": 1.32,
+          "errorPositive": 0.007,
+          "errorNegative": 0.007,
+          "usedInAverage": true
+        },
+        {
+          "year": 1996,
+          "publication": "ZPHY C70 71",
+          "doi": "10.1007/s002880050082",
+          "inspireId": "404905",
+          "technique": "VES",
+          "comment": "36 pi- p --> pi+ pi- pi0 n",
+          "value": 1.3113,
+          "errorPositive": 0.0034,
+          "errorNegative": 0.0034,
+          "statError": 0.0016,
+          "systError": 0.003,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
       "id": "f(0)(1370)",
       "aliases": [
         "f0_1370"
@@ -3611,123 +3997,6 @@
           "partial": true
         }
       ]
-    },
-    {
-      "id": "K(1)(1400)0",
-      "aliases": [
-        "K1_1400"
-      ],
-      "jp": {
-        "j": 1,
-        "p": 1
-      },
-      "mass": 1.402517,
-      "width": 0.173881,
-      "status": "pdg",
-      "tex": "K_{1}(1400)^{0}",
-      "decayModes": [
-        {
-          "daughters": [
-            "K*0",
-            "pi0"
-          ],
-          "br": 0.94,
-          "partial": true
-        }
-      ],
-      "mass_error": 0.006873,
-      "width_error": 0.012606,
-      "measurements": [
-        {
-          "year": 2000,
-          "publication": "PR D62 072006",
-          "doi": "10.1103/PhysRevD.62.072006",
-          "inspireId": "525698",
-          "technique": "CLEO",
-          "comment": "tau- --> K- pi+ pi- nu_tau",
-          "value": 1.463,
-          "errorPositive": 0.093381,
-          "errorNegative": 0.093381,
-          "statError": 0.064,
-          "systError": 0.068,
-          "usedInAverage": true
-        },
-        {
-          "year": 1987,
-          "publication": "NP B292 693",
-          "doi": "10.1016/0550-3213(87)90665-1",
-          "inspireId": "236088",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.373,
-          "errorPositive": 0.022804,
-          "errorNegative": 0.022804,
-          "statError": 0.014,
-          "systError": 0.018,
-          "usedInAverage": true
-        },
-        {
-          "year": 1982,
-          "publication": "NP B202 21",
-          "doi": "10.1016/0550-3213(82)90219-X",
-          "inspireId": "182033",
-          "technique": "HBC",
-          "comment": "8.25 K- p --> K0S pi+ pi- n",
-          "value": 1.392,
-          "errorPositive": 0.018,
-          "errorNegative": 0.018,
-          "usedInAverage": true
-        },
-        {
-          "year": 1981,
-          "publication": "NP B187 1",
-          "doi": "10.1016/0550-3213(81)90114-0",
-          "inspireId": "164180",
-          "technique": "CNTR",
-          "comment": "63 K- p --> K- 2pi p",
-          "value": 1.41,
-          "errorPositive": 0.025,
-          "errorNegative": 0.025,
-          "usedInAverage": true
-        },
-        {
-          "year": 1980,
-          "publication": "PR D22 42",
-          "doi": "10.1103/PhysRevD.22.42",
-          "inspireId": "157981",
-          "technique": "MPS",
-          "comment": "6 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.415,
-          "errorPositive": 0.015,
-          "errorNegative": 0.015,
-          "usedInAverage": true
-        },
-        {
-          "year": 1977,
-          "publication": "NP B127 509",
-          "doi": "10.1016/0550-3213(77)90454-0",
-          "inspireId": "108966",
-          "technique": "ASPK",
-          "comment": "13 K+- p --> (K pi pi)^+- p",
-          "value": 1.404,
-          "errorPositive": 0.01,
-          "errorNegative": 0.01,
-          "usedInAverage": true
-        }
-      ]
-    },
-    {
-      "id": "K(1)(1400)~0",
-      "aliases": [],
-      "jp": {
-        "j": 1,
-        "p": 1
-      },
-      "mass": 1.403,
-      "width": 0.174,
-      "status": "pdg",
-      "tex": "\\overline{K}_{1}(1400)^{0}",
-      "decayModes": []
     },
     {
       "id": "K(1)(1400)+",
@@ -3914,6 +4183,123 @@
           "usedInAverage": true
         }
       ]
+    },
+    {
+      "id": "K(1)(1400)0",
+      "aliases": [
+        "K1_1400"
+      ],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.402517,
+      "width": 0.173881,
+      "status": "pdg",
+      "tex": "K_{1}(1400)^{0}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K*0",
+            "pi0"
+          ],
+          "br": 0.94,
+          "partial": true
+        }
+      ],
+      "mass_error": 0.006873,
+      "width_error": 0.012606,
+      "measurements": [
+        {
+          "year": 2000,
+          "publication": "PR D62 072006",
+          "doi": "10.1103/PhysRevD.62.072006",
+          "inspireId": "525698",
+          "technique": "CLEO",
+          "comment": "tau- --> K- pi+ pi- nu_tau",
+          "value": 1.463,
+          "errorPositive": 0.093381,
+          "errorNegative": 0.093381,
+          "statError": 0.064,
+          "systError": 0.068,
+          "usedInAverage": true
+        },
+        {
+          "year": 1987,
+          "publication": "NP B292 693",
+          "doi": "10.1016/0550-3213(87)90665-1",
+          "inspireId": "236088",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi+ pi- n",
+          "value": 1.373,
+          "errorPositive": 0.022804,
+          "errorNegative": 0.022804,
+          "statError": 0.014,
+          "systError": 0.018,
+          "usedInAverage": true
+        },
+        {
+          "year": 1982,
+          "publication": "NP B202 21",
+          "doi": "10.1016/0550-3213(82)90219-X",
+          "inspireId": "182033",
+          "technique": "HBC",
+          "comment": "8.25 K- p --> K0S pi+ pi- n",
+          "value": 1.392,
+          "errorPositive": 0.018,
+          "errorNegative": 0.018,
+          "usedInAverage": true
+        },
+        {
+          "year": 1981,
+          "publication": "NP B187 1",
+          "doi": "10.1016/0550-3213(81)90114-0",
+          "inspireId": "164180",
+          "technique": "CNTR",
+          "comment": "63 K- p --> K- 2pi p",
+          "value": 1.41,
+          "errorPositive": 0.025,
+          "errorNegative": 0.025,
+          "usedInAverage": true
+        },
+        {
+          "year": 1980,
+          "publication": "PR D22 42",
+          "doi": "10.1103/PhysRevD.22.42",
+          "inspireId": "157981",
+          "technique": "MPS",
+          "comment": "6 K- p --> Kbar0 pi+ pi- n",
+          "value": 1.415,
+          "errorPositive": 0.015,
+          "errorNegative": 0.015,
+          "usedInAverage": true
+        },
+        {
+          "year": 1977,
+          "publication": "NP B127 509",
+          "doi": "10.1016/0550-3213(77)90454-0",
+          "inspireId": "108966",
+          "technique": "ASPK",
+          "comment": "13 K+- p --> (K pi pi)^+- p",
+          "value": 1.404,
+          "errorPositive": 0.01,
+          "errorNegative": 0.01,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
+      "id": "K(1)(1400)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.403,
+      "width": 0.174,
+      "status": "pdg",
+      "tex": "\\overline{K}_{1}(1400)^{0}",
+      "decayModes": []
     },
     {
       "id": "eta(1405)",
@@ -4198,135 +4584,6 @@
       ]
     },
     {
-      "id": "K*(1410)0",
-      "aliases": [
-        "K1_1410",
-        "K*_1410"
-      ],
-      "jp": {
-        "j": 1,
-        "p": -1
-      },
-      "mass": 1.413733,
-      "width": 0.231807,
-      "status": "pdg",
-      "tex": "K^{*}(1410)^{0}",
-      "decayModes": [
-        {
-          "daughters": [
-            "K+",
-            "pi-"
-          ],
-          "br": 0.93,
-          "partial": true
-        },
-        {
-          "daughters": [
-            "K+",
-            "eta"
-          ],
-          "partial": true
-        }
-      ],
-      "mass_error": 0.01454,
-      "width_error": 0.021382,
-      "measurements": [
-        {
-          "year": 1988,
-          "publication": "NP B296 493",
-          "doi": "10.1016/0550-3213(88)90028-4",
-          "inspireId": "247143",
-          "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 1.38,
-          "errorPositive": 0.02832,
-          "errorNegative": 0.02832,
-          "statError": 0.021,
-          "systError": 0.019,
-          "usedInAverage": true
-        },
-        {
-          "year": 1987,
-          "publication": "NP B292 693",
-          "doi": "10.1016/0550-3213(87)90665-1",
-          "inspireId": "236088",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.42,
-          "errorPositive": 0.012207,
-          "errorNegative": 0.012207,
-          "statError": 0.007,
-          "systError": 0.01,
-          "usedInAverage": true
-        },
-        {
-          "year": 2016,
-          "publication": "PR D93 052018",
-          "doi": "10.1103/PhysRevD.93.052018",
-          "inspireId": "1394391",
-          "technique": "LHCB",
-          "comment": "D0 -->  (K0S pi-+) K+-",
-          "value": 1.437,
-          "errorPositive": 0.017889,
-          "errorNegative": 0.017889,
-          "statError": 0.008,
-          "systError": 0.016,
-          "usedInAverage": false
-        },
-        {
-          "year": 2016,
-          "publication": "PR D93 052018",
-          "doi": "10.1103/PhysRevD.93.052018",
-          "inspireId": "1394391",
-          "technique": "LHCB",
-          "comment": "D0 -->  K0S (K+- pi-+)",
-          "value": 1.426,
-          "errorPositive": 0.025298,
-          "errorNegative": 0.025298,
-          "statError": 0.008,
-          "systError": 0.024,
-          "usedInAverage": false
-        },
-        {
-          "year": 2009,
-          "publication": "EPJ C59 821",
-          "doi": "10.1140/epjc/s10052-008-0834-9",
-          "inspireId": "791830",
-          "technique": "RVUE",
-          "comment": "tau- --> K0S pi- nu_tau",
-          "value": 1.276,
-          "errorPositive": 0.072,
-          "errorNegative": 0.077,
-          "usedInAverage": false
-        },
-        {
-          "year": 1989,
-          "publication": "SLAC-332",
-          "doi": "",
-          "inspireId": "265820",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi- p",
-          "value": 1.367,
-          "errorPositive": 0.054,
-          "errorNegative": 0.054,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
-      "id": "K*(1410)~0",
-      "aliases": [],
-      "jp": {
-        "j": 1,
-        "p": -1
-      },
-      "mass": 1.414,
-      "width": 0.232,
-      "status": "pdg",
-      "tex": "\\overline{K}^{*}(1410)^{0}",
-      "decayModes": []
-    },
-    {
       "id": "K*(1410)+",
       "aliases": [],
       "jp": {
@@ -4521,31 +4778,38 @@
       ]
     },
     {
-      "id": "K(2)*(1430)+",
+      "id": "K*(1410)0",
       "aliases": [
-        "K2_1430",
-        "K2*_1430"
+        "K1_1410",
+        "K*_1410"
       ],
       "jp": {
-        "j": 2,
-        "p": 1
+        "j": 1,
+        "p": -1
       },
-      "mass": 1.432353,
-      "width": 0.108937,
+      "mass": 1.413733,
+      "width": 0.231807,
       "status": "pdg",
-      "tex": "K_{2}^{*}(1430)^{+}",
+      "tex": "K^{*}(1410)^{0}",
       "decayModes": [
         {
           "daughters": [
             "K+",
             "pi-"
           ],
-          "br": 0.499,
+          "br": 0.93,
+          "partial": true
+        },
+        {
+          "daughters": [
+            "K+",
+            "eta"
+          ],
           "partial": true
         }
       ],
-      "mass_error": 0.001258,
-      "width_error": 0.005478,
+      "mass_error": 0.01454,
+      "width_error": 0.021382,
       "measurements": [
         {
           "year": 1988,
@@ -4554,11 +4818,11 @@
           "inspireId": "247143",
           "technique": "LASS",
           "comment": "11 K- p --> K- pi+ n",
-          "value": 1.4312,
-          "errorPositive": 0.001931,
-          "errorNegative": 0.001931,
-          "statError": 0.0018,
-          "systError": 0.0007,
+          "value": 1.38,
+          "errorPositive": 0.02832,
+          "errorNegative": 0.02832,
+          "statError": 0.021,
+          "systError": 0.019,
           "usedInAverage": true
         },
         {
@@ -4568,369 +4832,78 @@
           "inspireId": "236088",
           "technique": "LASS",
           "comment": "11 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.434,
-          "errorPositive": 0.007211,
-          "errorNegative": 0.007211,
-          "statError": 0.004,
-          "systError": 0.006,
-          "usedInAverage": true
-        },
-        {
-          "year": 1984,
-          "publication": "NP B247 261",
-          "doi": "10.1016/0550-3213(84)90550-9",
-          "inspireId": "201591",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 2pi n",
-          "value": 1.433,
-          "errorPositive": 0.011662,
-          "errorNegative": 0.011662,
-          "statError": 0.006,
+          "value": 1.42,
+          "errorPositive": 0.012207,
+          "errorNegative": 0.012207,
+          "statError": 0.007,
           "systError": 0.01,
           "usedInAverage": true
         },
         {
-          "year": 1982,
-          "publication": "NP B202 21",
-          "doi": "10.1016/0550-3213(82)90219-X",
-          "inspireId": "182033",
-          "technique": "HBC",
-          "comment": "8.25 K- p --> N K0S pi pi",
-          "value": 1.471,
-          "errorPositive": 0.012,
-          "errorNegative": 0.012,
-          "usedInAverage": true
+          "year": 2016,
+          "publication": "PR D93 052018",
+          "doi": "10.1103/PhysRevD.93.052018",
+          "inspireId": "1394391",
+          "technique": "LHCB",
+          "comment": "D0 -->  (K0S pi-+) K+-",
+          "value": 1.437,
+          "errorPositive": 0.017889,
+          "errorNegative": 0.017889,
+          "statError": 0.008,
+          "systError": 0.016,
+          "usedInAverage": false
         },
         {
-          "year": 1981,
-          "publication": "PL 106B 235",
-          "doi": "10.1016/0370-2693(81)90915-1",
-          "inspireId": "165640",
+          "year": 2016,
+          "publication": "PR D93 052018",
+          "doi": "10.1103/PhysRevD.93.052018",
+          "inspireId": "1394391",
+          "technique": "LHCB",
+          "comment": "D0 -->  K0S (K+- pi-+)",
+          "value": 1.426,
+          "errorPositive": 0.025298,
+          "errorNegative": 0.025298,
+          "statError": 0.008,
+          "systError": 0.024,
+          "usedInAverage": false
+        },
+        {
+          "year": 2009,
+          "publication": "EPJ C59 821",
+          "doi": "10.1140/epjc/s10052-008-0834-9",
+          "inspireId": "791830",
+          "technique": "RVUE",
+          "comment": "tau- --> K0S pi- nu_tau",
+          "value": 1.276,
+          "errorPositive": 0.072,
+          "errorNegative": 0.077,
+          "usedInAverage": false
+        },
+        {
+          "year": 1989,
+          "publication": "SLAC-332",
+          "doi": "",
+          "inspireId": "265820",
           "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 1.428,
-          "errorPositive": 0.003,
-          "errorNegative": 0.003,
-          "usedInAverage": true
-        },
-        {
-          "year": 1978,
-          "publication": "NP B133 490",
-          "doi": "10.1016/0550-3213(78)90238-9",
-          "inspireId": "120626",
-          "technique": "ASPK",
-          "comment": "13 K+- p --> p K pi",
-          "value": 1.434,
-          "errorPositive": 0.002,
-          "errorNegative": 0.002,
-          "usedInAverage": true
+          "comment": "11 K- p --> Kbar0 pi- p",
+          "value": 1.367,
+          "errorPositive": 0.054,
+          "errorNegative": 0.054,
+          "usedInAverage": false
         }
       ]
     },
     {
-      "id": "K(2)*(1430)-",
-      "aliases": [],
-      "jp": {
-        "j": 2,
-        "p": 1
-      },
-      "mass": 1.432353,
-      "width": 0.108937,
-      "status": "pdg",
-      "tex": "K_{2}^{*}(1430)^{-}",
-      "decayModes": [],
-      "mass_error": 0.001258,
-      "width_error": 0.005478,
-      "measurements": [
-        {
-          "year": 1988,
-          "publication": "NP B296 493",
-          "doi": "10.1016/0550-3213(88)90028-4",
-          "inspireId": "247143",
-          "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 1.4312,
-          "errorPositive": 0.001931,
-          "errorNegative": 0.001931,
-          "statError": 0.0018,
-          "systError": 0.0007,
-          "usedInAverage": true
-        },
-        {
-          "year": 1987,
-          "publication": "NP B292 693",
-          "doi": "10.1016/0550-3213(87)90665-1",
-          "inspireId": "236088",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.434,
-          "errorPositive": 0.007211,
-          "errorNegative": 0.007211,
-          "statError": 0.004,
-          "systError": 0.006,
-          "usedInAverage": true
-        },
-        {
-          "year": 1984,
-          "publication": "NP B247 261",
-          "doi": "10.1016/0550-3213(84)90550-9",
-          "inspireId": "201591",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 2pi n",
-          "value": 1.433,
-          "errorPositive": 0.011662,
-          "errorNegative": 0.011662,
-          "statError": 0.006,
-          "systError": 0.01,
-          "usedInAverage": true
-        },
-        {
-          "year": 1982,
-          "publication": "NP B202 21",
-          "doi": "10.1016/0550-3213(82)90219-X",
-          "inspireId": "182033",
-          "technique": "HBC",
-          "comment": "8.25 K- p --> N K0S pi pi",
-          "value": 1.471,
-          "errorPositive": 0.012,
-          "errorNegative": 0.012,
-          "usedInAverage": true
-        },
-        {
-          "year": 1981,
-          "publication": "PL 106B 235",
-          "doi": "10.1016/0370-2693(81)90915-1",
-          "inspireId": "165640",
-          "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 1.428,
-          "errorPositive": 0.003,
-          "errorNegative": 0.003,
-          "usedInAverage": true
-        },
-        {
-          "year": 1978,
-          "publication": "NP B133 490",
-          "doi": "10.1016/0550-3213(78)90238-9",
-          "inspireId": "120626",
-          "technique": "ASPK",
-          "comment": "13 K+- p --> p K pi",
-          "value": 1.434,
-          "errorPositive": 0.002,
-          "errorNegative": 0.002,
-          "usedInAverage": true
-        }
-      ]
-    },
-    {
-      "id": "f(1)(1420)",
+      "id": "K*(1410)~0",
       "aliases": [],
       "jp": {
         "j": 1,
-        "p": 1
+        "p": -1
       },
-      "mass": 1.427708,
-      "width": 0.055424,
+      "mass": 1.414,
+      "width": 0.232,
       "status": "pdg",
-      "tex": "f_{1}(1420)",
-      "decayModes": [],
-      "width_error": 0.003178,
-      "c": 1,
-      "measurements": [
-        {
-          "year": 2025,
-          "publication": "PR D112 032007",
-          "doi": "10.1103/gj4z-rsxn",
-          "inspireId": "",
-          "technique": "BES3",
-          "comment": "J/psi --> gamma pi0 f_0(980) --> gamma pi0 pi0 pi0",
-          "value": 1.418,
-          "errorPositive": 0.002625,
-          "errorNegative": 0.003041,
-          "statError": 0.0017,
-          "systError": 0.002,
-          "usedInAverage": true
-        },
-        {
-          "year": 2023,
-          "publication": "JHEP 2303 121",
-          "doi": "10.1007/JHEP03(2023)121",
-          "inspireId": "2155157",
-          "technique": "BES3",
-          "comment": "J/psi --> gamma K0S K0S pi0",
-          "value": 1.4335,
-          "errorPositive": 0.027922,
-          "errorNegative": 0.001304,
-          "statError": 0.0011,
-          "systError": 0.0279,
-          "usedInAverage": true
-        },
-        {
-          "year": 2007,
-          "publication": "JHEP 0703 018",
-          "doi": "10.1088/1126-6708/2007/03/018",
-          "inspireId": "749464",
-          "technique": "L3",
-          "comment": "183 -- 209 e+ e- --> e+ e- K0S K+- pi-+",
-          "value": 1.434,
-          "errorPositive": 0.007071,
-          "errorNegative": 0.007071,
-          "statError": 0.005,
-          "systError": 0.005,
-          "usedInAverage": true
-        },
-        {
-          "year": 2003,
-          "publication": "PL B569 129",
-          "doi": "10.1016/j.physletb.2003.07.032",
-          "inspireId": "628566",
-          "technique": "DLPH",
-          "comment": "91.2 e+ e- --> K0S K+- pi-+ + X",
-          "value": 1.426,
-          "errorPositive": 0.006,
-          "errorNegative": 0.006,
-          "usedInAverage": true
-        },
-        {
-          "year": 2002,
-          "publication": "PL B545 261",
-          "doi": "10.1016/S0370-2693(02)02547-9",
-          "inspireId": "602699",
-          "technique": "OBLX",
-          "comment": "0 pbar p --> K+ K- pi+ pi- pi0",
-          "value": 1.42,
-          "errorPositive": 0.014,
-          "errorNegative": 0.014,
-          "usedInAverage": true
-        },
-        {
-          "year": 2001,
-          "publication": "PL B516 264",
-          "doi": "10.1016/S0370-2693(01)00951-0",
-          "inspireId": "560086",
-          "technique": "B852",
-          "comment": "18 GeV pi- p --> K+ K- pi0 n",
-          "value": 1.428,
-          "errorPositive": 0.004472,
-          "errorNegative": 0.004472,
-          "statError": 0.004,
-          "systError": 0.002,
-          "usedInAverage": true
-        }
-      ]
-    },
-    {
-      "id": "K(0)*(1430)0",
-      "aliases": [],
-      "jp": {
-        "j": 0,
-        "p": 1
-      },
-      "mass": 1.425,
-      "width": 0.27,
-      "status": "pdg",
-      "tex": "K_{0}^{*}(1430)^{0}",
-      "decayModes": [],
-      "mass_error": 0.05,
-      "width_error": 0.08,
-      "measurements": [
-        {
-          "year": 2023,
-          "publication": "PR D108 032010",
-          "doi": "10.1103/PhysRevD.108.032010",
-          "inspireId": "2655326",
-          "technique": "LHCB",
-          "comment": "B+ --> K+ (K0S K pi)",
-          "value": 1.493,
-          "errorPositive": 0.008062,
-          "errorNegative": 0.008062,
-          "statError": 0.004,
-          "systError": 0.007,
-          "usedInAverage": false
-        },
-        {
-          "year": 2021,
-          "publication": "PR D104 072002",
-          "doi": "10.1103/PhysRevD.104.072002",
-          "inspireId": "1867843",
-          "technique": "BABR",
-          "comment": "eta_c(1S) --> eta^' K+ K-",
-          "value": 1.449,
-          "errorPositive": 0.017117,
-          "errorNegative": 0.017117,
-          "statError": 0.017,
-          "systError": 0.002,
-          "usedInAverage": false
-        },
-        {
-          "year": 2014,
-          "publication": "PR D89 112004",
-          "doi": "10.1103/PhysRevD.89.112004",
-          "inspireId": "1287632",
-          "technique": "BABR",
-          "comment": "eta_c(1S) --> K+ K- eta/pi0",
-          "value": 1.438,
-          "errorPositive": 0.008944,
-          "errorNegative": 0.008944,
-          "statError": 0.008,
-          "systError": 0.004,
-          "usedInAverage": false
-        },
-        {
-          "year": 2010,
-          "publication": "PR D81 014002",
-          "doi": "10.1103/PhysRevD.81.014002",
-          "inspireId": "823780",
-          "technique": "RVUE",
-          "comment": "S-matrix pole",
-          "value": 1.427,
-          "errorPositive": 0.013601,
-          "errorNegative": 0.013601,
-          "statError": 0.004,
-          "systError": 0.013,
-          "usedInAverage": false
-        },
-        {
-          "year": 2008,
-          "publication": "PR D78 052001",
-          "doi": "10.1103/PhysRevD.78.052001",
-          "inspireId": "780363",
-          "technique": "CLEO",
-          "comment": "D+ --> K- pi+ pi+",
-          "value": 1.4666,
-          "errorPositive": 0.003471,
-          "errorNegative": 0.003471,
-          "statError": 0.0007,
-          "systError": 0.0034,
-          "usedInAverage": false
-        },
-        {
-          "year": 2007,
-          "publication": "PL B653 1",
-          "doi": "10.1016/j.physletb.2007.06.070",
-          "inspireId": "750701",
-          "technique": "FOCS",
-          "comment": "D+ --> K- pi+ pi+",
-          "value": 1.461,
-          "errorPositive": 0.004518,
-          "errorNegative": 0.004518,
-          "statError": 0.004,
-          "systError": 0.0021,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
-      "id": "K(0)*(1430)~0",
-      "aliases": [],
-      "jp": {
-        "j": 0,
-        "p": 1
-      },
-      "mass": 1.43,
-      "width": 0.27,
-      "status": "pdg",
-      "tex": "\\overline{K}_{0}^{*}(1430)^{0}",
+      "tex": "\\overline{K}^{*}(1410)^{0}",
       "decayModes": []
     },
     {
@@ -5136,6 +5109,419 @@
       ]
     },
     {
+      "id": "K(0)*(1430)0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.425,
+      "width": 0.27,
+      "status": "pdg",
+      "tex": "K_{0}^{*}(1430)^{0}",
+      "decayModes": [],
+      "mass_error": 0.05,
+      "width_error": 0.08,
+      "measurements": [
+        {
+          "year": 2023,
+          "publication": "PR D108 032010",
+          "doi": "10.1103/PhysRevD.108.032010",
+          "inspireId": "2655326",
+          "technique": "LHCB",
+          "comment": "B+ --> K+ (K0S K pi)",
+          "value": 1.493,
+          "errorPositive": 0.008062,
+          "errorNegative": 0.008062,
+          "statError": 0.004,
+          "systError": 0.007,
+          "usedInAverage": false
+        },
+        {
+          "year": 2021,
+          "publication": "PR D104 072002",
+          "doi": "10.1103/PhysRevD.104.072002",
+          "inspireId": "1867843",
+          "technique": "BABR",
+          "comment": "eta_c(1S) --> eta^' K+ K-",
+          "value": 1.449,
+          "errorPositive": 0.017117,
+          "errorNegative": 0.017117,
+          "statError": 0.017,
+          "systError": 0.002,
+          "usedInAverage": false
+        },
+        {
+          "year": 2014,
+          "publication": "PR D89 112004",
+          "doi": "10.1103/PhysRevD.89.112004",
+          "inspireId": "1287632",
+          "technique": "BABR",
+          "comment": "eta_c(1S) --> K+ K- eta/pi0",
+          "value": 1.438,
+          "errorPositive": 0.008944,
+          "errorNegative": 0.008944,
+          "statError": 0.008,
+          "systError": 0.004,
+          "usedInAverage": false
+        },
+        {
+          "year": 2010,
+          "publication": "PR D81 014002",
+          "doi": "10.1103/PhysRevD.81.014002",
+          "inspireId": "823780",
+          "technique": "RVUE",
+          "comment": "S-matrix pole",
+          "value": 1.427,
+          "errorPositive": 0.013601,
+          "errorNegative": 0.013601,
+          "statError": 0.004,
+          "systError": 0.013,
+          "usedInAverage": false
+        },
+        {
+          "year": 2008,
+          "publication": "PR D78 052001",
+          "doi": "10.1103/PhysRevD.78.052001",
+          "inspireId": "780363",
+          "technique": "CLEO",
+          "comment": "D+ --> K- pi+ pi+",
+          "value": 1.4666,
+          "errorPositive": 0.003471,
+          "errorNegative": 0.003471,
+          "statError": 0.0007,
+          "systError": 0.0034,
+          "usedInAverage": false
+        },
+        {
+          "year": 2007,
+          "publication": "PL B653 1",
+          "doi": "10.1016/j.physletb.2007.06.070",
+          "inspireId": "750701",
+          "technique": "FOCS",
+          "comment": "D+ --> K- pi+ pi+",
+          "value": 1.461,
+          "errorPositive": 0.004518,
+          "errorNegative": 0.004518,
+          "statError": 0.004,
+          "systError": 0.0021,
+          "usedInAverage": false
+        }
+      ]
+    },
+    {
+      "id": "f(1)(1420)",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.427708,
+      "width": 0.055424,
+      "status": "pdg",
+      "tex": "f_{1}(1420)",
+      "decayModes": [],
+      "width_error": 0.003178,
+      "c": 1,
+      "measurements": [
+        {
+          "year": 2025,
+          "publication": "PR D112 032007",
+          "doi": "10.1103/gj4z-rsxn",
+          "inspireId": "",
+          "technique": "BES3",
+          "comment": "J/psi --> gamma pi0 f_0(980) --> gamma pi0 pi0 pi0",
+          "value": 1.418,
+          "errorPositive": 0.002625,
+          "errorNegative": 0.003041,
+          "statError": 0.0017,
+          "systError": 0.002,
+          "usedInAverage": true
+        },
+        {
+          "year": 2023,
+          "publication": "JHEP 2303 121",
+          "doi": "10.1007/JHEP03(2023)121",
+          "inspireId": "2155157",
+          "technique": "BES3",
+          "comment": "J/psi --> gamma K0S K0S pi0",
+          "value": 1.4335,
+          "errorPositive": 0.027922,
+          "errorNegative": 0.001304,
+          "statError": 0.0011,
+          "systError": 0.0279,
+          "usedInAverage": true
+        },
+        {
+          "year": 2007,
+          "publication": "JHEP 0703 018",
+          "doi": "10.1088/1126-6708/2007/03/018",
+          "inspireId": "749464",
+          "technique": "L3",
+          "comment": "183 -- 209 e+ e- --> e+ e- K0S K+- pi-+",
+          "value": 1.434,
+          "errorPositive": 0.007071,
+          "errorNegative": 0.007071,
+          "statError": 0.005,
+          "systError": 0.005,
+          "usedInAverage": true
+        },
+        {
+          "year": 2003,
+          "publication": "PL B569 129",
+          "doi": "10.1016/j.physletb.2003.07.032",
+          "inspireId": "628566",
+          "technique": "DLPH",
+          "comment": "91.2 e+ e- --> K0S K+- pi-+ + X",
+          "value": 1.426,
+          "errorPositive": 0.006,
+          "errorNegative": 0.006,
+          "usedInAverage": true
+        },
+        {
+          "year": 2002,
+          "publication": "PL B545 261",
+          "doi": "10.1016/S0370-2693(02)02547-9",
+          "inspireId": "602699",
+          "technique": "OBLX",
+          "comment": "0 pbar p --> K+ K- pi+ pi- pi0",
+          "value": 1.42,
+          "errorPositive": 0.014,
+          "errorNegative": 0.014,
+          "usedInAverage": true
+        },
+        {
+          "year": 2001,
+          "publication": "PL B516 264",
+          "doi": "10.1016/S0370-2693(01)00951-0",
+          "inspireId": "560086",
+          "technique": "B852",
+          "comment": "18 GeV pi- p --> K+ K- pi0 n",
+          "value": 1.428,
+          "errorPositive": 0.004472,
+          "errorNegative": 0.004472,
+          "statError": 0.004,
+          "systError": 0.002,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
+      "id": "K(0)*(1430)~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.43,
+      "width": 0.27,
+      "status": "pdg",
+      "tex": "\\overline{K}_{0}^{*}(1430)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "K(2)*(1430)+",
+      "aliases": [
+        "K2_1430",
+        "K2*_1430"
+      ],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.432353,
+      "width": 0.108937,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1430)^{+}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "pi-"
+          ],
+          "br": 0.499,
+          "partial": true
+        }
+      ],
+      "mass_error": 0.001258,
+      "width_error": 0.005478,
+      "measurements": [
+        {
+          "year": 1988,
+          "publication": "NP B296 493",
+          "doi": "10.1016/0550-3213(88)90028-4",
+          "inspireId": "247143",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 1.4312,
+          "errorPositive": 0.001931,
+          "errorNegative": 0.001931,
+          "statError": 0.0018,
+          "systError": 0.0007,
+          "usedInAverage": true
+        },
+        {
+          "year": 1987,
+          "publication": "NP B292 693",
+          "doi": "10.1016/0550-3213(87)90665-1",
+          "inspireId": "236088",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi+ pi- n",
+          "value": 1.434,
+          "errorPositive": 0.007211,
+          "errorNegative": 0.007211,
+          "statError": 0.004,
+          "systError": 0.006,
+          "usedInAverage": true
+        },
+        {
+          "year": 1984,
+          "publication": "NP B247 261",
+          "doi": "10.1016/0550-3213(84)90550-9",
+          "inspireId": "201591",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 2pi n",
+          "value": 1.433,
+          "errorPositive": 0.011662,
+          "errorNegative": 0.011662,
+          "statError": 0.006,
+          "systError": 0.01,
+          "usedInAverage": true
+        },
+        {
+          "year": 1982,
+          "publication": "NP B202 21",
+          "doi": "10.1016/0550-3213(82)90219-X",
+          "inspireId": "182033",
+          "technique": "HBC",
+          "comment": "8.25 K- p --> N K0S pi pi",
+          "value": 1.471,
+          "errorPositive": 0.012,
+          "errorNegative": 0.012,
+          "usedInAverage": true
+        },
+        {
+          "year": 1981,
+          "publication": "PL 106B 235",
+          "doi": "10.1016/0370-2693(81)90915-1",
+          "inspireId": "165640",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 1.428,
+          "errorPositive": 0.003,
+          "errorNegative": 0.003,
+          "usedInAverage": true
+        },
+        {
+          "year": 1978,
+          "publication": "NP B133 490",
+          "doi": "10.1016/0550-3213(78)90238-9",
+          "inspireId": "120626",
+          "technique": "ASPK",
+          "comment": "13 K+- p --> p K pi",
+          "value": 1.434,
+          "errorPositive": 0.002,
+          "errorNegative": 0.002,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
+      "id": "K(2)*(1430)-",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.432353,
+      "width": 0.108937,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1430)^{-}",
+      "decayModes": [],
+      "mass_error": 0.001258,
+      "width_error": 0.005478,
+      "measurements": [
+        {
+          "year": 1988,
+          "publication": "NP B296 493",
+          "doi": "10.1016/0550-3213(88)90028-4",
+          "inspireId": "247143",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 1.4312,
+          "errorPositive": 0.001931,
+          "errorNegative": 0.001931,
+          "statError": 0.0018,
+          "systError": 0.0007,
+          "usedInAverage": true
+        },
+        {
+          "year": 1987,
+          "publication": "NP B292 693",
+          "doi": "10.1016/0550-3213(87)90665-1",
+          "inspireId": "236088",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi+ pi- n",
+          "value": 1.434,
+          "errorPositive": 0.007211,
+          "errorNegative": 0.007211,
+          "statError": 0.004,
+          "systError": 0.006,
+          "usedInAverage": true
+        },
+        {
+          "year": 1984,
+          "publication": "NP B247 261",
+          "doi": "10.1016/0550-3213(84)90550-9",
+          "inspireId": "201591",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 2pi n",
+          "value": 1.433,
+          "errorPositive": 0.011662,
+          "errorNegative": 0.011662,
+          "statError": 0.006,
+          "systError": 0.01,
+          "usedInAverage": true
+        },
+        {
+          "year": 1982,
+          "publication": "NP B202 21",
+          "doi": "10.1016/0550-3213(82)90219-X",
+          "inspireId": "182033",
+          "technique": "HBC",
+          "comment": "8.25 K- p --> N K0S pi pi",
+          "value": 1.471,
+          "errorPositive": 0.012,
+          "errorNegative": 0.012,
+          "usedInAverage": true
+        },
+        {
+          "year": 1981,
+          "publication": "PL 106B 235",
+          "doi": "10.1016/0370-2693(81)90915-1",
+          "inspireId": "165640",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 1.428,
+          "errorPositive": 0.003,
+          "errorNegative": 0.003,
+          "usedInAverage": true
+        },
+        {
+          "year": 1978,
+          "publication": "NP B133 490",
+          "doi": "10.1016/0550-3213(78)90238-9",
+          "inspireId": "120626",
+          "technique": "ASPK",
+          "comment": "13 K+- p --> p K pi",
+          "value": 1.434,
+          "errorPositive": 0.002,
+          "errorNegative": 0.002,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
       "id": "K(2)*(1430)0",
       "aliases": [],
       "jp": {
@@ -5242,100 +5628,6 @@
       "status": "pdg",
       "tex": "\\overline{K}_{2}^{*}(1430)^{0}",
       "decayModes": []
-    },
-    {
-      "id": "a(0)(1450)0",
-      "aliases": [],
-      "jp": {
-        "j": 0,
-        "p": 1
-      },
-      "mass": 1.438689,
-      "width": 0.258,
-      "status": "pdg",
-      "tex": "a_{0}(1450)^{0}",
-      "decayModes": [],
-      "mass_error": 0.034426,
-      "width_error": 0.014,
-      "c": 1,
-      "measurements": [
-        {
-          "year": 1998,
-          "publication": "PR D57 3860",
-          "doi": "10.1103/PhysRevD.57.3860",
-          "inspireId": "468968",
-          "technique": "CBAR",
-          "comment": "0.0 pbar p --> KL K+- pi-+",
-          "value": 1.48,
-          "errorPositive": 0.03,
-          "errorNegative": 0.03,
-          "usedInAverage": true
-        },
-        {
-          "year": 1982,
-          "publication": "PR D25 2446",
-          "doi": "10.1103/PhysRevD.25.2446",
-          "inspireId": "176799",
-          "technique": "MPS",
-          "comment": "23 pi- p --> n 2K0S",
-          "value": 1.41,
-          "errorPositive": 0.025,
-          "errorNegative": 0.025,
-          "usedInAverage": true
-        },
-        {
-          "year": 2016,
-          "publication": "PR D93 052018",
-          "doi": "10.1103/PhysRevD.93.052018",
-          "inspireId": "1394391",
-          "technique": "LHCB",
-          "comment": "D0 -->  K0S K+- pi-+",
-          "value": 1.458,
-          "errorPositive": 0.020518,
-          "errorNegative": 0.020518,
-          "statError": 0.014,
-          "systError": 0.015,
-          "usedInAverage": false
-        },
-        {
-          "year": 2009,
-          "publication": "PR D80 032001",
-          "doi": "10.1103/PhysRevD.80.032001",
-          "inspireId": "822474",
-          "technique": "BELL",
-          "comment": "gamma gamma --> pi0 eta",
-          "value": 1.3168,
-          "errorPositive": 0.02471,
-          "errorNegative": 0.004707,
-          "statError": 0.0007,
-          "systError": 0.0247,
-          "usedInAverage": false
-        },
-        {
-          "year": 2006,
-          "publication": "PR D73 052009",
-          "doi": "10.1103/PhysRevD.73.052009",
-          "inspireId": "713814",
-          "technique": "E835",
-          "comment": "5.2 pbar p --> eta eta pi0",
-          "value": 1.477,
-          "errorPositive": 0.01,
-          "errorNegative": 0.01,
-          "usedInAverage": false
-        },
-        {
-          "year": 1998,
-          "publication": "PL B434 180",
-          "doi": "10.1016/S0370-2693(98)00767-9",
-          "inspireId": "480167",
-          "technique": "OBLX",
-          "comment": "0.0 pbar p --> K+- K_s pi-+",
-          "value": 1.29,
-          "errorPositive": 0.01,
-          "errorNegative": 0.01,
-          "usedInAverage": false
-        }
-      ]
     },
     {
       "id": "a(0)(1450)+",
@@ -5524,20 +5816,124 @@
       ]
     },
     {
-      "id": "rho(1450)0",
+      "id": "a(0)(1450)0",
       "aliases": [],
       "jp": {
-        "j": 1,
-        "p": -1
+        "j": 0,
+        "p": 1
       },
-      "mass": 1.465,
-      "width": 0.4,
+      "mass": 1.438689,
+      "width": 0.258,
       "status": "pdg",
-      "tex": "\\rho(1450)^{0}",
+      "tex": "a_{0}(1450)^{0}",
       "decayModes": [],
-      "mass_error": 0.025,
-      "width_error": 0.06,
-      "c": -1
+      "mass_error": 0.034426,
+      "width_error": 0.014,
+      "c": 1,
+      "measurements": [
+        {
+          "year": 1998,
+          "publication": "PR D57 3860",
+          "doi": "10.1103/PhysRevD.57.3860",
+          "inspireId": "468968",
+          "technique": "CBAR",
+          "comment": "0.0 pbar p --> KL K+- pi-+",
+          "value": 1.48,
+          "errorPositive": 0.03,
+          "errorNegative": 0.03,
+          "usedInAverage": true
+        },
+        {
+          "year": 1982,
+          "publication": "PR D25 2446",
+          "doi": "10.1103/PhysRevD.25.2446",
+          "inspireId": "176799",
+          "technique": "MPS",
+          "comment": "23 pi- p --> n 2K0S",
+          "value": 1.41,
+          "errorPositive": 0.025,
+          "errorNegative": 0.025,
+          "usedInAverage": true
+        },
+        {
+          "year": 2016,
+          "publication": "PR D93 052018",
+          "doi": "10.1103/PhysRevD.93.052018",
+          "inspireId": "1394391",
+          "technique": "LHCB",
+          "comment": "D0 -->  K0S K+- pi-+",
+          "value": 1.458,
+          "errorPositive": 0.020518,
+          "errorNegative": 0.020518,
+          "statError": 0.014,
+          "systError": 0.015,
+          "usedInAverage": false
+        },
+        {
+          "year": 2009,
+          "publication": "PR D80 032001",
+          "doi": "10.1103/PhysRevD.80.032001",
+          "inspireId": "822474",
+          "technique": "BELL",
+          "comment": "gamma gamma --> pi0 eta",
+          "value": 1.3168,
+          "errorPositive": 0.02471,
+          "errorNegative": 0.004707,
+          "statError": 0.0007,
+          "systError": 0.0247,
+          "usedInAverage": false
+        },
+        {
+          "year": 2006,
+          "publication": "PR D73 052009",
+          "doi": "10.1103/PhysRevD.73.052009",
+          "inspireId": "713814",
+          "technique": "E835",
+          "comment": "5.2 pbar p --> eta eta pi0",
+          "value": 1.477,
+          "errorPositive": 0.01,
+          "errorNegative": 0.01,
+          "usedInAverage": false
+        },
+        {
+          "year": 1998,
+          "publication": "PL B434 180",
+          "doi": "10.1016/S0370-2693(98)00767-9",
+          "inspireId": "480167",
+          "technique": "OBLX",
+          "comment": "0.0 pbar p --> K+- K_s pi-+",
+          "value": 1.29,
+          "errorPositive": 0.01,
+          "errorNegative": 0.01,
+          "usedInAverage": false
+        }
+      ]
+    },
+    {
+      "id": "N(1440)+",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 1.44,
+      "width": 0.35,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.03
+    },
+    {
+      "id": "N(1440)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 1.44,
+      "width": 0.35,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.03
     },
     {
       "id": "rho(1450)+",
@@ -5568,6 +5964,22 @@
       "decayModes": [],
       "mass_error": 0.025,
       "width_error": 0.06
+    },
+    {
+      "id": "rho(1450)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.465,
+      "width": 0.4,
+      "status": "pdg",
+      "tex": "\\rho(1450)^{0}",
+      "decayModes": [],
+      "mass_error": 0.025,
+      "width_error": 0.06,
+      "c": -1
     },
     {
       "id": "eta(1475)",
@@ -5664,6 +6076,32 @@
           "usedInAverage": true
         }
       ]
+    },
+    {
+      "id": "N(1520)+",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 1.515,
+      "width": 0.11,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.005
+    },
+    {
+      "id": "N(1520)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 1.515,
+      "width": 0.11,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.005
     },
     {
       "id": "f(2)'(1525)",
@@ -5818,6 +6256,58 @@
       ]
     },
     {
+      "id": "N(1535)+",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.53,
+      "width": 0.15,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.015
+    },
+    {
+      "id": "N(1535)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.53,
+      "width": 0.15,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.015
+    },
+    {
+      "id": "Delta(1600)-",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.57,
+      "width": 0.25,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.07
+    },
+    {
+      "id": "Delta(1600)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.57,
+      "width": 0.25,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.07
+    },
+    {
       "id": "f(2)(1565)",
       "aliases": [],
       "jp": {
@@ -5912,6 +6402,32 @@
       ]
     },
     {
+      "id": "Delta(1620)-",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.61,
+      "width": 0.13,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.02
+    },
+    {
+      "id": "Delta(1620)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.61,
+      "width": 0.13,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.02
+    },
+    {
       "id": "eta(2)(1645)",
       "aliases": [],
       "jp": {
@@ -5987,102 +6503,6 @@
           "errorNegative": 0.020881,
           "statError": 0.006,
           "systError": 0.02,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
-      "id": "pi(1)(1600)0",
-      "aliases": [],
-      "jp": {
-        "j": 1,
-        "p": -1
-      },
-      "mass": 1.645319,
-      "width": 0.365403,
-      "status": "pdg",
-      "tex": "\\pi_{1}(1600)^{0}",
-      "decayModes": [],
-      "c": 1,
-      "measurements": [
-        {
-          "year": 2007,
-          "publication": "PL B657 27",
-          "doi": "10.1016/j.physletb.2007.07.068",
-          "inspireId": "735615",
-          "technique": "B852",
-          "comment": "18 pi- p --> eta pi0 n",
-          "value": 1.257,
-          "errorPositive": 0.032016,
-          "errorNegative": 0.032016,
-          "statError": 0.02,
-          "systError": 0.025,
-          "usedInAverage": true
-        },
-        {
-          "year": 2004,
-          "publication": "EPJ C35 21",
-          "doi": "10.1140/epjc/s2004-01811-8",
-          "inspireId": "656311",
-          "technique": "OBLX",
-          "comment": "pbar p --> 2pi+ 2pi-",
-          "value": 1.384,
-          "errorPositive": 0.040311,
-          "errorNegative": 0.040311,
-          "statError": 0.02,
-          "systError": 0.035,
-          "usedInAverage": true
-        },
-        {
-          "year": 1999,
-          "publication": "PL B446 349",
-          "doi": "10.1016/S0370-2693(98)01544-5",
-          "inspireId": "498113",
-          "technique": "CBAR",
-          "comment": "0.0 pbar p --> pi0 pi0 eta",
-          "value": 1.36,
-          "errorPositive": 0.025,
-          "errorNegative": 0.025,
-          "usedInAverage": true
-        },
-        {
-          "year": 1998,
-          "publication": "PL B423 175",
-          "doi": "10.1016/S0370-2693(98)00123-3",
-          "inspireId": "471280",
-          "technique": "CBAR",
-          "comment": "0.0 pbar n --> pi- pi0 eta",
-          "value": 1.4,
-          "errorPositive": 0.028284,
-          "errorNegative": 0.028284,
-          "statError": 0.02,
-          "systError": 0.02,
-          "usedInAverage": true
-        },
-        {
-          "year": 1997,
-          "publication": "PRL 79 1630",
-          "doi": "10.1103/PhysRevLett.79.1630",
-          "inspireId": "443147",
-          "technique": "MPS",
-          "comment": "18 pi- p --> eta pi- p",
-          "value": 1.37,
-          "errorPositive": 0.052498,
-          "errorNegative": 0.034,
-          "statError": 0.016,
-          "systError": 0.05,
-          "usedInAverage": true
-        },
-        {
-          "year": 1993,
-          "publication": "PL B314 246",
-          "doi": "10.1016/0370-2693(93)90456-R",
-          "inspireId": "363785",
-          "technique": "BKEI",
-          "comment": "pi- p --> eta pi- p",
-          "value": 1.3231,
-          "errorPositive": 0.0046,
-          "errorNegative": 0.0046,
           "usedInAverage": false
         }
       ]
@@ -6278,90 +6698,100 @@
       ]
     },
     {
-      "id": "K(1)(1650)0",
-      "aliases": [
-        "K1_1650"
-      ],
-      "jp": {
-        "j": 1,
-        "p": 1
-      },
-      "mass": 1.65,
-      "width": 0.15,
-      "status": "pdg",
-      "tex": "K_{1}(1650)^{0}",
-      "decayModes": [],
-      "mass_error": 0.05,
-      "width_error": 0.05,
-      "measurements": [
-        {
-          "year": 1986,
-          "publication": "NP B276 667",
-          "doi": "10.1016/0550-3213(86)90071-4",
-          "inspireId": "216508",
-          "technique": "OMEG",
-          "comment": "13 K+ p --> phi K+ p",
-          "value": 1.65,
-          "errorPositive": 0.05,
-          "errorNegative": 0.05,
-          "usedInAverage": true
-        },
-        {
-          "year": 2021,
-          "publication": "PRL 127 082001",
-          "doi": "10.1103/PhysRevLett.127.082001",
-          "inspireId": "1849524",
-          "technique": "LHCB",
-          "comment": "B+ --> J/psi phi K+",
-          "value": 1.861,
-          "errorPositive": 0.018868,
-          "errorNegative": 0.047074,
-          "statError": 0.01,
-          "systError": 0.016,
-          "usedInAverage": false
-        },
-        {
-          "year": 2021,
-          "publication": "PRL 127 082001",
-          "doi": "10.1103/PhysRevLett.127.082001",
-          "inspireId": "1849524",
-          "technique": "LHCB",
-          "comment": "B+ --> J/psi phi K+",
-          "value": 1.911,
-          "errorPositive": 0.129402,
-          "errorNegative": 0.060605,
-          "statError": 0.037,
-          "systError": 0.124,
-          "usedInAverage": false
-        },
-        {
-          "year": 2017,
-          "publication": "PRL 118 022003",
-          "doi": "10.1103/PhysRevLett.118.022003",
-          "inspireId": "1472310",
-          "technique": "LHCB",
-          "comment": "B+ --> J/psi phi K+",
-          "value": 1.793,
-          "errorPositive": 0.163982,
-          "errorNegative": 0.11697,
-          "statError": 0.059,
-          "systError": 0.153,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
-      "id": "K(1)(1650)~0",
+      "id": "pi(1)(1600)0",
       "aliases": [],
       "jp": {
         "j": 1,
-        "p": 1
+        "p": -1
       },
-      "mass": 1.65,
-      "width": 0.15,
+      "mass": 1.645319,
+      "width": 0.365403,
       "status": "pdg",
-      "tex": "\\overline{K}_{1}(1650)^{0}",
-      "decayModes": []
+      "tex": "\\pi_{1}(1600)^{0}",
+      "decayModes": [],
+      "c": 1,
+      "measurements": [
+        {
+          "year": 2007,
+          "publication": "PL B657 27",
+          "doi": "10.1016/j.physletb.2007.07.068",
+          "inspireId": "735615",
+          "technique": "B852",
+          "comment": "18 pi- p --> eta pi0 n",
+          "value": 1.257,
+          "errorPositive": 0.032016,
+          "errorNegative": 0.032016,
+          "statError": 0.02,
+          "systError": 0.025,
+          "usedInAverage": true
+        },
+        {
+          "year": 2004,
+          "publication": "EPJ C35 21",
+          "doi": "10.1140/epjc/s2004-01811-8",
+          "inspireId": "656311",
+          "technique": "OBLX",
+          "comment": "pbar p --> 2pi+ 2pi-",
+          "value": 1.384,
+          "errorPositive": 0.040311,
+          "errorNegative": 0.040311,
+          "statError": 0.02,
+          "systError": 0.035,
+          "usedInAverage": true
+        },
+        {
+          "year": 1999,
+          "publication": "PL B446 349",
+          "doi": "10.1016/S0370-2693(98)01544-5",
+          "inspireId": "498113",
+          "technique": "CBAR",
+          "comment": "0.0 pbar p --> pi0 pi0 eta",
+          "value": 1.36,
+          "errorPositive": 0.025,
+          "errorNegative": 0.025,
+          "usedInAverage": true
+        },
+        {
+          "year": 1998,
+          "publication": "PL B423 175",
+          "doi": "10.1016/S0370-2693(98)00123-3",
+          "inspireId": "471280",
+          "technique": "CBAR",
+          "comment": "0.0 pbar n --> pi- pi0 eta",
+          "value": 1.4,
+          "errorPositive": 0.028284,
+          "errorNegative": 0.028284,
+          "statError": 0.02,
+          "systError": 0.02,
+          "usedInAverage": true
+        },
+        {
+          "year": 1997,
+          "publication": "PRL 79 1630",
+          "doi": "10.1103/PhysRevLett.79.1630",
+          "inspireId": "443147",
+          "technique": "MPS",
+          "comment": "18 pi- p --> eta pi- p",
+          "value": 1.37,
+          "errorPositive": 0.052498,
+          "errorNegative": 0.034,
+          "statError": 0.016,
+          "systError": 0.05,
+          "usedInAverage": true
+        },
+        {
+          "year": 1993,
+          "publication": "PL B314 246",
+          "doi": "10.1016/0370-2693(93)90456-R",
+          "inspireId": "363785",
+          "technique": "BKEI",
+          "comment": "pi- p --> eta pi- p",
+          "value": 1.3231,
+          "errorPositive": 0.0046,
+          "errorNegative": 0.0046,
+          "usedInAverage": false
+        }
+      ]
     },
     {
       "id": "K(1)(1650)+",
@@ -6506,100 +6936,116 @@
       ]
     },
     {
-      "id": "a(1)(1640)0",
+      "id": "K(1)(1650)0",
+      "aliases": [
+        "K1_1650"
+      ],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.65,
+      "width": 0.15,
+      "status": "pdg",
+      "tex": "K_{1}(1650)^{0}",
+      "decayModes": [],
+      "mass_error": 0.05,
+      "width_error": 0.05,
+      "measurements": [
+        {
+          "year": 1986,
+          "publication": "NP B276 667",
+          "doi": "10.1016/0550-3213(86)90071-4",
+          "inspireId": "216508",
+          "technique": "OMEG",
+          "comment": "13 K+ p --> phi K+ p",
+          "value": 1.65,
+          "errorPositive": 0.05,
+          "errorNegative": 0.05,
+          "usedInAverage": true
+        },
+        {
+          "year": 2021,
+          "publication": "PRL 127 082001",
+          "doi": "10.1103/PhysRevLett.127.082001",
+          "inspireId": "1849524",
+          "technique": "LHCB",
+          "comment": "B+ --> J/psi phi K+",
+          "value": 1.861,
+          "errorPositive": 0.018868,
+          "errorNegative": 0.047074,
+          "statError": 0.01,
+          "systError": 0.016,
+          "usedInAverage": false
+        },
+        {
+          "year": 2021,
+          "publication": "PRL 127 082001",
+          "doi": "10.1103/PhysRevLett.127.082001",
+          "inspireId": "1849524",
+          "technique": "LHCB",
+          "comment": "B+ --> J/psi phi K+",
+          "value": 1.911,
+          "errorPositive": 0.129402,
+          "errorNegative": 0.060605,
+          "statError": 0.037,
+          "systError": 0.124,
+          "usedInAverage": false
+        },
+        {
+          "year": 2017,
+          "publication": "PRL 118 022003",
+          "doi": "10.1103/PhysRevLett.118.022003",
+          "inspireId": "1472310",
+          "technique": "LHCB",
+          "comment": "B+ --> J/psi phi K+",
+          "value": 1.793,
+          "errorPositive": 0.163982,
+          "errorNegative": 0.11697,
+          "statError": 0.059,
+          "systError": 0.153,
+          "usedInAverage": false
+        }
+      ]
+    },
+    {
+      "id": "K(1)(1650)~0",
       "aliases": [],
       "jp": {
         "j": 1,
         "p": 1
       },
-      "mass": 1.655443,
-      "width": 0.254416,
+      "mass": 1.65,
+      "width": 0.15,
       "status": "pdg",
-      "tex": "a_{1}(1640)^{0}",
+      "tex": "\\overline{K}_{1}(1650)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "N(1650)+",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.65,
+      "width": 0.125,
+      "status": "pdg",
       "decayModes": [],
-      "mass_error": 0.016179,
-      "width_error": 0.038386,
-      "c": 1,
-      "measurements": [
-        {
-          "year": 2018,
-          "publication": "PR D98 092003",
-          "doi": "10.1103/PhysRevD.98.092003",
-          "inspireId": "1655631",
-          "technique": "COMP",
-          "comment": "190 pi- p --> pi- pi+ pi- p",
-          "value": 1.7,
-          "errorPositive": 0.035,
-          "errorNegative": 0.13,
-          "usedInAverage": true
-        },
-        {
-          "year": 2017,
-          "publication": "JHEP 1705 143",
-          "doi": "10.1007/JHEP05(2017)143",
-          "inspireId": "1519168",
-          "technique": "RVUE",
-          "comment": "D0 --> pi- pi+ pi- pi+",
-          "value": 1.691,
-          "errorPositive": 0.034986,
-          "errorNegative": 0.034986,
-          "statError": 0.018,
-          "systError": 0.03,
-          "usedInAverage": true
-        },
-        {
-          "year": 2003,
-          "publication": "PL B563 140",
-          "doi": "10.1016/S0370-2693(03)00643-9",
-          "inspireId": "624632",
-          "technique": "SPEC",
-          "comment": "pbar p --> omega pi+ pi- pi0",
-          "value": 1.63,
-          "errorPositive": 0.02,
-          "errorNegative": 0.02,
-          "usedInAverage": true
-        },
-        {
-          "year": 2002,
-          "publication": "PR D65 072001",
-          "doi": "10.1103/PhysRevD.65.072001",
-          "inspireId": "584469",
-          "technique": "B852",
-          "comment": "18.3 pi- p --> pi+ pi- pi- p",
-          "value": 1.714,
-          "errorPositive": 0.037108,
-          "errorNegative": 0.037108,
-          "statError": 0.009,
-          "systError": 0.036,
-          "usedInAverage": true
-        },
-        {
-          "year": 1999,
-          "publication": "PL B449 114",
-          "doi": "10.1016/S0370-2693(99)00075-1",
-          "inspireId": "500202",
-          "technique": "SPEC",
-          "comment": "1.94 pbar p --> 4pi0",
-          "value": 1.64,
-          "errorPositive": 0.032311,
-          "errorNegative": 0.032311,
-          "statError": 0.012,
-          "systError": 0.03,
-          "usedInAverage": true
-        },
-        {
-          "year": 1985,
-          "publication": "SJNP 41 781",
-          "doi": "",
-          "inspireId": "202982",
-          "technique": "SPEC",
-          "comment": "40 pi- A --> pi- pi+ pi- A",
-          "value": 1.67,
-          "errorPositive": 0.09,
-          "errorNegative": 0.09,
-          "usedInAverage": false
-        }
-      ]
+      "mass_error": 0.015
+    },
+    {
+      "id": "N(1650)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.65,
+      "width": 0.125,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.015
     },
     {
       "id": "a(1)(1640)+",
@@ -6710,6 +7156,102 @@
       "decayModes": [],
       "mass_error": 0.016179,
       "width_error": 0.038386,
+      "measurements": [
+        {
+          "year": 2018,
+          "publication": "PR D98 092003",
+          "doi": "10.1103/PhysRevD.98.092003",
+          "inspireId": "1655631",
+          "technique": "COMP",
+          "comment": "190 pi- p --> pi- pi+ pi- p",
+          "value": 1.7,
+          "errorPositive": 0.035,
+          "errorNegative": 0.13,
+          "usedInAverage": true
+        },
+        {
+          "year": 2017,
+          "publication": "JHEP 1705 143",
+          "doi": "10.1007/JHEP05(2017)143",
+          "inspireId": "1519168",
+          "technique": "RVUE",
+          "comment": "D0 --> pi- pi+ pi- pi+",
+          "value": 1.691,
+          "errorPositive": 0.034986,
+          "errorNegative": 0.034986,
+          "statError": 0.018,
+          "systError": 0.03,
+          "usedInAverage": true
+        },
+        {
+          "year": 2003,
+          "publication": "PL B563 140",
+          "doi": "10.1016/S0370-2693(03)00643-9",
+          "inspireId": "624632",
+          "technique": "SPEC",
+          "comment": "pbar p --> omega pi+ pi- pi0",
+          "value": 1.63,
+          "errorPositive": 0.02,
+          "errorNegative": 0.02,
+          "usedInAverage": true
+        },
+        {
+          "year": 2002,
+          "publication": "PR D65 072001",
+          "doi": "10.1103/PhysRevD.65.072001",
+          "inspireId": "584469",
+          "technique": "B852",
+          "comment": "18.3 pi- p --> pi+ pi- pi- p",
+          "value": 1.714,
+          "errorPositive": 0.037108,
+          "errorNegative": 0.037108,
+          "statError": 0.009,
+          "systError": 0.036,
+          "usedInAverage": true
+        },
+        {
+          "year": 1999,
+          "publication": "PL B449 114",
+          "doi": "10.1016/S0370-2693(99)00075-1",
+          "inspireId": "500202",
+          "technique": "SPEC",
+          "comment": "1.94 pbar p --> 4pi0",
+          "value": 1.64,
+          "errorPositive": 0.032311,
+          "errorNegative": 0.032311,
+          "statError": 0.012,
+          "systError": 0.03,
+          "usedInAverage": true
+        },
+        {
+          "year": 1985,
+          "publication": "SJNP 41 781",
+          "doi": "",
+          "inspireId": "202982",
+          "technique": "SPEC",
+          "comment": "40 pi- A --> pi- pi+ pi- A",
+          "value": 1.67,
+          "errorPositive": 0.09,
+          "errorNegative": 0.09,
+          "usedInAverage": false
+        }
+      ]
+    },
+    {
+      "id": "a(1)(1640)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 1.655443,
+      "width": 0.254416,
+      "status": "pdg",
+      "tex": "a_{1}(1640)^{0}",
+      "decayModes": [],
+      "mass_error": 0.016179,
+      "width_error": 0.038386,
+      "c": 1,
       "measurements": [
         {
           "year": 2018,
@@ -6978,100 +7520,6 @@
       ]
     },
     {
-      "id": "pi(2)(1670)0",
-      "aliases": [],
-      "jp": {
-        "j": 2,
-        "p": -1
-      },
-      "mass": 1.670628,
-      "width": 0.25753,
-      "status": "pdg",
-      "tex": "\\pi_{2}(1670)^{0}",
-      "decayModes": [],
-      "c": 1,
-      "measurements": [
-        {
-          "year": 2018,
-          "publication": "PR D98 092003",
-          "doi": "10.1103/PhysRevD.98.092003",
-          "inspireId": "1655631",
-          "technique": "COMP",
-          "comment": "190 pi- p --> pi- pi+ pi- p",
-          "value": 1.642,
-          "errorPositive": 0.012,
-          "errorNegative": 0.001,
-          "usedInAverage": true
-        },
-        {
-          "year": 2005,
-          "publication": "PRL 94 032002",
-          "doi": "10.1103/PhysRevLett.94.032002",
-          "inspireId": "650478",
-          "technique": "B852",
-          "comment": "18 pi- p --> omega pi- pi0 p",
-          "value": 1.749,
-          "errorPositive": 0.100499,
-          "errorNegative": 0.100499,
-          "statError": 0.01,
-          "systError": 0.1,
-          "usedInAverage": true
-        },
-        {
-          "year": 2002,
-          "publication": "PR D65 072001",
-          "doi": "10.1103/PhysRevD.65.072001",
-          "inspireId": "584469",
-          "technique": "B852",
-          "comment": "18.3 pi- p --> pi+ pi- pi- p",
-          "value": 1.676,
-          "errorPositive": 0.008544,
-          "errorNegative": 0.008544,
-          "statError": 0.003,
-          "systError": 0.008,
-          "usedInAverage": true
-        },
-        {
-          "year": 2001,
-          "publication": "PL B507 14",
-          "doi": "10.1016/S0370-2693(01)00459-2",
-          "inspireId": "555284",
-          "comment": "450 p p --> p_f 3pi0 p_s",
-          "value": 1.685,
-          "errorPositive": 0.031623,
-          "errorNegative": 0.031623,
-          "statError": 0.01,
-          "systError": 0.03,
-          "usedInAverage": true
-        },
-        {
-          "year": 1999,
-          "publication": "PAN 62 445",
-          "doi": "",
-          "inspireId": "502852",
-          "technique": "VES",
-          "comment": "37 pi- A --> omega pi- pi0 A^*",
-          "value": 1.687,
-          "errorPositive": 0.017493,
-          "errorNegative": 0.017493,
-          "statError": 0.009,
-          "systError": 0.015,
-          "usedInAverage": true
-        },
-        {
-          "year": 1998,
-          "publication": "PL B422 399",
-          "doi": "10.1016/S0370-2693(98)00063-X",
-          "inspireId": "466032",
-          "comment": "450 p p --> p_f rho  pi p_s",
-          "value": 1.669,
-          "errorPositive": 0.004,
-          "errorNegative": 0.004,
-          "usedInAverage": true
-        }
-      ]
-    },
-    {
       "id": "pi(2)(1670)+",
       "aliases": [],
       "jp": {
@@ -7258,6 +7706,126 @@
       ]
     },
     {
+      "id": "pi(2)(1670)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.670628,
+      "width": 0.25753,
+      "status": "pdg",
+      "tex": "\\pi_{2}(1670)^{0}",
+      "decayModes": [],
+      "c": 1,
+      "measurements": [
+        {
+          "year": 2018,
+          "publication": "PR D98 092003",
+          "doi": "10.1103/PhysRevD.98.092003",
+          "inspireId": "1655631",
+          "technique": "COMP",
+          "comment": "190 pi- p --> pi- pi+ pi- p",
+          "value": 1.642,
+          "errorPositive": 0.012,
+          "errorNegative": 0.001,
+          "usedInAverage": true
+        },
+        {
+          "year": 2005,
+          "publication": "PRL 94 032002",
+          "doi": "10.1103/PhysRevLett.94.032002",
+          "inspireId": "650478",
+          "technique": "B852",
+          "comment": "18 pi- p --> omega pi- pi0 p",
+          "value": 1.749,
+          "errorPositive": 0.100499,
+          "errorNegative": 0.100499,
+          "statError": 0.01,
+          "systError": 0.1,
+          "usedInAverage": true
+        },
+        {
+          "year": 2002,
+          "publication": "PR D65 072001",
+          "doi": "10.1103/PhysRevD.65.072001",
+          "inspireId": "584469",
+          "technique": "B852",
+          "comment": "18.3 pi- p --> pi+ pi- pi- p",
+          "value": 1.676,
+          "errorPositive": 0.008544,
+          "errorNegative": 0.008544,
+          "statError": 0.003,
+          "systError": 0.008,
+          "usedInAverage": true
+        },
+        {
+          "year": 2001,
+          "publication": "PL B507 14",
+          "doi": "10.1016/S0370-2693(01)00459-2",
+          "inspireId": "555284",
+          "comment": "450 p p --> p_f 3pi0 p_s",
+          "value": 1.685,
+          "errorPositive": 0.031623,
+          "errorNegative": 0.031623,
+          "statError": 0.01,
+          "systError": 0.03,
+          "usedInAverage": true
+        },
+        {
+          "year": 1999,
+          "publication": "PAN 62 445",
+          "doi": "",
+          "inspireId": "502852",
+          "technique": "VES",
+          "comment": "37 pi- A --> omega pi- pi0 A^*",
+          "value": 1.687,
+          "errorPositive": 0.017493,
+          "errorNegative": 0.017493,
+          "statError": 0.009,
+          "systError": 0.015,
+          "usedInAverage": true
+        },
+        {
+          "year": 1998,
+          "publication": "PL B422 399",
+          "doi": "10.1016/S0370-2693(98)00063-X",
+          "inspireId": "466032",
+          "comment": "450 p p --> p_f rho  pi p_s",
+          "value": 1.669,
+          "errorPositive": 0.004,
+          "errorNegative": 0.004,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
+      "id": "N(1675)+",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 1.675,
+      "width": 0.145,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.01
+    },
+    {
+      "id": "N(1675)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 1.675,
+      "width": 0.145,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.01
+    },
+    {
       "id": "phi(1680)",
       "aliases": [
         "phi1680"
@@ -7366,94 +7934,30 @@
       ]
     },
     {
-      "id": "rho(3)(1690)0",
+      "id": "N(1680)+",
       "aliases": [],
       "jp": {
-        "j": 3,
-        "p": -1
+        "j": 2.5,
+        "p": 1
       },
-      "mass": 1.685623,
-      "width": 0.186186,
+      "mass": 1.685,
+      "width": 0.12,
       "status": "pdg",
-      "tex": "\\rho_{3}(1690)^{0}",
       "decayModes": [],
-      "mass_error": 0.003975,
-      "width_error": 0.014047,
-      "c": -1,
-      "measurements": [
-        {
-          "year": 1981,
-          "publication": "NP B178 197",
-          "doi": "10.1016/0550-3213(81)90407-7",
-          "inspireId": "153471",
-          "technique": "OMEG",
-          "comment": "12 pi- p --> 2pi p",
-          "value": 1.677,
-          "errorPositive": 0.014,
-          "errorNegative": 0.014,
-          "usedInAverage": true
-        },
-        {
-          "year": 1978,
-          "publication": "PR D17 62",
-          "doi": "10.1103/PhysRevD.17.62",
-          "inspireId": "5627",
-          "technique": "HBC",
-          "comment": "15 pi+ p --> pi+ pi- n",
-          "value": 1.679,
-          "errorPositive": 0.011,
-          "errorNegative": 0.011,
-          "usedInAverage": true
-        },
-        {
-          "year": 1977,
-          "publication": "NP B119 45",
-          "doi": "10.1016/0550-3213(77)90071-2",
-          "inspireId": "109772",
-          "technique": "CIBS",
-          "comment": "25 pi- p --> p 3pi",
-          "value": 1.678,
-          "errorPositive": 0.012,
-          "errorNegative": 0.012,
-          "usedInAverage": true
-        },
-        {
-          "year": 1974,
-          "publication": "PR D10 2070",
-          "doi": "10.1103/PhysRevD.10.2070",
-          "inspireId": "97189",
-          "technique": "DBC",
-          "comment": "6 pi+ n --> pi+ pi- p",
-          "value": 1.69,
-          "errorPositive": 0.007,
-          "errorNegative": 0.007,
-          "usedInAverage": true
-        },
-        {
-          "year": 1974,
-          "publication": "NP B75 189",
-          "doi": "10.1016/0550-3213(74)90545-8",
-          "inspireId": "88935",
-          "technique": "ASPK",
-          "comment": "17 pi- p --> pi+ pi- n",
-          "value": 1.693,
-          "errorPositive": 0.008,
-          "errorNegative": 0.008,
-          "usedInAverage": true
-        },
-        {
-          "year": 1971,
-          "publication": "NP B33 1",
-          "doi": "10.1016/0550-3213(71)90382-8",
-          "inspireId": "68512",
-          "technique": "DBC",
-          "comment": "7 pi+ N",
-          "value": 1.678,
-          "errorPositive": 0.012,
-          "errorNegative": 0.012,
-          "usedInAverage": true
-        }
-      ]
+      "mass_error": 0.005
+    },
+    {
+      "id": "N(1680)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 1.685,
+      "width": 0.12,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.005
     },
     {
       "id": "rho(3)(1690)+",
@@ -7634,97 +8138,92 @@
       ]
     },
     {
-      "id": "a(2)(1700)0",
+      "id": "rho(3)(1690)0",
       "aliases": [],
       "jp": {
-        "j": 2,
-        "p": 1
+        "j": 3,
+        "p": -1
       },
-      "mass": 1.70571,
-      "width": 0.378076,
+      "mass": 1.685623,
+      "width": 0.186186,
       "status": "pdg",
-      "tex": "a_{2}(1700)^{0}",
+      "tex": "\\rho_{3}(1690)^{0}",
       "decayModes": [],
-      "mass_error": 0.01417,
-      "c": 1,
+      "mass_error": 0.003975,
+      "width_error": 0.014047,
+      "c": -1,
       "measurements": [
         {
-          "year": 2018,
-          "publication": "PR D98 092003",
-          "doi": "10.1103/PhysRevD.98.092003",
-          "inspireId": "1655631",
-          "technique": "COMP",
-          "comment": "190 pi- p --> pi- pi+ pi- p",
-          "value": 1.681,
-          "errorPositive": 0.022,
-          "errorNegative": 0.035,
+          "year": 1981,
+          "publication": "NP B178 197",
+          "doi": "10.1016/0550-3213(81)90407-7",
+          "inspireId": "153471",
+          "technique": "OMEG",
+          "comment": "12 pi- p --> 2pi p",
+          "value": 1.677,
+          "errorPositive": 0.014,
+          "errorNegative": 0.014,
           "usedInAverage": true
         },
         {
-          "year": 2017,
-          "publication": "PR D95 032002",
-          "doi": "10.1103/PhysRevD.95.032002",
-          "inspireId": "1490896",
-          "technique": "BES3",
-          "comment": "psi(2S) --> gamma eta pi+ pi-",
-          "value": 1.726,
-          "errorPositive": 0.027731,
-          "errorNegative": 0.027731,
-          "statError": 0.012,
-          "systError": 0.025,
+          "year": 1978,
+          "publication": "PR D17 62",
+          "doi": "10.1103/PhysRevD.17.62",
+          "inspireId": "5627",
+          "technique": "HBC",
+          "comment": "15 pi+ p --> pi+ pi- n",
+          "value": 1.679,
+          "errorPositive": 0.011,
+          "errorNegative": 0.011,
           "usedInAverage": true
         },
         {
-          "year": 2006,
-          "publication": "EPJ A27 199",
-          "doi": "10.1140/epja/i2005-10266-0",
-          "inspireId": "716653",
-          "technique": "RVUE",
-          "comment": "gamma gamma --> pi+ pi- pi0",
-          "value": 1.722,
-          "errorPositive": 0.017493,
-          "errorNegative": 0.017493,
-          "statError": 0.009,
-          "systError": 0.015,
+          "year": 1977,
+          "publication": "NP B119 45",
+          "doi": "10.1016/0550-3213(77)90071-2",
+          "inspireId": "109772",
+          "technique": "CIBS",
+          "comment": "25 pi- p --> p 3pi",
+          "value": 1.678,
+          "errorPositive": 0.012,
+          "errorNegative": 0.012,
           "usedInAverage": true
         },
         {
-          "year": 1999,
-          "publication": "EPJ C8 67",
-          "doi": "10.1007/s100520050445",
-          "inspireId": "500380",
-          "technique": "CBAR",
-          "comment": "1.94 pbar p --> pi0 eta eta",
-          "value": 1.66,
-          "errorPositive": 0.04,
-          "errorNegative": 0.04,
+          "year": 1974,
+          "publication": "PR D10 2070",
+          "doi": "10.1103/PhysRevD.10.2070",
+          "inspireId": "97189",
+          "technique": "DBC",
+          "comment": "6 pi+ n --> pi+ pi- p",
+          "value": 1.69,
+          "errorPositive": 0.007,
+          "errorNegative": 0.007,
           "usedInAverage": true
         },
         {
-          "year": 2018,
-          "publication": "PL B779 464",
-          "doi": "10.1016/j.physletb.2018.01.017",
-          "inspireId": "1609260",
-          "technique": "RVUE",
-          "comment": "pi- p --> eta pi- p",
-          "value": 1.72,
-          "errorPositive": 0.060828,
-          "errorNegative": 0.060828,
-          "statError": 0.01,
-          "systError": 0.06,
-          "usedInAverage": false
+          "year": 1974,
+          "publication": "NP B75 189",
+          "doi": "10.1016/0550-3213(74)90545-8",
+          "inspireId": "88935",
+          "technique": "ASPK",
+          "comment": "17 pi- p --> pi+ pi- n",
+          "value": 1.693,
+          "errorPositive": 0.008,
+          "errorNegative": 0.008,
+          "usedInAverage": true
         },
         {
-          "year": 2009,
-          "publication": "IJMP A24 2481",
-          "doi": "10.1142/S0217751X09043286",
-          "inspireId": "827152",
-          "technique": "RVUE",
-          "comment": "0.0 pbar p, pi N",
-          "value": 1.675,
-          "errorPositive": 0.025,
-          "errorNegative": 0.025,
-          "usedInAverage": false
+          "year": 1971,
+          "publication": "NP B33 1",
+          "doi": "10.1016/0550-3213(71)90382-8",
+          "inspireId": "68512",
+          "technique": "DBC",
+          "comment": "7 pi+ N",
+          "value": 1.678,
+          "errorPositive": 0.012,
+          "errorNegative": 0.012,
+          "usedInAverage": true
         }
       ]
     },
@@ -7917,113 +8416,151 @@
       ]
     },
     {
-      "id": "K*(1680)0",
-      "aliases": [
-        "K1_1680",
-        "K*_1680",
-        "K1*_1680"
-      ],
+      "id": "a(2)(1700)0",
+      "aliases": [],
       "jp": {
-        "j": 1,
-        "p": -1
+        "j": 2,
+        "p": 1
       },
-      "mass": 1.717577,
-      "width": 0.322422,
+      "mass": 1.70571,
+      "width": 0.378076,
       "status": "pdg",
-      "tex": "K^{*}(1680)^{0}",
-      "decayModes": [
-        {
-          "daughters": [
-            "K+",
-            "pi-"
-          ],
-          "br": 0.39,
-          "partial": true
-        }
-      ],
-      "mass_error": 0.017888,
-      "width_error": 0.107573,
+      "tex": "a_{2}(1700)^{0}",
+      "decayModes": [],
+      "mass_error": 0.01417,
+      "c": 1,
       "measurements": [
         {
+          "year": 2018,
+          "publication": "PR D98 092003",
+          "doi": "10.1103/PhysRevD.98.092003",
+          "inspireId": "1655631",
+          "technique": "COMP",
+          "comment": "190 pi- p --> pi- pi+ pi- p",
+          "value": 1.681,
+          "errorPositive": 0.022,
+          "errorNegative": 0.035,
+          "usedInAverage": true
+        },
+        {
           "year": 2017,
-          "publication": "PRL 118 022003",
-          "doi": "10.1103/PhysRevLett.118.022003",
-          "inspireId": "1472310",
-          "technique": "LHCB",
-          "comment": "B+ --> J/psi phi K+",
+          "publication": "PR D95 032002",
+          "doi": "10.1103/PhysRevD.95.032002",
+          "inspireId": "1490896",
+          "technique": "BES3",
+          "comment": "psi(2S) --> gamma eta pi+ pi-",
+          "value": 1.726,
+          "errorPositive": 0.027731,
+          "errorNegative": 0.027731,
+          "statError": 0.012,
+          "systError": 0.025,
+          "usedInAverage": true
+        },
+        {
+          "year": 2006,
+          "publication": "EPJ A27 199",
+          "doi": "10.1140/epja/i2005-10266-0",
+          "inspireId": "716653",
+          "technique": "RVUE",
+          "comment": "gamma gamma --> pi+ pi- pi0",
           "value": 1.722,
-          "errorPositive": 0.038588,
-          "errorNegative": 0.11082,
-          "statError": 0.02,
-          "systError": 0.033,
+          "errorPositive": 0.017493,
+          "errorNegative": 0.017493,
+          "statError": 0.009,
+          "systError": 0.015,
           "usedInAverage": true
         },
         {
-          "year": 1988,
-          "publication": "NP B296 493",
-          "doi": "10.1016/0550-3213(88)90028-4",
-          "inspireId": "247143",
-          "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 1.677,
-          "errorPositive": 0.033526,
-          "errorNegative": 0.033526,
+          "year": 1999,
+          "publication": "EPJ C8 67",
+          "doi": "10.1007/s100520050445",
+          "inspireId": "500380",
+          "technique": "CBAR",
+          "comment": "1.94 pbar p --> pi0 eta eta",
+          "value": 1.66,
+          "errorPositive": 0.04,
+          "errorNegative": 0.04,
+          "usedInAverage": true
+        },
+        {
+          "year": 2018,
+          "publication": "PL B779 464",
+          "doi": "10.1016/j.physletb.2018.01.017",
+          "inspireId": "1609260",
+          "technique": "RVUE",
+          "comment": "pi- p --> eta pi- p",
+          "value": 1.72,
+          "errorPositive": 0.060828,
+          "errorNegative": 0.060828,
           "statError": 0.01,
-          "systError": 0.032,
-          "usedInAverage": true
-        },
-        {
-          "year": 1987,
-          "publication": "NP B292 693",
-          "doi": "10.1016/0550-3213(87)90665-1",
-          "inspireId": "236088",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.735,
-          "errorPositive": 0.022361,
-          "errorNegative": 0.022361,
-          "statError": 0.01,
-          "systError": 0.02,
-          "usedInAverage": true
-        },
-        {
-          "year": 1989,
-          "publication": "SLAC-332",
-          "doi": "",
-          "inspireId": "265820",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi- p",
-          "value": 1.678,
-          "errorPositive": 0.064,
-          "errorNegative": 0.064,
+          "systError": 0.06,
           "usedInAverage": false
         },
         {
-          "year": 1980,
-          "publication": "PR D22 42",
-          "doi": "10.1103/PhysRevD.22.42",
-          "inspireId": "157981",
-          "technique": "MPS",
-          "comment": "6 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.8,
-          "errorPositive": 0.07,
-          "errorNegative": 0.07,
+          "year": 2009,
+          "publication": "IJMP A24 2481",
+          "doi": "10.1142/S0217751X09043286",
+          "inspireId": "827152",
+          "technique": "RVUE",
+          "comment": "0.0 pbar p, pi N",
+          "value": 1.675,
+          "errorPositive": 0.025,
+          "errorNegative": 0.025,
           "usedInAverage": false
         }
       ]
     },
     {
-      "id": "K*(1680)~0",
+      "id": "Delta(1700)-",
       "aliases": [],
       "jp": {
-        "j": 1,
+        "j": 1.5,
         "p": -1
       },
-      "mass": 1.718,
-      "width": 0.32,
+      "mass": 1.71,
+      "width": 0.3,
       "status": "pdg",
-      "tex": "\\overline{K}^{*}(1680)^{0}",
-      "decayModes": []
+      "decayModes": [],
+      "mass_error": 0.02
+    },
+    {
+      "id": "Delta(1700)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 1.71,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.02
+    },
+    {
+      "id": "N(1710)+",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 1.71,
+      "width": 0.14,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.03
+    },
+    {
+      "id": "N(1710)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 1.71,
+      "width": 0.14,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.03
     },
     {
       "id": "K*(1680)+",
@@ -8192,20 +8729,165 @@
       ]
     },
     {
-      "id": "rho(1700)0",
+      "id": "K*(1680)0",
+      "aliases": [
+        "K1_1680",
+        "K*_1680",
+        "K1*_1680"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.717577,
+      "width": 0.322422,
+      "status": "pdg",
+      "tex": "K^{*}(1680)^{0}",
+      "decayModes": [
+        {
+          "daughters": [
+            "K+",
+            "pi-"
+          ],
+          "br": 0.39,
+          "partial": true
+        }
+      ],
+      "mass_error": 0.017888,
+      "width_error": 0.107573,
+      "measurements": [
+        {
+          "year": 2017,
+          "publication": "PRL 118 022003",
+          "doi": "10.1103/PhysRevLett.118.022003",
+          "inspireId": "1472310",
+          "technique": "LHCB",
+          "comment": "B+ --> J/psi phi K+",
+          "value": 1.722,
+          "errorPositive": 0.038588,
+          "errorNegative": 0.11082,
+          "statError": 0.02,
+          "systError": 0.033,
+          "usedInAverage": true
+        },
+        {
+          "year": 1988,
+          "publication": "NP B296 493",
+          "doi": "10.1016/0550-3213(88)90028-4",
+          "inspireId": "247143",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 1.677,
+          "errorPositive": 0.033526,
+          "errorNegative": 0.033526,
+          "statError": 0.01,
+          "systError": 0.032,
+          "usedInAverage": true
+        },
+        {
+          "year": 1987,
+          "publication": "NP B292 693",
+          "doi": "10.1016/0550-3213(87)90665-1",
+          "inspireId": "236088",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi+ pi- n",
+          "value": 1.735,
+          "errorPositive": 0.022361,
+          "errorNegative": 0.022361,
+          "statError": 0.01,
+          "systError": 0.02,
+          "usedInAverage": true
+        },
+        {
+          "year": 1989,
+          "publication": "SLAC-332",
+          "doi": "",
+          "inspireId": "265820",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi- p",
+          "value": 1.678,
+          "errorPositive": 0.064,
+          "errorNegative": 0.064,
+          "usedInAverage": false
+        },
+        {
+          "year": 1980,
+          "publication": "PR D22 42",
+          "doi": "10.1103/PhysRevD.22.42",
+          "inspireId": "157981",
+          "technique": "MPS",
+          "comment": "6 K- p --> Kbar0 pi+ pi- n",
+          "value": 1.8,
+          "errorPositive": 0.07,
+          "errorNegative": 0.07,
+          "usedInAverage": false
+        }
+      ]
+    },
+    {
+      "id": "K*(1680)~0",
       "aliases": [],
       "jp": {
         "j": 1,
         "p": -1
       },
+      "mass": 1.718,
+      "width": 0.32,
+      "status": "pdg",
+      "tex": "\\overline{K}^{*}(1680)^{0}",
+      "decayModes": []
+    },
+    {
+      "id": "N(1700)+",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 1.72,
+      "width": 0.2,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.08
+    },
+    {
+      "id": "N(1700)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 1.72,
+      "width": 0.2,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.08
+    },
+    {
+      "id": "N(1720)+",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
       "mass": 1.72,
       "width": 0.25,
       "status": "pdg",
-      "tex": "\\rho(1700)^{0}",
       "decayModes": [],
-      "mass_error": 0.02,
-      "width_error": 0.1,
-      "c": -1
+      "mass_error": 0.04
+    },
+    {
+      "id": "N(1720)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.72,
+      "width": 0.25,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.04
     },
     {
       "id": "rho(1700)+",
@@ -8236,6 +8918,22 @@
       "decayModes": [],
       "mass_error": 0.02,
       "width_error": 0.1
+    },
+    {
+      "id": "rho(1700)0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.72,
+      "width": 0.25,
+      "status": "pdg",
+      "tex": "\\rho(1700)^{0}",
+      "decayModes": [],
+      "mass_error": 0.02,
+      "width_error": 0.1,
+      "c": -1
     },
     {
       "id": "f(0)(1710)",
@@ -8468,97 +9166,6 @@
       ]
     },
     {
-      "id": "K(2)(1770)0",
-      "aliases": [],
-      "jp": {
-        "j": 2,
-        "p": -1
-      },
-      "mass": 1.773025,
-      "width": 0.186133,
-      "status": "pdg",
-      "tex": "K_{2}(1770)^{0}",
-      "decayModes": [],
-      "mass_error": 0.007974,
-      "width_error": 0.013971,
-      "measurements": [
-        {
-          "year": 2017,
-          "publication": "PRL 118 022003",
-          "doi": "10.1103/PhysRevLett.118.022003",
-          "inspireId": "1472310",
-          "technique": "LHCB",
-          "comment": "B+ --> J/psi phi K+",
-          "value": 1.777,
-          "errorPositive": 0.126921,
-          "errorNegative": 0.084581,
-          "statError": 0.035,
-          "systError": 0.122,
-          "usedInAverage": true
-        },
-        {
-          "year": 1993,
-          "publication": "PL B308 186",
-          "doi": "10.1016/0370-2693(93)90620-W",
-          "inspireId": "353027",
-          "technique": "LASS",
-          "comment": "11K- p --> K- omega p",
-          "value": 1.773,
-          "errorPositive": 0.008,
-          "errorNegative": 0.008,
-          "usedInAverage": true
-        },
-        {
-          "year": 2003,
-          "publication": "PAN 66 828",
-          "doi": "10.1134/1.1576456",
-          "inspireId": "624572",
-          "technique": "SPEC",
-          "comment": "40.0 pi-  ^C --> KS KS KL X",
-          "value": 1.743,
-          "errorPositive": 0.015,
-          "errorNegative": 0.015,
-          "usedInAverage": false
-        },
-        {
-          "year": 1986,
-          "publication": "NP B276 667",
-          "doi": "10.1016/0550-3213(86)90071-4",
-          "inspireId": "216508",
-          "technique": "OMEG",
-          "comment": "13 K+ p --> phi K+ p",
-          "value": 1.81,
-          "errorPositive": 0.02,
-          "errorNegative": 0.02,
-          "usedInAverage": false
-        },
-        {
-          "year": 1974,
-          "publication": "PL 51B 413",
-          "doi": "10.1016/0370-2693(74)90241-X",
-          "inspireId": "90154",
-          "technique": "HBC",
-          "comment": "7.3 K- p --> K- omega p",
-          "value": 1.71,
-          "errorPositive": 0.015,
-          "errorNegative": 0.015,
-          "usedInAverage": false
-        },
-        {
-          "year": 1972,
-          "publication": "PL 39B 668",
-          "doi": "10.1016/0370-2693(72)90026-3",
-          "inspireId": "75745",
-          "technique": "MMS",
-          "comment": "11-16 K- p",
-          "value": 1.767,
-          "errorPositive": 0.006,
-          "errorNegative": 0.006,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
       "id": "K(2)(1770)~0",
       "aliases": [],
       "jp": {
@@ -8754,114 +9361,95 @@
       ]
     },
     {
-      "id": "K(3)*(1780)0",
+      "id": "K(2)(1770)0",
       "aliases": [],
       "jp": {
-        "j": 3,
+        "j": 2,
         "p": -1
       },
-      "mass": 1.778948,
-      "width": 0.161232,
+      "mass": 1.773025,
+      "width": 0.186133,
       "status": "pdg",
-      "tex": "K_{3}^{*}(1780)^{0}",
+      "tex": "K_{2}(1770)^{0}",
       "decayModes": [],
-      "mass_error": 0.007683,
-      "width_error": 0.017232,
+      "mass_error": 0.007974,
+      "width_error": 0.013971,
       "measurements": [
         {
-          "year": 2020,
-          "publication": "PR D101 032008",
-          "doi": "10.1103/PhysRevD.101.032008",
-          "inspireId": "1771616",
-          "technique": "BES3",
-          "comment": "psi(2S) --> K+ K- eta",
-          "value": 1.813,
-          "errorPositive": 0.066708,
-          "errorNegative": 0.021932,
-          "statError": 0.015,
-          "systError": 0.065,
+          "year": 2017,
+          "publication": "PRL 118 022003",
+          "doi": "10.1103/PhysRevLett.118.022003",
+          "inspireId": "1472310",
+          "technique": "LHCB",
+          "comment": "B+ --> J/psi phi K+",
+          "value": 1.777,
+          "errorPositive": 0.126921,
+          "errorNegative": 0.084581,
+          "statError": 0.035,
+          "systError": 0.122,
           "usedInAverage": true
         },
         {
-          "year": 1988,
-          "publication": "NP B296 493",
-          "doi": "10.1016/0550-3213(88)90028-4",
-          "inspireId": "247143",
+          "year": 1993,
+          "publication": "PL B308 186",
+          "doi": "10.1016/0370-2693(93)90620-W",
+          "inspireId": "353027",
           "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 1.781,
-          "errorPositive": 0.008944,
-          "errorNegative": 0.008944,
-          "statError": 0.008,
-          "systError": 0.004,
+          "comment": "11K- p --> K- omega p",
+          "value": 1.773,
+          "errorPositive": 0.008,
+          "errorNegative": 0.008,
           "usedInAverage": true
         },
         {
-          "year": 1987,
-          "publication": "NP B292 693",
-          "doi": "10.1016/0550-3213(87)90665-1",
-          "inspireId": "236088",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.74,
-          "errorPositive": 0.020518,
-          "errorNegative": 0.020518,
-          "statError": 0.014,
-          "systError": 0.015,
-          "usedInAverage": true
-        },
-        {
-          "year": 1976,
-          "publication": "PL 63B 344",
-          "doi": "10.1016/0370-2693(76)90279-3",
-          "inspireId": "115724",
+          "year": 2003,
+          "publication": "PAN 66 828",
+          "doi": "10.1134/1.1576456",
+          "inspireId": "624572",
           "technique": "SPEC",
-          "comment": "10 K+ p --> K0 pi+ p",
-          "value": 1.779,
-          "errorPositive": 0.011,
-          "errorNegative": 0.011,
-          "usedInAverage": true
+          "comment": "40.0 pi-  ^C --> KS KS KL X",
+          "value": 1.743,
+          "errorPositive": 0.015,
+          "errorNegative": 0.015,
+          "usedInAverage": false
         },
         {
-          "year": 1976,
-          "publication": "PL 60B 478",
-          "doi": "10.1016/0370-2693(76)90711-5",
-          "inspireId": "100731",
-          "technique": "ASPK",
-          "comment": "13 K+- p --> K+- pi-+ N",
-          "value": 1.776,
-          "errorPositive": 0.026,
-          "errorNegative": 0.026,
-          "usedInAverage": true
+          "year": 1986,
+          "publication": "NP B276 667",
+          "doi": "10.1016/0550-3213(86)90071-4",
+          "inspireId": "216508",
+          "technique": "OMEG",
+          "comment": "13 K+ p --> phi K+ p",
+          "value": 1.81,
+          "errorPositive": 0.02,
+          "errorNegative": 0.02,
+          "usedInAverage": false
         },
         {
-          "year": 1989,
-          "publication": "SLAC-332",
-          "doi": "",
-          "inspireId": "265820",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi- p",
-          "value": 1.72,
-          "errorPositive": 0.018028,
-          "errorNegative": 0.018028,
-          "statError": 0.01,
-          "systError": 0.015,
+          "year": 1974,
+          "publication": "PL 51B 413",
+          "doi": "10.1016/0370-2693(74)90241-X",
+          "inspireId": "90154",
+          "technique": "HBC",
+          "comment": "7.3 K- p --> K- omega p",
+          "value": 1.71,
+          "errorPositive": 0.015,
+          "errorNegative": 0.015,
+          "usedInAverage": false
+        },
+        {
+          "year": 1972,
+          "publication": "PL 39B 668",
+          "doi": "10.1016/0370-2693(72)90026-3",
+          "inspireId": "75745",
+          "technique": "MMS",
+          "comment": "11-16 K- p",
+          "value": 1.767,
+          "errorPositive": 0.006,
+          "errorNegative": 0.006,
           "usedInAverage": false
         }
       ]
-    },
-    {
-      "id": "K(3)*(1780)~0",
-      "aliases": [],
-      "jp": {
-        "j": 3,
-        "p": -1
-      },
-      "mass": 1.779,
-      "width": 0.161,
-      "status": "pdg",
-      "tex": "\\overline{K}_{3}^{*}(1780)^{0}",
-      "decayModes": []
     },
     {
       "id": "K(3)*(1780)+",
@@ -9069,102 +9657,114 @@
       ]
     },
     {
-      "id": "pi(1800)0",
+      "id": "K(3)*(1780)0",
       "aliases": [],
       "jp": {
-        "j": 0,
+        "j": 3,
         "p": -1
       },
-      "mass": 1.810133,
-      "width": 0.215192,
+      "mass": 1.778948,
+      "width": 0.161232,
       "status": "pdg",
-      "tex": "\\pi(1800)^{0}",
+      "tex": "K_{3}^{*}(1780)^{0}",
       "decayModes": [],
-      "c": 1,
+      "mass_error": 0.007683,
+      "width_error": 0.017232,
       "measurements": [
         {
-          "year": 2018,
-          "publication": "PR D98 092003",
-          "doi": "10.1103/PhysRevD.98.092003",
-          "inspireId": "1655631",
-          "technique": "COMP",
-          "comment": "190 pi- p --> pi- pi+ pi- p",
-          "value": 1.804,
-          "errorPositive": 0.006,
-          "errorNegative": 0.009,
+          "year": 2020,
+          "publication": "PR D101 032008",
+          "doi": "10.1103/PhysRevD.101.032008",
+          "inspireId": "1771616",
+          "technique": "BES3",
+          "comment": "psi(2S) --> K+ K- eta",
+          "value": 1.813,
+          "errorPositive": 0.066708,
+          "errorNegative": 0.021932,
+          "statError": 0.015,
+          "systError": 0.065,
           "usedInAverage": true
         },
         {
-          "year": 2008,
-          "publication": "PL B660 466",
-          "doi": "10.1016/j.physletb.2008.01.026",
-          "inspireId": "782167",
-          "technique": "B852",
-          "comment": "18 pi- p --> eta eta pi- p",
-          "value": 1.876,
-          "errorPositive": 0.024083,
-          "errorNegative": 0.024083,
-          "statError": 0.018,
-          "systError": 0.016,
+          "year": 1988,
+          "publication": "NP B296 493",
+          "doi": "10.1016/0550-3213(88)90028-4",
+          "inspireId": "247143",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 1.781,
+          "errorPositive": 0.008944,
+          "errorNegative": 0.008944,
+          "statError": 0.008,
+          "systError": 0.004,
           "usedInAverage": true
         },
         {
-          "year": 2002,
-          "publication": "PR D65 072001",
-          "doi": "10.1103/PhysRevD.65.072001",
-          "inspireId": "584469",
-          "technique": "B852",
-          "comment": "18.3 pi- p --> pi+ pi- pi- p",
-          "value": 1.774,
-          "errorPositive": 0.026907,
-          "errorNegative": 0.026907,
-          "statError": 0.018,
-          "systError": 0.02,
+          "year": 1987,
+          "publication": "NP B292 693",
+          "doi": "10.1016/0550-3213(87)90665-1",
+          "inspireId": "236088",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi+ pi- n",
+          "value": 1.74,
+          "errorPositive": 0.020518,
+          "errorNegative": 0.020518,
+          "statError": 0.014,
+          "systError": 0.015,
           "usedInAverage": true
         },
         {
-          "year": 2002,
-          "publication": "PR D65 072001",
-          "doi": "10.1103/PhysRevD.65.072001",
-          "inspireId": "584469",
-          "technique": "B852",
-          "comment": "18.3 pi- p --> pi+ pi- pi- p",
-          "value": 1.863,
-          "errorPositive": 0.013454,
-          "errorNegative": 0.013454,
-          "statError": 0.009,
-          "systError": 0.01,
+          "year": 1976,
+          "publication": "PL 63B 344",
+          "doi": "10.1016/0370-2693(76)90279-3",
+          "inspireId": "115724",
+          "technique": "SPEC",
+          "comment": "10 K+ p --> K0 pi+ p",
+          "value": 1.779,
+          "errorPositive": 0.011,
+          "errorNegative": 0.011,
           "usedInAverage": true
         },
         {
-          "year": 1996,
-          "publication": "PAN 59 976",
+          "year": 1976,
+          "publication": "PL 60B 478",
+          "doi": "10.1016/0370-2693(76)90711-5",
+          "inspireId": "100731",
+          "technique": "ASPK",
+          "comment": "13 K+- p --> K+- pi-+ N",
+          "value": 1.776,
+          "errorPositive": 0.026,
+          "errorNegative": 0.026,
+          "usedInAverage": true
+        },
+        {
+          "year": 1989,
+          "publication": "SLAC-332",
           "doi": "",
-          "inspireId": "406489",
-          "technique": "VES",
-          "comment": "37 pi- A --> eta eta pi- A",
-          "value": 1.84,
-          "errorPositive": 0.014142,
-          "errorNegative": 0.014142,
+          "inspireId": "265820",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi- p",
+          "value": 1.72,
+          "errorPositive": 0.018028,
+          "errorNegative": 0.018028,
           "statError": 0.01,
-          "systError": 0.01,
-          "usedInAverage": true
-        },
-        {
-          "year": 1995,
-          "publication": "PL B356 595",
-          "doi": "10.1016/0370-2693(95)00864-H",
-          "inspireId": "404906",
-          "technique": "VES",
-          "comment": "36 pi- A --> pi+ pi- pi- A",
-          "value": 1.775,
-          "errorPositive": 0.012207,
-          "errorNegative": 0.012207,
-          "statError": 0.007,
-          "systError": 0.01,
-          "usedInAverage": true
+          "systError": 0.015,
+          "usedInAverage": false
         }
       ]
+    },
+    {
+      "id": "K(3)*(1780)~0",
+      "aliases": [],
+      "jp": {
+        "j": 3,
+        "p": -1
+      },
+      "mass": 1.779,
+      "width": 0.161,
+      "status": "pdg",
+      "tex": "\\overline{K}_{3}^{*}(1780)^{0}",
+      "decayModes": []
     },
     {
       "id": "pi(1800)+",
@@ -9361,44 +9961,99 @@
       ]
     },
     {
-      "id": "K(2)(1820)0",
+      "id": "pi(1800)0",
       "aliases": [],
       "jp": {
-        "j": 2,
+        "j": 0,
         "p": -1
       },
-      "mass": 1.81915,
-      "width": 0.264169,
+      "mass": 1.810133,
+      "width": 0.215192,
       "status": "pdg",
-      "tex": "K_{2}(1820)^{0}",
+      "tex": "\\pi(1800)^{0}",
       "decayModes": [],
-      "mass_error": 0.01227,
-      "width_error": 0.033748,
+      "c": 1,
       "measurements": [
         {
-          "year": 2017,
-          "publication": "PRL 118 022003",
-          "doi": "10.1103/PhysRevLett.118.022003",
-          "inspireId": "1472310",
-          "technique": "LHCB",
-          "comment": "B+ --> J/psi phi K+",
-          "value": 1.853,
-          "errorPositive": 0.03245,
-          "errorNegative": 0.044204,
-          "statError": 0.027,
-          "systError": 0.018,
+          "year": 2018,
+          "publication": "PR D98 092003",
+          "doi": "10.1103/PhysRevD.98.092003",
+          "inspireId": "1655631",
+          "technique": "COMP",
+          "comment": "190 pi- p --> pi- pi+ pi- p",
+          "value": 1.804,
+          "errorPositive": 0.006,
+          "errorNegative": 0.009,
           "usedInAverage": true
         },
         {
-          "year": 1993,
-          "publication": "PL B308 186",
-          "doi": "10.1016/0370-2693(93)90620-W",
-          "inspireId": "353027",
-          "technique": "LASS",
-          "comment": "11K- p --> K- omega p",
-          "value": 1.816,
-          "errorPositive": 0.013,
-          "errorNegative": 0.013,
+          "year": 2008,
+          "publication": "PL B660 466",
+          "doi": "10.1016/j.physletb.2008.01.026",
+          "inspireId": "782167",
+          "technique": "B852",
+          "comment": "18 pi- p --> eta eta pi- p",
+          "value": 1.876,
+          "errorPositive": 0.024083,
+          "errorNegative": 0.024083,
+          "statError": 0.018,
+          "systError": 0.016,
+          "usedInAverage": true
+        },
+        {
+          "year": 2002,
+          "publication": "PR D65 072001",
+          "doi": "10.1103/PhysRevD.65.072001",
+          "inspireId": "584469",
+          "technique": "B852",
+          "comment": "18.3 pi- p --> pi+ pi- pi- p",
+          "value": 1.774,
+          "errorPositive": 0.026907,
+          "errorNegative": 0.026907,
+          "statError": 0.018,
+          "systError": 0.02,
+          "usedInAverage": true
+        },
+        {
+          "year": 2002,
+          "publication": "PR D65 072001",
+          "doi": "10.1103/PhysRevD.65.072001",
+          "inspireId": "584469",
+          "technique": "B852",
+          "comment": "18.3 pi- p --> pi+ pi- pi- p",
+          "value": 1.863,
+          "errorPositive": 0.013454,
+          "errorNegative": 0.013454,
+          "statError": 0.009,
+          "systError": 0.01,
+          "usedInAverage": true
+        },
+        {
+          "year": 1996,
+          "publication": "PAN 59 976",
+          "doi": "",
+          "inspireId": "406489",
+          "technique": "VES",
+          "comment": "37 pi- A --> eta eta pi- A",
+          "value": 1.84,
+          "errorPositive": 0.014142,
+          "errorNegative": 0.014142,
+          "statError": 0.01,
+          "systError": 0.01,
+          "usedInAverage": true
+        },
+        {
+          "year": 1995,
+          "publication": "PL B356 595",
+          "doi": "10.1016/0370-2693(95)00864-H",
+          "inspireId": "404906",
+          "technique": "VES",
+          "comment": "36 pi- A --> pi+ pi- pi- A",
+          "value": 1.775,
+          "errorPositive": 0.012207,
+          "errorNegative": 0.012207,
+          "statError": 0.007,
+          "systError": 0.01,
           "usedInAverage": true
         }
       ]
@@ -9472,6 +10127,49 @@
       "width": 0.264169,
       "status": "pdg",
       "tex": "K_{2}(1820)^{-}",
+      "decayModes": [],
+      "mass_error": 0.01227,
+      "width_error": 0.033748,
+      "measurements": [
+        {
+          "year": 2017,
+          "publication": "PRL 118 022003",
+          "doi": "10.1103/PhysRevLett.118.022003",
+          "inspireId": "1472310",
+          "technique": "LHCB",
+          "comment": "B+ --> J/psi phi K+",
+          "value": 1.853,
+          "errorPositive": 0.03245,
+          "errorNegative": 0.044204,
+          "statError": 0.027,
+          "systError": 0.018,
+          "usedInAverage": true
+        },
+        {
+          "year": 1993,
+          "publication": "PL B308 186",
+          "doi": "10.1016/0370-2693(93)90620-W",
+          "inspireId": "353027",
+          "technique": "LASS",
+          "comment": "11K- p --> K- omega p",
+          "value": 1.816,
+          "errorPositive": 0.013,
+          "errorNegative": 0.013,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
+      "id": "K(2)(1820)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 1.81915,
+      "width": 0.264169,
+      "status": "pdg",
+      "tex": "K_{2}(1820)^{0}",
       "decayModes": [],
       "mass_error": 0.01227,
       "width_error": 0.033748,
@@ -9654,6 +10352,45 @@
       ]
     },
     {
+      "id": "Delta(1900)-",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.86,
+      "width": 0.25,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.06
+    },
+    {
+      "id": "Delta(1900)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.86,
+      "width": 0.25,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.06
+    },
+    {
+      "id": "D~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": -1
+      },
+      "mass": 1.86484,
+      "width": 0.0,
+      "status": "pdg",
+      "tex": "\\overline{D}^{0}",
+      "decayModes": []
+    },
+    {
       "id": "D0",
       "aliases": [],
       "jp": {
@@ -9752,19 +10489,6 @@
           "usedInAverage": false
         }
       ]
-    },
-    {
-      "id": "D~0",
-      "aliases": [],
-      "jp": {
-        "j": 0,
-        "p": -1
-      },
-      "mass": 1.86484,
-      "width": 0.0,
-      "status": "pdg",
-      "tex": "\\overline{D}^{0}",
-      "decayModes": []
     },
     {
       "id": "D+",
@@ -9961,6 +10685,136 @@
       ]
     },
     {
+      "id": "N(1875)+",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 1.875,
+      "width": 0.2,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.045
+    },
+    {
+      "id": "N(1875)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 1.875,
+      "width": 0.2,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.045
+    },
+    {
+      "id": "Delta(1905)-",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 1.88,
+      "width": 0.33,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.03
+    },
+    {
+      "id": "Delta(1905)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": 1
+      },
+      "mass": 1.88,
+      "width": 0.33,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.03
+    },
+    {
+      "id": "N(1880)+",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 1.88,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "N(1880)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 1.88,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "N(1895)+",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.895,
+      "width": 0.12,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.025
+    },
+    {
+      "id": "N(1895)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": -1
+      },
+      "mass": 1.895,
+      "width": 0.12,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.025
+    },
+    {
+      "id": "Delta(1910)-",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 1.9,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "Delta(1910)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 1.9,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
       "id": "rho(1900)",
       "aliases": [
         "rho1900"
@@ -9982,6 +10836,84 @@
           "partial": true
         }
       ]
+    },
+    {
+      "id": "Delta(1920)-",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.92,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "Delta(1920)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.92,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "N(1900)+",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.92,
+      "width": 0.2,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.03
+    },
+    {
+      "id": "N(1900)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": 1
+      },
+      "mass": 1.92,
+      "width": 0.2,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.03
+    },
+    {
+      "id": "Delta(1950)-",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": 1
+      },
+      "mass": 1.93,
+      "width": 0.285,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.02
+    },
+    {
+      "id": "Delta(1950)0",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": 1
+      },
+      "mass": 1.93,
+      "width": 0.285,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.02
     },
     {
       "id": "f(2)(1950)",
@@ -10074,87 +11006,30 @@
       ]
     },
     {
-      "id": "K(0)*(1950)0",
+      "id": "Delta(1930)-",
       "aliases": [],
       "jp": {
-        "j": 0,
-        "p": 1
+        "j": 2.5,
+        "p": -1
       },
-      "mass": 1.957221,
-      "width": 0.172247,
+      "mass": 1.95,
+      "width": 0.3,
       "status": "pdg",
-      "tex": "K_{0}^{*}(1950)^{0}",
       "decayModes": [],
-      "mass_error": 0.01432,
-      "width_error": 0.049978,
-      "measurements": [
-        {
-          "year": 2023,
-          "publication": "PR D108 032010",
-          "doi": "10.1103/PhysRevD.108.032010",
-          "inspireId": "2655326",
-          "technique": "LHCB",
-          "comment": "B+ --> K+ (K0S K pi)",
-          "value": 1.98,
-          "errorPositive": 0.023601,
-          "errorNegative": 0.023601,
-          "statError": 0.014,
-          "systError": 0.019,
-          "usedInAverage": true
-        },
-        {
-          "year": 2021,
-          "publication": "PR D104 072002",
-          "doi": "10.1103/PhysRevD.104.072002",
-          "inspireId": "1867843",
-          "technique": "BABR",
-          "comment": "gamma gamma --> eta_c(1S) --> eta^' K+ K-",
-          "value": 1.942,
-          "errorPositive": 0.030414,
-          "errorNegative": 0.030414,
-          "statError": 0.022,
-          "systError": 0.021,
-          "usedInAverage": true
-        },
-        {
-          "year": 1988,
-          "publication": "NP B296 493",
-          "doi": "10.1016/0550-3213(88)90028-4",
-          "inspireId": "247143",
-          "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 1.945,
-          "errorPositive": 0.022361,
-          "errorNegative": 0.022361,
-          "statError": 0.01,
-          "systError": 0.02,
-          "usedInAverage": true
-        },
-        {
-          "year": 2006,
-          "publication": "NP A775 212",
-          "doi": "10.1016/j.nuclphysa.2006.06.170",
-          "inspireId": "711935",
-          "technique": "RVUE",
-          "comment": "K p --> K- pi+ n",
-          "value": 1.917,
-          "errorPositive": 0.012,
-          "errorNegative": 0.012,
-          "usedInAverage": false
-        },
-        {
-          "year": 1997,
-          "publication": "PL B413 137",
-          "doi": "10.1016/S0370-2693(97)01089-7",
-          "inspireId": "443411",
-          "technique": "RVUE",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 1.82,
-          "errorPositive": 0.04,
-          "errorNegative": 0.04,
-          "usedInAverage": false
-        }
-      ]
+      "mass_error": 0.05
+    },
+    {
+      "id": "Delta(1930)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 1.95,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
     },
     {
       "id": "K(0)*(1950)~0",
@@ -10336,97 +11211,85 @@
       ]
     },
     {
-      "id": "a(4)(1970)0",
+      "id": "K(0)*(1950)0",
       "aliases": [],
       "jp": {
-        "j": 4,
+        "j": 0,
         "p": 1
       },
-      "mass": 1.967276,
-      "width": 0.323894,
+      "mass": 1.957221,
+      "width": 0.172247,
       "status": "pdg",
-      "tex": "a_{4}(1970)^{0}",
+      "tex": "K_{0}^{*}(1950)^{0}",
       "decayModes": [],
-      "mass_error": 0.015965,
-      "c": 1,
+      "mass_error": 0.01432,
+      "width_error": 0.049978,
       "measurements": [
         {
-          "year": 2018,
-          "publication": "PR D98 092003",
-          "doi": "10.1103/PhysRevD.98.092003",
-          "inspireId": "1655631",
-          "technique": "COMP",
-          "comment": "190 pi- p --> pi- pi+ pi- p",
-          "value": 1.935,
-          "errorPositive": 0.011,
-          "errorNegative": 0.013,
+          "year": 2023,
+          "publication": "PR D108 032010",
+          "doi": "10.1103/PhysRevD.108.032010",
+          "inspireId": "2655326",
+          "technique": "LHCB",
+          "comment": "B+ --> K+ (K0S K pi)",
+          "value": 1.98,
+          "errorPositive": 0.023601,
+          "errorNegative": 0.023601,
+          "statError": 0.014,
+          "systError": 0.019,
           "usedInAverage": true
         },
         {
-          "year": 2015,
-          "publication": "PL B740 303",
-          "doi": "10.1016/j.physletb.2014.11.058",
-          "inspireId": "1311486",
-          "technique": "COMP",
-          "comment": "191 pi- p --> eta^(')() pi- p",
-          "value": 1.9,
-          "errorPositive": 0.08,
-          "errorNegative": 0.02,
+          "year": 2021,
+          "publication": "PR D104 072002",
+          "doi": "10.1103/PhysRevD.104.072002",
+          "inspireId": "1867843",
+          "technique": "BABR",
+          "comment": "gamma gamma --> eta_c(1S) --> eta^' K+ K-",
+          "value": 1.942,
+          "errorPositive": 0.030414,
+          "errorNegative": 0.030414,
+          "statError": 0.022,
+          "systError": 0.021,
           "usedInAverage": true
         },
         {
-          "year": 2005,
-          "publication": "PRL 94 032002",
-          "doi": "10.1103/PhysRevLett.94.032002",
-          "inspireId": "650478",
-          "technique": "B852",
-          "comment": "18 pi- p --> omega pi- pi0 p",
-          "value": 1.985,
-          "errorPositive": 0.016401,
-          "errorNegative": 0.016401,
+          "year": 1988,
+          "publication": "NP B296 493",
+          "doi": "10.1016/0550-3213(88)90028-4",
+          "inspireId": "247143",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 1.945,
+          "errorPositive": 0.022361,
+          "errorNegative": 0.022361,
           "statError": 0.01,
-          "systError": 0.013,
+          "systError": 0.02,
           "usedInAverage": true
         },
         {
-          "year": 2002,
-          "publication": "PR D65 072001",
-          "doi": "10.1103/PhysRevD.65.072001",
-          "inspireId": "584469",
-          "technique": "B852",
-          "comment": "18.3 pi- p --> 3pi p",
-          "value": 1.996,
-          "errorPositive": 0.049739,
-          "errorNegative": 0.049739,
-          "statError": 0.025,
-          "systError": 0.043,
-          "usedInAverage": true
+          "year": 2006,
+          "publication": "NP A775 212",
+          "doi": "10.1016/j.nuclphysa.2006.06.170",
+          "inspireId": "711935",
+          "technique": "RVUE",
+          "comment": "K p --> K- pi+ n",
+          "value": 1.917,
+          "errorPositive": 0.012,
+          "errorNegative": 0.012,
+          "usedInAverage": false
         },
         {
-          "year": 2001,
-          "publication": "PRL 86 3977",
-          "doi": "10.1103/PhysRevLett.86.3977",
-          "inspireId": "552650",
-          "technique": "B852",
-          "comment": "18 pi- p --> eta^' pi- p",
-          "value": 2.0,
-          "errorPositive": 0.072111,
-          "errorNegative": 0.044721,
-          "statError": 0.04,
-          "systError": 0.06,
-          "usedInAverage": true
-        },
-        {
-          "year": 1996,
-          "publication": "PAN 59 982",
-          "doi": "",
-          "inspireId": "405713",
-          "technique": "GAM2",
-          "comment": "38 pi- p --> eta pi0 n",
-          "value": 2.01,
-          "errorPositive": 0.02,
-          "errorNegative": 0.02,
-          "usedInAverage": true
+          "year": 1997,
+          "publication": "PL B413 137",
+          "doi": "10.1016/S0370-2693(97)01089-7",
+          "inspireId": "443411",
+          "technique": "RVUE",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 1.82,
+          "errorPositive": 0.04,
+          "errorNegative": 0.04,
+          "usedInAverage": false
         }
       ]
     },
@@ -10619,6 +11482,101 @@
       ]
     },
     {
+      "id": "a(4)(1970)0",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 1.967276,
+      "width": 0.323894,
+      "status": "pdg",
+      "tex": "a_{4}(1970)^{0}",
+      "decayModes": [],
+      "mass_error": 0.015965,
+      "c": 1,
+      "measurements": [
+        {
+          "year": 2018,
+          "publication": "PR D98 092003",
+          "doi": "10.1103/PhysRevD.98.092003",
+          "inspireId": "1655631",
+          "technique": "COMP",
+          "comment": "190 pi- p --> pi- pi+ pi- p",
+          "value": 1.935,
+          "errorPositive": 0.011,
+          "errorNegative": 0.013,
+          "usedInAverage": true
+        },
+        {
+          "year": 2015,
+          "publication": "PL B740 303",
+          "doi": "10.1016/j.physletb.2014.11.058",
+          "inspireId": "1311486",
+          "technique": "COMP",
+          "comment": "191 pi- p --> eta^(')() pi- p",
+          "value": 1.9,
+          "errorPositive": 0.08,
+          "errorNegative": 0.02,
+          "usedInAverage": true
+        },
+        {
+          "year": 2005,
+          "publication": "PRL 94 032002",
+          "doi": "10.1103/PhysRevLett.94.032002",
+          "inspireId": "650478",
+          "technique": "B852",
+          "comment": "18 pi- p --> omega pi- pi0 p",
+          "value": 1.985,
+          "errorPositive": 0.016401,
+          "errorNegative": 0.016401,
+          "statError": 0.01,
+          "systError": 0.013,
+          "usedInAverage": true
+        },
+        {
+          "year": 2002,
+          "publication": "PR D65 072001",
+          "doi": "10.1103/PhysRevD.65.072001",
+          "inspireId": "584469",
+          "technique": "B852",
+          "comment": "18.3 pi- p --> 3pi p",
+          "value": 1.996,
+          "errorPositive": 0.049739,
+          "errorNegative": 0.049739,
+          "statError": 0.025,
+          "systError": 0.043,
+          "usedInAverage": true
+        },
+        {
+          "year": 2001,
+          "publication": "PRL 86 3977",
+          "doi": "10.1103/PhysRevLett.86.3977",
+          "inspireId": "552650",
+          "technique": "B852",
+          "comment": "18 pi- p --> eta^' pi- p",
+          "value": 2.0,
+          "errorPositive": 0.072111,
+          "errorNegative": 0.044721,
+          "statError": 0.04,
+          "systError": 0.06,
+          "usedInAverage": true
+        },
+        {
+          "year": 1996,
+          "publication": "PAN 59 982",
+          "doi": "",
+          "inspireId": "405713",
+          "technique": "GAM2",
+          "comment": "38 pi- p --> eta pi0 n",
+          "value": 2.01,
+          "errorPositive": 0.02,
+          "errorNegative": 0.02,
+          "usedInAverage": true
+        }
+      ]
+    },
+    {
       "id": "D(s)+",
       "aliases": [],
       "jp": {
@@ -10720,101 +11678,6 @@
           "value": 2.01,
           "errorPositive": 0.06,
           "errorNegative": 0.06,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
-      "id": "K(2)*(1980)0",
-      "aliases": [],
-      "jp": {
-        "j": 2,
-        "p": 1
-      },
-      "mass": 1.994462,
-      "width": 0.348034,
-      "status": "pdg",
-      "tex": "K_{2}^{*}(1980)^{0}",
-      "decayModes": [],
-      "measurements": [
-        {
-          "year": 2020,
-          "publication": "PR D101 032008",
-          "doi": "10.1103/PhysRevD.101.032008",
-          "inspireId": "1771616",
-          "technique": "BES3",
-          "comment": "psi(2S) --> K+ K- eta",
-          "value": 2.046,
-          "errorPositive": 0.069123,
-          "errorNegative": 0.021932,
-          "statError": 0.017,
-          "systError": 0.067,
-          "usedInAverage": true
-        },
-        {
-          "year": 2019,
-          "publication": "PR D100 032004",
-          "doi": "10.1103/PhysRevD.100.032004",
-          "inspireId": "1731057",
-          "technique": "BES",
-          "comment": "J/psi --> K+ K- pi0",
-          "value": 1.868,
-          "errorPositive": 0.040792,
-          "errorNegative": 0.057559,
-          "statError": 0.008,
-          "systError": 0.04,
-          "usedInAverage": true
-        },
-        {
-          "year": 1987,
-          "publication": "NP B292 693",
-          "doi": "10.1016/0550-3213(87)90665-1",
-          "inspireId": "236088",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi+ pi- n",
-          "value": 1.973,
-          "errorPositive": 0.026249,
-          "errorNegative": 0.026249,
-          "statError": 0.008,
-          "systError": 0.025,
-          "usedInAverage": true
-        },
-        {
-          "year": 2017,
-          "publication": "PRL 118 022003",
-          "doi": "10.1103/PhysRevLett.118.022003",
-          "inspireId": "1472310",
-          "technique": "LHCB",
-          "comment": "B+ --> J/psi phi K+",
-          "value": 2.073,
-          "errorPositive": 0.262414,
-          "errorNegative": 0.257752,
-          "statError": 0.094,
-          "systError": 0.245,
-          "usedInAverage": false
-        },
-        {
-          "year": 2003,
-          "publication": "PAN 66 828",
-          "doi": "10.1134/1.1576456",
-          "inspireId": "624572",
-          "technique": "SPEC",
-          "comment": "40.0 pi-  ^C --> KS KS KL X",
-          "value": 2.02,
-          "errorPositive": 0.02,
-          "errorNegative": 0.02,
-          "usedInAverage": false
-        },
-        {
-          "year": 1989,
-          "publication": "SLAC-332",
-          "doi": "",
-          "inspireId": "265820",
-          "technique": "LASS",
-          "comment": "11 K- p --> Kbar0 pi- p",
-          "value": 1.978,
-          "errorPositive": 0.04,
-          "errorNegative": 0.04,
           "usedInAverage": false
         }
       ]
@@ -11026,6 +11889,127 @@
       ]
     },
     {
+      "id": "K(2)*(1980)0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 1.994462,
+      "width": 0.348034,
+      "status": "pdg",
+      "tex": "K_{2}^{*}(1980)^{0}",
+      "decayModes": [],
+      "measurements": [
+        {
+          "year": 2020,
+          "publication": "PR D101 032008",
+          "doi": "10.1103/PhysRevD.101.032008",
+          "inspireId": "1771616",
+          "technique": "BES3",
+          "comment": "psi(2S) --> K+ K- eta",
+          "value": 2.046,
+          "errorPositive": 0.069123,
+          "errorNegative": 0.021932,
+          "statError": 0.017,
+          "systError": 0.067,
+          "usedInAverage": true
+        },
+        {
+          "year": 2019,
+          "publication": "PR D100 032004",
+          "doi": "10.1103/PhysRevD.100.032004",
+          "inspireId": "1731057",
+          "technique": "BES",
+          "comment": "J/psi --> K+ K- pi0",
+          "value": 1.868,
+          "errorPositive": 0.040792,
+          "errorNegative": 0.057559,
+          "statError": 0.008,
+          "systError": 0.04,
+          "usedInAverage": true
+        },
+        {
+          "year": 1987,
+          "publication": "NP B292 693",
+          "doi": "10.1016/0550-3213(87)90665-1",
+          "inspireId": "236088",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi+ pi- n",
+          "value": 1.973,
+          "errorPositive": 0.026249,
+          "errorNegative": 0.026249,
+          "statError": 0.008,
+          "systError": 0.025,
+          "usedInAverage": true
+        },
+        {
+          "year": 2017,
+          "publication": "PRL 118 022003",
+          "doi": "10.1103/PhysRevLett.118.022003",
+          "inspireId": "1472310",
+          "technique": "LHCB",
+          "comment": "B+ --> J/psi phi K+",
+          "value": 2.073,
+          "errorPositive": 0.262414,
+          "errorNegative": 0.257752,
+          "statError": 0.094,
+          "systError": 0.245,
+          "usedInAverage": false
+        },
+        {
+          "year": 2003,
+          "publication": "PAN 66 828",
+          "doi": "10.1134/1.1576456",
+          "inspireId": "624572",
+          "technique": "SPEC",
+          "comment": "40.0 pi-  ^C --> KS KS KL X",
+          "value": 2.02,
+          "errorPositive": 0.02,
+          "errorNegative": 0.02,
+          "usedInAverage": false
+        },
+        {
+          "year": 1989,
+          "publication": "SLAC-332",
+          "doi": "",
+          "inspireId": "265820",
+          "technique": "LASS",
+          "comment": "11 K- p --> Kbar0 pi- p",
+          "value": 1.978,
+          "errorPositive": 0.04,
+          "errorNegative": 0.04,
+          "usedInAverage": false
+        }
+      ]
+    },
+    {
+      "id": "Delta(1940)-",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 2.0,
+      "width": 0.4,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.06
+    },
+    {
+      "id": "Delta(1940)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 2.0,
+      "width": 0.4,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.06
+    },
+    {
       "id": "D*(2007)0",
       "aliases": [],
       "jp": {
@@ -11065,6 +12049,88 @@
       "status": "pdg",
       "tex": "\\overline{D}^{*}(2007)^{0}",
       "decayModes": []
+    },
+    {
+      "id": "D*(2010)+",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.010268,
+      "width": 8.3e-05,
+      "status": "pdg",
+      "tex": "D^{*}(2010)^{+}",
+      "decayModes": [],
+      "mass_error": 4.4e-05,
+      "width_error": 2e-06,
+      "measurements": [
+        {
+          "year": 1977,
+          "publication": "PL 69B 503",
+          "doi": "10.1016/0370-2693(77)90855-3",
+          "inspireId": "120144",
+          "technique": "MRK1",
+          "comment": "e+ e-",
+          "value": 2.008,
+          "errorPositive": 0.003,
+          "errorNegative": 0.003,
+          "usedInAverage": false
+        },
+        {
+          "year": 1977,
+          "publication": "PRL 39 1301",
+          "doi": "10.1103/PhysRevLett.39.1301",
+          "inspireId": "120878",
+          "technique": "LGW",
+          "comment": "e+ e-",
+          "value": 2.0086,
+          "errorPositive": 0.001,
+          "errorNegative": 0.001,
+          "usedInAverage": false
+        }
+      ]
+    },
+    {
+      "id": "D*(2010)-",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.010268,
+      "width": 8.3e-05,
+      "status": "pdg",
+      "tex": "D^{*}(2010)^{-}",
+      "decayModes": [],
+      "mass_error": 4.4e-05,
+      "width_error": 2e-06,
+      "measurements": [
+        {
+          "year": 1977,
+          "publication": "PL 69B 503",
+          "doi": "10.1016/0370-2693(77)90855-3",
+          "inspireId": "120144",
+          "technique": "MRK1",
+          "comment": "e+ e-",
+          "value": 2.008,
+          "errorPositive": 0.003,
+          "errorNegative": 0.003,
+          "usedInAverage": false
+        },
+        {
+          "year": 1977,
+          "publication": "PRL 39 1301",
+          "doi": "10.1103/PhysRevLett.39.1301",
+          "inspireId": "120878",
+          "technique": "LGW",
+          "comment": "e+ e-",
+          "value": 2.0086,
+          "errorPositive": 0.001,
+          "errorNegative": 0.001,
+          "usedInAverage": false
+        }
+      ]
     },
     {
       "id": "f(2)(2010)",
@@ -11153,88 +12219,6 @@
           "value": 2.05,
           "errorPositive": 0.09,
           "errorNegative": 0.05,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
-      "id": "D*(2010)+",
-      "aliases": [],
-      "jp": {
-        "j": 1,
-        "p": -1
-      },
-      "mass": 2.010268,
-      "width": 8.3e-05,
-      "status": "pdg",
-      "tex": "D^{*}(2010)^{+}",
-      "decayModes": [],
-      "mass_error": 4.4e-05,
-      "width_error": 2e-06,
-      "measurements": [
-        {
-          "year": 1977,
-          "publication": "PL 69B 503",
-          "doi": "10.1016/0370-2693(77)90855-3",
-          "inspireId": "120144",
-          "technique": "MRK1",
-          "comment": "e+ e-",
-          "value": 2.008,
-          "errorPositive": 0.003,
-          "errorNegative": 0.003,
-          "usedInAverage": false
-        },
-        {
-          "year": 1977,
-          "publication": "PRL 39 1301",
-          "doi": "10.1103/PhysRevLett.39.1301",
-          "inspireId": "120878",
-          "technique": "LGW",
-          "comment": "e+ e-",
-          "value": 2.0086,
-          "errorPositive": 0.001,
-          "errorNegative": 0.001,
-          "usedInAverage": false
-        }
-      ]
-    },
-    {
-      "id": "D*(2010)-",
-      "aliases": [],
-      "jp": {
-        "j": 1,
-        "p": -1
-      },
-      "mass": 2.010268,
-      "width": 8.3e-05,
-      "status": "pdg",
-      "tex": "D^{*}(2010)^{-}",
-      "decayModes": [],
-      "mass_error": 4.4e-05,
-      "width_error": 2e-06,
-      "measurements": [
-        {
-          "year": 1977,
-          "publication": "PL 69B 503",
-          "doi": "10.1016/0370-2693(77)90855-3",
-          "inspireId": "120144",
-          "technique": "MRK1",
-          "comment": "e+ e-",
-          "value": 2.008,
-          "errorPositive": 0.003,
-          "errorNegative": 0.003,
-          "usedInAverage": false
-        },
-        {
-          "year": 1977,
-          "publication": "PRL 39 1301",
-          "doi": "10.1103/PhysRevLett.39.1301",
-          "inspireId": "120878",
-          "technique": "LGW",
-          "comment": "e+ e-",
-          "value": 2.0086,
-          "errorPositive": 0.001,
-          "errorNegative": 0.001,
           "usedInAverage": false
         }
       ]
@@ -11330,95 +12314,30 @@
       ]
     },
     {
-      "id": "K(4)*(2045)0",
+      "id": "N(1990)+",
       "aliases": [],
       "jp": {
-        "j": 4,
+        "j": 3.5,
         "p": 1
       },
-      "mass": 2.048247,
-      "width": 0.199363,
+      "mass": 2.02,
+      "width": 0.3,
       "status": "pdg",
-      "tex": "K_{4}^{*}(2045)^{0}",
       "decayModes": [],
-      "measurements": [
-        {
-          "year": 2019,
-          "publication": "PR D100 032004",
-          "doi": "10.1103/PhysRevD.100.032004",
-          "inspireId": "1731057",
-          "technique": "BES",
-          "comment": "J/psi --> K+ K- pi0",
-          "value": 2.09,
-          "errorPositive": 0.014213,
-          "errorNegative": 0.030364,
-          "statError": 0.009,
-          "systError": 0.011,
-          "usedInAverage": true
-        },
-        {
-          "year": 1986,
-          "publication": "PL B180 308",
-          "doi": "10.1016/0370-2693(86)90316-3",
-          "inspireId": "231083",
-          "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 2.062,
-          "errorPositive": 0.019105,
-          "errorNegative": 0.019105,
-          "statError": 0.014,
-          "systError": 0.013,
-          "usedInAverage": true
-        },
-        {
-          "year": 1982,
-          "publication": "NP B208 189",
-          "doi": "10.1016/0550-3213(82)90114-6",
-          "inspireId": "184971",
-          "technique": "SPEC",
-          "comment": "50 K+ p --> K0S pi+- p",
-          "value": 2.039,
-          "errorPositive": 0.01,
-          "errorNegative": 0.01,
-          "usedInAverage": true
-        },
-        {
-          "year": 1981,
-          "publication": "PL 106B 235",
-          "doi": "10.1016/0370-2693(81)90915-1",
-          "inspireId": "165640",
-          "technique": "LASS",
-          "comment": "11 K- p --> K- pi+ n",
-          "value": 2.07,
-          "errorPositive": 0.1,
-          "errorNegative": 0.04,
-          "usedInAverage": true
-        },
-        {
-          "year": 1986,
-          "publication": "PR D34 707",
-          "doi": "10.1103/PhysRevD.34.707",
-          "inspireId": "217579",
-          "technique": "MPSF",
-          "comment": "400 p  ^A --> 4K X",
-          "value": 2.079,
-          "errorPositive": 0.007,
-          "errorNegative": 0.007,
-          "usedInAverage": false
-        },
-        {
-          "year": 1982,
-          "publication": "PL 118B 447",
-          "doi": "10.1016/0370-2693(82)90221-0",
-          "inspireId": "179090",
-          "technique": "HBC",
-          "comment": "8.25 K- p --> K0S pi- p",
-          "value": 2.088,
-          "errorPositive": 0.02,
-          "errorNegative": 0.02,
-          "usedInAverage": false
-        }
-      ]
+      "mass_error": 0.08
+    },
+    {
+      "id": "N(1990)0",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": 1
+      },
+      "mass": 2.02,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.08
     },
     {
       "id": "K(4)*(2045)~0",
@@ -11616,6 +12535,97 @@
       ]
     },
     {
+      "id": "K(4)*(2045)0",
+      "aliases": [],
+      "jp": {
+        "j": 4,
+        "p": 1
+      },
+      "mass": 2.048247,
+      "width": 0.199363,
+      "status": "pdg",
+      "tex": "K_{4}^{*}(2045)^{0}",
+      "decayModes": [],
+      "measurements": [
+        {
+          "year": 2019,
+          "publication": "PR D100 032004",
+          "doi": "10.1103/PhysRevD.100.032004",
+          "inspireId": "1731057",
+          "technique": "BES",
+          "comment": "J/psi --> K+ K- pi0",
+          "value": 2.09,
+          "errorPositive": 0.014213,
+          "errorNegative": 0.030364,
+          "statError": 0.009,
+          "systError": 0.011,
+          "usedInAverage": true
+        },
+        {
+          "year": 1986,
+          "publication": "PL B180 308",
+          "doi": "10.1016/0370-2693(86)90316-3",
+          "inspireId": "231083",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 2.062,
+          "errorPositive": 0.019105,
+          "errorNegative": 0.019105,
+          "statError": 0.014,
+          "systError": 0.013,
+          "usedInAverage": true
+        },
+        {
+          "year": 1982,
+          "publication": "NP B208 189",
+          "doi": "10.1016/0550-3213(82)90114-6",
+          "inspireId": "184971",
+          "technique": "SPEC",
+          "comment": "50 K+ p --> K0S pi+- p",
+          "value": 2.039,
+          "errorPositive": 0.01,
+          "errorNegative": 0.01,
+          "usedInAverage": true
+        },
+        {
+          "year": 1981,
+          "publication": "PL 106B 235",
+          "doi": "10.1016/0370-2693(81)90915-1",
+          "inspireId": "165640",
+          "technique": "LASS",
+          "comment": "11 K- p --> K- pi+ n",
+          "value": 2.07,
+          "errorPositive": 0.1,
+          "errorNegative": 0.04,
+          "usedInAverage": true
+        },
+        {
+          "year": 1986,
+          "publication": "PR D34 707",
+          "doi": "10.1103/PhysRevD.34.707",
+          "inspireId": "217579",
+          "technique": "MPSF",
+          "comment": "400 p  ^A --> 4K X",
+          "value": 2.079,
+          "errorPositive": 0.007,
+          "errorNegative": 0.007,
+          "usedInAverage": false
+        },
+        {
+          "year": 1982,
+          "publication": "PL 118B 447",
+          "doi": "10.1016/0370-2693(82)90221-0",
+          "inspireId": "179090",
+          "technique": "HBC",
+          "comment": "8.25 K- p --> K0S pi- p",
+          "value": 2.088,
+          "errorPositive": 0.02,
+          "errorNegative": 0.02,
+          "usedInAverage": false
+        }
+      ]
+    },
+    {
       "id": "K*(2100)",
       "aliases": [
         "K1_2100"
@@ -11629,6 +12639,58 @@
       "status": "seed",
       "tex": "K^{*}(2100)",
       "decayModes": []
+    },
+    {
+      "id": "N(2060)+",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 2.1,
+      "width": 0.4,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.1
+    },
+    {
+      "id": "N(2060)0",
+      "aliases": [],
+      "jp": {
+        "j": 2.5,
+        "p": -1
+      },
+      "mass": 2.1,
+      "width": 0.4,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.1
+    },
+    {
+      "id": "N(2100)+",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 2.1,
+      "width": 0.26,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "N(2100)0",
+      "aliases": [],
+      "jp": {
+        "j": 0.5,
+        "p": 1
+      },
+      "mass": 2.1,
+      "width": 0.26,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
     },
     {
       "id": "D(s)*+",
@@ -11655,6 +12717,32 @@
       "status": "pdg",
       "tex": "D_{s}^{*-}",
       "decayModes": []
+    },
+    {
+      "id": "N(2120)+",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 2.12,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.06
+    },
+    {
+      "id": "N(2120)0",
+      "aliases": [],
+      "jp": {
+        "j": 1.5,
+        "p": -1
+      },
+      "mass": 2.12,
+      "width": 0.3,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.06
     },
     {
       "id": "f(2)(2150)",
@@ -11754,6 +12842,32 @@
           "usedInAverage": false
         }
       ]
+    },
+    {
+      "id": "N(2190)+",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": -1
+      },
+      "mass": 2.18,
+      "width": 0.4,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.04
+    },
+    {
+      "id": "N(2190)0",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": -1
+      },
+      "mass": 2.18,
+      "width": 0.4,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.04
     },
     {
       "id": "omega(2220)",
@@ -11858,6 +12972,32 @@
       ]
     },
     {
+      "id": "Delta(2200)-",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": -1
+      },
+      "mass": 2.2,
+      "width": 0.35,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "Delta(2200)0",
+      "aliases": [],
+      "jp": {
+        "j": 3.5,
+        "p": -1
+      },
+      "mass": 2.2,
+      "width": 0.35,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
       "id": "K2(2250)",
       "aliases": [
         "K2_2250"
@@ -11871,6 +13011,58 @@
       "status": "seed",
       "tex": "K_{2}(2250)",
       "decayModes": []
+    },
+    {
+      "id": "N(2220)+",
+      "aliases": [],
+      "jp": {
+        "j": 4.5,
+        "p": 1
+      },
+      "mass": 2.25,
+      "width": 0.4,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "N(2220)0",
+      "aliases": [],
+      "jp": {
+        "j": 4.5,
+        "p": 1
+      },
+      "mass": 2.25,
+      "width": 0.4,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.05
+    },
+    {
+      "id": "N(2250)+",
+      "aliases": [],
+      "jp": {
+        "j": 4.5,
+        "p": -1
+      },
+      "mass": 2.28,
+      "width": 0.5,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.04
+    },
+    {
+      "id": "N(2250)0",
+      "aliases": [],
+      "jp": {
+        "j": 4.5,
+        "p": -1
+      },
+      "mass": 2.28,
+      "width": 0.5,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.04
     },
     {
       "id": "f(2)(2300)",
@@ -11992,6 +13184,19 @@
       "width": 0.01,
       "status": "pdg",
       "tex": "D_{s0}^{*}(2317)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "D(0)*(2300)~0",
+      "aliases": [],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 2.343,
+      "width": 0.229,
+      "status": "pdg",
+      "tex": "\\overline{D}_{0}^{*}(2300)^{0}",
       "decayModes": []
     },
     {
@@ -12298,19 +13503,6 @@
       ]
     },
     {
-      "id": "D(0)*(2300)~0",
-      "aliases": [],
-      "jp": {
-        "j": 0,
-        "p": 1
-      },
-      "mass": 2.343,
-      "width": 0.229,
-      "status": "pdg",
-      "tex": "\\overline{D}_{0}^{*}(2300)^{0}",
-      "decayModes": []
-    },
-    {
       "id": "f(2)(2340)",
       "aliases": [],
       "jp": {
@@ -12403,6 +13595,19 @@
       ]
     },
     {
+      "id": "D(1)(2430)~0",
+      "aliases": [],
+      "jp": {
+        "j": 1,
+        "p": 1
+      },
+      "mass": 2.412,
+      "width": 0.314,
+      "status": "pdg",
+      "tex": "\\overline{D}_{1}(2430)^{0}",
+      "decayModes": []
+    },
+    {
       "id": "D(1)(2430)0",
       "aliases": [],
       "jp": {
@@ -12458,19 +13663,6 @@
           "usedInAverage": false
         }
       ]
-    },
-    {
-      "id": "D(1)(2430)~0",
-      "aliases": [],
-      "jp": {
-        "j": 1,
-        "p": 1
-      },
-      "mass": 2.412,
-      "width": 0.314,
-      "status": "pdg",
-      "tex": "\\overline{D}_{1}(2430)^{0}",
-      "decayModes": []
     },
     {
       "id": "D(1)(2420)+",
@@ -12789,6 +13981,32 @@
       "decayModes": []
     },
     {
+      "id": "Delta(2420)-",
+      "aliases": [],
+      "jp": {
+        "j": 5.5,
+        "p": 1
+      },
+      "mass": 2.45,
+      "width": 0.5,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.15
+    },
+    {
+      "id": "Delta(2420)0",
+      "aliases": [],
+      "jp": {
+        "j": 5.5,
+        "p": 1
+      },
+      "mass": 2.45,
+      "width": 0.5,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.15
+    },
+    {
       "id": "D(s1)(2460)+",
       "aliases": [],
       "jp": {
@@ -12812,6 +14030,19 @@
       "width": 0.0063,
       "status": "pdg",
       "tex": "D_{s1}(2460)^{-}",
+      "decayModes": []
+    },
+    {
+      "id": "D(2)*(2460)~0",
+      "aliases": [],
+      "jp": {
+        "j": 2,
+        "p": 1
+      },
+      "mass": 2.4611,
+      "width": 0.0473,
+      "status": "pdg",
+      "tex": "\\overline{D}_{2}^{*}(2460)^{0}",
       "decayModes": []
     },
     {
@@ -13118,19 +14349,6 @@
       ]
     },
     {
-      "id": "D(2)*(2460)~0",
-      "aliases": [],
-      "jp": {
-        "j": 2,
-        "p": 1
-      },
-      "mass": 2.4611,
-      "width": 0.0473,
-      "status": "pdg",
-      "tex": "\\overline{D}_{2}^{*}(2460)^{0}",
-      "decayModes": []
-    },
-    {
       "id": "D(s1)(2536)+",
       "aliases": [],
       "jp": {
@@ -13181,6 +14399,32 @@
       "status": "pdg",
       "tex": "D_{s2}^{*}(2573)^{-}",
       "decayModes": []
+    },
+    {
+      "id": "N(2600)+",
+      "aliases": [],
+      "jp": {
+        "j": 5.5,
+        "p": -1
+      },
+      "mass": 2.6,
+      "width": 0.65,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.15
+    },
+    {
+      "id": "N(2600)0",
+      "aliases": [],
+      "jp": {
+        "j": 5.5,
+        "p": -1
+      },
+      "mass": 2.6,
+      "width": 0.65,
+      "status": "pdg",
+      "decayModes": [],
+      "mass_error": 0.15
     },
     {
       "id": "eta(c)(1S)",

@@ -31,6 +31,17 @@ export function hasDecayTo(entry: { decayModes?: { daughters: string[] }[] }, da
 /**
  * Enumerate allowed (J_R, P_R) for A -> R + B.
  *
+ * J_R lives on the 0.5 grid, not the integer grid: with a half-integer
+ * mother or spectator (nucleon resonances, hyperons, ...) the reachable
+ * J_R are half-integers. The triangle rule for three angular momenta is
+ *   |J_i - J_j| <= J_k <= J_i + J_j   AND   J_i + J_j + J_k integer,
+ * so the enumeration is done in doubled spins (twoJ = 2J) to stay exact:
+ *   - twoJ'' = 2(L ⊗ J_B) runs over |2L - 2J_B| .. 2L + 2J_B step 2;
+ *   - twoJ_R runs over 0 .. 2(J_A + J_B + maxL) step 1 (both integer and
+ *     half-integer candidates), kept only when twoJ_R + twoJ'' + twoJ_A
+ *     is even (the integer-sum / angular-momentum-coupling condition).
+ * Integer-spin inputs therefore still yield exactly the old integer set.
+ *
  * @param mother   particle A
  * @param daughter particle B (the non-resonant daughter)
  * @param maxL     maximum orbital momentum to consider. Analyses constrain
@@ -41,20 +52,29 @@ export function allowedIntermediateJP(
   daughter: Particle,
   maxL = 4,
 ): AllowedJP[] {
-  const jrMax = mother.j + daughter.j + maxL
+  const twoJa = Math.round(mother.j * 2)
+  const twoJb = Math.round(daughter.j * 2)
+  const twoJrMax = twoJa + twoJb + 2 * maxL
   const result: AllowedJP[] = []
-  for (let jr = 0; jr <= jrMax; jr++) {
+  // J_R on the 0.5 grid; parity selects which of them are realized by some L.
+  for (let twoJr = 0; twoJr <= twoJrMax; twoJr++) {
+    const jr = twoJr / 2
     // Same J_R can carry both parities via different L; collect per parity.
     for (const pr of [1, -1] as const) {
       const Ls: number[] = []
       for (let L = 0; L <= maxL; L++) {
-        // J'' = L ⊗ J_B takes values in [|L - jb|, L + jb]
-        const jppLo = Math.abs(L - daughter.j)
-        const jppHi = L + daughter.j
-        for (let jpp = jppLo; jpp <= jppHi; jpp++) {
-          const triangle = Math.abs(jr - jpp) <= mother.j && mother.j <= jr + jpp
-          const parity = mother.p * daughter.p * (L % 2 === 0 ? 1 : -1)
-          if (triangle && parity === pr) {
+        const twoL = 2 * L
+        // J'' = L ⊗ J_B takes values in [|L - jb|, L + jb].
+        const twoJppLo = Math.abs(twoL - twoJb)
+        const twoJppHi = twoL + twoJb
+        const parity = mother.p * daughter.p * (L % 2 === 0 ? 1 : -1)
+        if (parity !== pr) continue
+        for (let twoJpp = twoJppLo; twoJpp <= twoJppHi; twoJpp += 2) {
+          const couples =
+            Math.abs(twoJr - twoJpp) <= twoJa &&
+            twoJa <= twoJr + twoJpp &&
+            (twoJr + twoJpp + twoJa) % 2 === 0
+          if (couples) {
             Ls.push(L)
             break
           }

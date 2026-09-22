@@ -38,9 +38,26 @@ def to_pdg_name(name: str) -> str:
     return s
 
 
-def quantum_jp(name: str) -> tuple[int | float, int] | None:
+def parse_j(j_raw: str | None) -> float | None:
+    """J from a PDG quantum_j string: '0', '1', '3/2', '11/2', ..."""
+    if not j_raw:
+        return None
+    s = str(j_raw).strip()
+    if "/" in s:
+        num, _, den = s.partition("/")
+        try:
+            return float(num) / float(den)
+        except (TypeError, ValueError):
+            return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def quantum_jp(name: str) -> tuple[float, int] | None:
     """J, P from the sqlite quantum columns for the exact pdg name."""
-    con = sqlite3.connect(f"sqlite:///{DB}" if False else str(DB))
+    con = sqlite3.connect(str(DB))
     try:
         row = con.execute(
             "SELECT quantum_j, quantum_p FROM pdgparticle WHERE name=?", (name,)
@@ -48,13 +65,99 @@ def quantum_jp(name: str) -> tuple[int | float, int] | None:
         if not row:
             return None
         j_raw, p_raw = row
-        j = int(j_raw) if j_raw and j_raw.isdigit() else (
-            float(j_raw) if j_raw else None)
+        j = parse_j(j_raw)
         if j is None or not p_raw:
             return None
         return j, 1 if p_raw == "+" else -1
     finally:
         con.close()
+
+
+def property_gev(prop) -> tuple[float, float] | None:
+    """(value, error) in GeV from a PdgMass/PdgWidth property.
+
+    Baryon resonances are frequently quoted as a RANGE: ``value`` is None and
+    ``value_text`` looks like '150 to 250 to 400'. Fall back to the central
+    number of that range so half-integer-spin states still get a usable seed
+    mass/width (the meson sector has single summary values).
+    """
+    scale = 0.001 if "MeV" in (getattr(prop, "units", "") or "") else 1.0
+    value = getattr(prop, "value", None)
+    if value is None:
+        nums = re.findall(r"[-+]?\d*\.?\d+", getattr(prop, "value_text", "") or "")
+        if len(nums) >= 2:
+            value = float(nums[len(nums) // 2])  # central of 'a to b to c'
+    if value is None:
+        return None
+    err = max(
+        getattr(prop, "error_positive", None) or 0.0,
+        getattr(prop, "error_negative", None) or 0.0,
+    )
+    return float(value) * scale, float(err) * scale
+
+
+def discover_baryons(api) -> list[dict]:
+    """Seed entries for the N* / Delta* families (half-integer J).
+
+    The curated table historically covered the meson sector only, so any
+    analysis with a baryon in the final state (p pbar eta, K Lambda, ...)
+    could not propose an N* or Delta*: every half-integer-J candidate failed
+    the 'not-on-pdg' gate. Names, J and P come from the official PDG sqlite;
+    mass/width from the summary property (range central when the PDG quotes
+    a range). These entries are enriched like every other seed entry.
+    """
+    con = sqlite3.connect(str(DB))
+    try:
+        rows = con.execute(
+            "SELECT name, quantum_j, quantum_p FROM pdgparticle "
+            "WHERE (name LIKE 'N(%' OR name LIKE 'Delta(%') "
+            "AND quantum_j IS NOT NULL AND quantum_p IS NOT NULL"
+        ).fetchall()
+    finally:
+        con.close()
+    out: list[dict] = []
+    seen: set[str] = set()
+    for name, j_raw, p_raw in rows:
+        j = parse_j(j_raw)
+        if j is None or not p_raw or name in seen:
+            continue
+        seen.add(name)
+        entry: dict = {
+            "id": name,
+            "aliases": [],
+            "jp": {"j": int(j) if float(j).is_integer() else j, "p": 1 if p_raw == "+" else -1},
+            "mass": 0.0,
+            "width": 0.0,
+            "status": "pdg",
+            "decayModes": [],
+        }
+        try:
+            for cand in api.get_particles_by_name(name):
+                if cand.name != name:
+                    continue
+                for prop in cand.masses():
+                    got = property_gev(prop)
+                    if got:
+                        entry["mass"] = round(got[0], 6)
+                        if got[1]:
+                            entry["mass_error"] = round(got[1], 6)
+                        break
+                for prop in cand.widths():
+                    got = property_gev(prop)
+                    if got:
+                        entry["width"] = round(got[0], 6)
+                        if got[1]:
+                            entry["width_error"] = round(got[1], 6)
+                        break
+                break
+        except Exception:
+            pass
+        out.append(entry)
+    return out
+
+
+def normalize_seed_name(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def quantum_c(name: str) -> int | None:
@@ -137,6 +240,23 @@ def main() -> int:
     db_url = f"sqlite:///{DB}"
     api = PdgApi(db_url)
     seed = json.loads(OUT.read_text())["resonances"]
+
+    # Merge the baryon sector (idempotent): the curated table is meson-only, so
+    # without this every N*/Delta* proposal is rejected as 'not-on-pdg'.
+    known = {normalize_seed_name(e["id"]) for e in seed}
+    for e in seed:
+        known.update(normalize_seed_name(a) for a in e.get("aliases", []))
+    added = 0
+    for b in discover_baryons(api):
+        if normalize_seed_name(b["id"]) in known:
+            continue
+        seed.append(b)
+        known.add(normalize_seed_name(b["id"]))
+        added += 1
+    if added:
+        print(f"[fetch_pdg] +{added} baryon seed entries (N*/Delta*, half-integer J)")
+    # Keep a stable, human-diffable order.
+    seed.sort(key=lambda e: (e.get("mass") or 0.0, e["id"]))
 
     n_hit = n_miss = 0
     for e in seed:

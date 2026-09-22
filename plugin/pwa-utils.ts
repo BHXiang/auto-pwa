@@ -118,11 +118,28 @@ export async function maybeSpill(
   content: string,
   fallback: unknown,
 ): Promise<SpillResult | unknown> {
-  if (content.length <= SPILL_THRESHOLD_BYTES || ctx.spillStore === undefined || exec.agent?.sessionId === undefined) {
+  // `spillStore` is an OPTIONAL service: read it opportunistically with
+  // ctx.get() (same convention as dsh-tool-fs-search / dsh-spill-policy).
+  // Declaring it in `inject` would make the whole plugin fail to load in a
+  // profile that does not mount a spill backend; touching `ctx.spillStore`
+  // directly throws "cannot get property spillStore without inject".
+  const spillStore = (
+    typeof ctx.get === 'function'
+      ? ctx.get('spillStore')
+      : // plain-object test fakes have no ctx.get()
+        (ctx as unknown as { spillStore?: unknown }).spillStore
+  ) as
+    | { saveText: (save: unknown) => Promise<{ locator: string; bytes: number; retrievalHint: string }> }
+    | undefined
+  if (
+    content.length <= SPILL_THRESHOLD_BYTES ||
+    spillStore === undefined ||
+    exec.agent?.sessionId === undefined
+  ) {
     return fallback
   }
   try {
-    const ref = await ctx.spillStore.saveText({
+    const ref = await spillStore.saveText({
       owner: { sessionId: exec.agent.sessionId },
       source: { toolName, callId: exec.rootCallId ?? 'unknown', label: 'result' },
       suggestedName: `${toolName}.txt`,

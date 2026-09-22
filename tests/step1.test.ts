@@ -301,12 +301,15 @@ describe('applyResonanceAddition + cross-reference', () => {
     expect(result.changed.length).toBeGreaterThanOrEqual(2)
     const rkk = result.config.decayChains.decay1.intermediates.R_KK
     expect(rkk.groups[0].names).toEqual(['phi1020', 'omega1420'])
+    // A newly added resonance carries NO J/P: ctpwa takes the quantum numbers
+    // from the intermediates [J,P] group. Stamping them would break the
+    // CP-conjugate case (the same state in a +P and a -P group).
     expect(result.config.resonances.omega1420).toMatchObject({
       model: 'BWR',
       parameters: [1.41, 0.29],
-      j: 1,
-      p: -1,
     })
+    expect(result.config.resonances.omega1420?.j).toBeUndefined()
+    expect(result.config.resonances.omega1420?.p).toBeUndefined()
   })
 
   it('creates a new [J,P] group when the target group is absent (appended, order kept)', () => {

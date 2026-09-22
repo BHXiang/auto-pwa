@@ -101,4 +101,11 @@ describe('lookupResonance by J^PC and lookupC', () => {
     expect(lookupC(defaultDb, 'K0')).toBeUndefined()
     expect(lookupC(defaultDb, 'nope')).toBeUndefined()
   })
+
+  it('lookupC knows the photon, which the resonance table does not carry', () => {
+    // C(gamma) = -1 makes the production-vertex C requirement of a radiative
+    // decay (A -> gamma + X) enforceable at all.
+    expect(lookupC(defaultDb, 'gamma')).toBe(-1)
+    expect(lookupC(defaultDb, 'photon')).toBe(-1)
+  })
 })

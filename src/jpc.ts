@@ -41,6 +41,21 @@ export function isFermion(j: number): boolean {
 }
 
 /**
+ * The explicit J^P written on a `Resonances:` entry — defined only when BOTH
+ * J and P are present.
+ *
+ * ctpwa treats a resonance-level J/P as optional (ConfigParser::parseResonances
+ * falls back to sentinels): when omitted, the [J,P] key of the intermediates
+ * group is authoritative. That is what makes CP-conjugate chains work — e.g.
+ * the same N* is 3/2+ in R_peta (N* → p η) and 3/2− in R_pbareta
+ * (N̄* → p̄ η) — so "no explicit J/P" must be a legal, non-conflicting state
+ * rather than a missing field to be filled in.
+ */
+export function explicitJp(spec: { j?: number; p?: 1 | -1 }): JP | undefined {
+  return spec.j !== undefined && spec.p !== undefined ? { j: spec.j, p: spec.p } : undefined
+}
+
+/**
  * Name key for pair classification: like normalizeName, but keeps the
  * antiparticle mark: '~' -> 'bar' and charge signs after a name character
  * -> 'p'/'m'. This avoids the normalizeName collision where "K0" and "K~0"
@@ -340,8 +355,13 @@ export function allowedIsobarJPC(
   return results
 }
 
+/** Label a J^P value, e.g. 1-, 0+, 3/2+ (no C). */
+export function jpLabel(jp: { j: number; p: 1 | -1 }): string {
+  return `${jp.j}${jp.p > 0 ? '+' : '-'}`
+}
+
 /** Label a J^PC value, e.g. 1--, 0++, 2+ (C undefined). */
 export function jpcLabel(jpc: { j: number; p: 1 | -1; c?: 1 | -1 }): string {
-  const base = `${jpc.j}${jpc.p > 0 ? '+' : '-'}`
+  const base = jpLabel(jpc)
   return jpc.c === undefined ? base : `${base}${jpc.c > 0 ? '+' : '-'}`
 }

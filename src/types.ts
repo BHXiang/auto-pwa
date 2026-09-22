@@ -199,8 +199,14 @@ export type ResonanceModel = 'BWR' | 'BW' | 'ONE' | 'Flatte'
 
 /** One entry of the config `Resonances:` section. */
 export interface ResonanceSpec {
-  j: number
-  p: 1 | -1
+  /** Explicit J — OPTIONAL, mirroring ctpwa ConfigParser::parseResonances:
+   * when omitted, the [J,P] key of the intermediates group governs the quantum
+   * numbers. Required for CP-conjugate pairs, where the same state appears
+   * with opposite parity in the two chains (e.g. N* → p η is 3/2+ while
+   * N̄* → p̄ η is 3/2−), so a single resonance-level J/P cannot describe it. */
+  j?: number
+  /** Explicit P — see {@link ResonanceSpec.j}; omit together with j. */
+  p?: 1 | -1
   model: ResonanceModel
   /** BWR/BW: [mass, width(, r)]; ONE: [mass] (placeholder, unused by amplitude); Flatte: [mass, g1, ...]. */
   parameters: number[]
@@ -323,6 +329,36 @@ export interface ResonanceProposal {
   /** Provenance (see ResonanceSpec.reference): parameters follow this
    * experiment/paper instead of the PDG average. */
   reference?: string
+}
+
+/** Detach (and optionally delete) a resonance — the inverse of an addition.
+ *
+ * Removal is NAME-level on purpose: a [J,P] group is left in place even when
+ * it becomes empty, because group order defines the amplitude-block indices
+ * that `Constraints.trans` refers to (appending a group is safe, deleting one
+ * would renumber everything after it). The `Resonances.<name>` definition is
+ * deleted only once nothing references it any more. */
+export interface ResonanceRemoval {
+  /** Resonance name as used in the groups / `Resonances:` section. */
+  name: string
+  /** Restrict to this intermediate (e.g. "R_KK"); omit = every chain. */
+  chain?: string
+  /** Restrict to this [J,P] group; omit = every group holding the name. */
+  jpGroup?: JP
+  /** Delete the `Resonances.<name>` definition when it becomes unreferenced.
+   * Default true; set false to keep the parameters for later re-attachment. */
+  dropDefinition?: boolean
+}
+
+/** Result of a removal dry-run (auto_pwa_remove_resonance / loop gates). */
+export interface RemovalValidation {
+  ok: boolean
+  errors: ValidationIssue[]
+  warnings: ValidationIssue[]
+  /** Detached occurrences, e.g. "chain1.R_KK [1-]". */
+  detached: string[]
+  /** Whether the Resonances entry itself will be deleted. */
+  definitionDropped: boolean
 }
 
 /** One structured finding from validation. */

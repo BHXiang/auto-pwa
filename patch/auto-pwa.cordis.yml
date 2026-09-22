@@ -13,7 +13,7 @@
 #                   完成通知自动唤醒下一轮、统一 job_output/job_kill）
 #   pwa-guard       config.yml 写文件单调 deny 门禁（无人硬规则）
 #   pwa-commands    /pwa-status 用户旁路观察
-#   auto-pwa        Consumer：14 个 auto_pwa_* 工具（run_fit/fit_status 走 ctx.pwaFit）
+#   auto-pwa        Consumer：24 个 auto_pwa_* 工具（run_fit/fit_status 走 ctx.pwaFit）
 #
 # 依赖 DSH base bundle 自带服务：jobs（dsh-jobs-local）、tools、commands、
 # spillStore（spill-local）。

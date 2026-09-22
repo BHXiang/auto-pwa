@@ -24,8 +24,17 @@ import { defaultDb } from '../src/db.js'
 import { lookupResonance, lookupC } from '../src/lookup.js'
 import { decayCheck } from '../src/decay-check.js'
 import { analyzeIntermediateJPC } from '../src/intermediate-jpc.js'
+import { explicitJp } from '../src/jpc.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
-import { parseConfig, applyResonanceAddition, dumpConfig, crossReferenceErrors, validateConfig } from '../src/config-edit.js'
+import {
+  parseConfig,
+  applyResonanceAddition,
+  applyResonanceRemoval,
+  validateResonanceRemoval,
+  dumpConfig,
+  crossReferenceErrors,
+  validateConfig,
+} from '../src/config-edit.js'
 import { suggestFree } from '../src/float-policy.js'
 import { defaultFitRunnerConfig } from '../src/fit-runner.js'
 import { summarizeFitDir, parseFitJson } from '../src/fit-summary.js'
@@ -51,7 +60,7 @@ import {
 } from '../src/loop-state.js'
 import type { IterationRecord } from '../src/report.js'
 import { spawnSync } from 'node:child_process'
-import type { JP, ResonanceProposal } from '../src/types.js'
+import type { JP, ResonanceProposal, ResonanceRemoval } from '../src/types.js'
 import { createUsageTracker, maybeSpill, type TokenTotals, type TokenUsageLike } from './pwa-utils.js'
 
 export const name = 'auto-pwa'
@@ -63,18 +72,25 @@ const text = (t: string) => [{ type: 'text' as const, text: t }]
  * Locate a bundled python script (auto_pwa_evaluate.py / root_view.py /
  * wave_view.py) from the plugin source layout or the compiled lib layout.
  *
- * - plugin/auto-pwa.ts  (source, run via tsx):  '../scripts/x.py' -> scripts/x.py ✓
- * - lib/plugin/auto-pwa.js (compiled, package): '../scripts/x.py' -> lib/scripts/x.py ✗,
- *   so also try '../../scripts/x.py' -> scripts/x.py ✓ (package root).
+ * - plugin/auto-pwa.ts   (source, run via tsx):  '../scripts/x.py' -> scripts/x.py ✓
+ * - lib/plugin/auto-pwa.js (compiled):          '../scripts/x.py' -> lib/scripts/x.py
+ *   (a STALE duplicate shipped in published tarballs), while '../../scripts/x.py'
+ *   is the package-root scripts/x.py ✓ — so any candidate under lib/scripts/ is
+ *   only a last resort and can never shadow the real script.
+ *
  * Resolution happens at call time, so creating the file at the returned path
  * fixes an already-loaded plugin process without a restart.
  */
 function bundledScriptPath(name: string): string {
-  const fromSource = new URL(`../scripts/${name}`, import.meta.url).pathname // plugin/ -> scripts/
-  const fromLib = new URL(`../../scripts/${name}`, import.meta.url).pathname // lib/plugin/ -> scripts/
-  if (existsSync(fromSource)) return fromSource
-  if (existsSync(fromLib)) return fromLib
-  return fromSource // best-effort; callers surface a clear "script not found"
+  const candidates = [
+    new URL(`../scripts/${name}`, import.meta.url).pathname, // plugin/ or lib/plugin/
+    new URL(`../../scripts/${name}`, import.meta.url).pathname, // lib/plugin/ -> package root
+  ]
+  return (
+    candidates.find((p) => !p.includes('/lib/scripts/') && existsSync(p)) ??
+    candidates.find((p) => existsSync(p)) ??
+    candidates[0]!
+  )
 }
 
 /** Map a tool execution's agent to a pwaFit owner (jobs session fence). */
@@ -112,6 +128,69 @@ const proposalParam = {
   description: '共振态添加提议（强约束：物理校验与 YAML 渲染均由程序完成）',
 } as const
 
+/** One resonance-removal item (auto_pwa_remove_resonance / round removals). */
+const removalParam = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string' as const, required: true, description: '要删除的共振态名（从 [J,P] 组摘除；组本身保留以维持 Constraints.trans 的振幅块索引）' },
+    chain: { type: 'string' as const, description: '限定 intermediate（如 R_peta）；省略 = 所有链' },
+    jpGroup: { ...jpParam, description: '限定 [J,P] 组；省略 = 所有含该名的组' },
+    dropDefinition: { type: 'boolean' as const, description: '已无任何组引用时是否删除 Resonances 定义（默认 true；false = 保留参数以便再挂回）' },
+  },
+  description: '共振态删除项',
+} as const
+
+const removalListParam = {
+  type: 'array' as const,
+  items: removalParam,
+  description: '要删除/摘除的共振态列表（显著性检查用：删掉份额不显著或撞边界的态，对比 ΔNLL）。与 proposal 同时给出时先删后加',
+} as const
+
+/**
+ * Apply validated removals and then an optional add-proposal to a parsed
+ * config (in place). Shared by the standalone removal tool and every
+ * iteration driver so removal and addition always go through the same gate.
+ */
+function applyRoundEdits(
+  cfg: Parameters<typeof applyResonanceAddition>[0],
+  removals: ResonanceRemoval[] | undefined,
+  proposal: ResonanceProposal | undefined,
+): { errors: { code: string; message: string }[]; warnings: { code: string; message: string }[]; changed: string[] } {
+  const errors: { code: string; message: string }[] = []
+  const warnings: { code: string; message: string }[] = []
+  const changed: string[] = []
+  for (const r of removals ?? []) {
+    const dry = validateResonanceRemoval(cfg, r)
+    warnings.push(...dry.warnings)
+    if (!dry.ok) {
+      errors.push(...dry.errors)
+      return { errors, warnings, changed }
+    }
+    const ap = applyResonanceRemoval(cfg, r)
+    if (ap.errors.length > 0) {
+      errors.push(...ap.errors)
+      return { errors, warnings, changed }
+    }
+    changed.push(...ap.changed)
+  }
+  if (proposal !== undefined) {
+    const v = validateResonanceAddition(defaultDb, cfg, proposal)
+    warnings.push(...v.warnings)
+    if (!v.ok) {
+      errors.push(...v.errors)
+      return { errors, warnings, changed }
+    }
+    const ap = applyResonanceAddition(cfg, proposal)
+    if (ap.errors.length > 0) {
+      errors.push(...ap.errors)
+      return { errors, warnings, changed }
+    }
+    changed.push(...ap.changed)
+  }
+  return { errors, warnings, changed }
+}
+
 export function apply(ctx: Context) {
   // 自注册 skill（npm bundle 安装后零手动配置）：把包内 SKILL.md 作为
   // runtime skill 注册进当前 context 的 skills 层（project > runtime > user，
@@ -120,8 +199,17 @@ export function apply(ctx: Context) {
   const skills = (ctx as { get?: (name: string) => unknown }).get?.('skills') as { register: (skill: unknown) => () => void } | undefined
   if (skills !== undefined) {
     try {
-      const skillPath = new URL('../skills/auto-pwa-analysis/SKILL.md', import.meta.url).pathname
-      if (existsSync(skillPath)) {
+      // Same layout rule as bundledScriptPath: the compiled layout's
+      // '../skills' lands on lib/skills/ (absent in published packages), so
+      // prefer the package-root skills/ copy.
+      const candidates = [
+        new URL('../skills/auto-pwa-analysis/SKILL.md', import.meta.url).pathname, // plugin/ or lib/plugin/
+        new URL('../../skills/auto-pwa-analysis/SKILL.md', import.meta.url).pathname, // lib/plugin/ -> package root
+      ]
+      const skillPath =
+        candidates.find((p) => !p.includes('/lib/skills/') && existsSync(p)) ??
+        candidates.find((p) => existsSync(p))
+      if (skillPath !== undefined) {
         const content = readFileSync(skillPath, 'utf8')
         const fm = /^---\n([\s\S]*?)\n---/.exec(content)
         const front = fm !== null ? fm[1] : ''
@@ -345,7 +433,18 @@ export function apply(ctx: Context) {
         allowed: r.allowed.map((a) => ({ jp: a.jp, L: a.L })),
         candidates: r.candidates.map((c) => ({
           jp: c.jp,
-          resonances: c.resonances.map((x) => ({ id: x.entry.id, mass: x.entry.mass, width: x.entry.width ?? null, decaysTo: x.decaysTo })),
+          resonances: c.resonances.map((x) => {
+            // `decaysTo` is only set when the caller passed decayTo; an own
+            // key holding undefined is rejected by the tool framework's
+            // lossless-JSON gate, so the key must be absent, not undefined.
+            const entry: { id: string; mass: number; width: number | null; decaysTo?: boolean } = {
+              id: x.entry.id,
+              mass: x.entry.mass,
+              width: x.entry.width ?? null,
+            }
+            if (x.decaysTo !== undefined) entry.decaysTo = x.decaysTo
+            return entry
+          }),
         })),
       }
     },
@@ -546,18 +645,29 @@ export function apply(ctx: Context) {
               }))
             allowed.push({ jpc: w.jpc, c: w.c, sl: w.sl, candidates })
           }
+          // Optional fields are omitted rather than set to undefined: the tool
+          // framework's lossless-JSON gate rejects own keys holding undefined,
+          // which is what emitted `production: undefined` for chain
+          // intermediates that have no production vertex.
+          const production: {
+            mother?: string
+            daughter?: string
+            threshold?: number
+            allowedJP: string[]
+            cRequired: 1 | -1 | null
+          } | undefined = ana.production
+            ? {
+                allowedJP: ana.production.allowedJP.map((a) => `${a.j}${a.p > 0 ? '+' : '-'}`),
+                cRequired: ana.production.cRequired ?? null,
+                ...(ana.production.mother !== undefined ? { mother: ana.production.mother } : {}),
+                ...(ana.production.daughter !== undefined ? { daughter: ana.production.daughter } : {}),
+                ...(ana.production.threshold !== undefined ? { threshold: ana.production.threshold } : {}),
+              }
+            : undefined
           intermediates.push({
             name: intName,
             chain: ana.chain,
-            production: ana.production
-              ? {
-                  mother: ana.production.mother,
-                  daughter: ana.production.daughter,
-                  threshold: ana.production.threshold,
-                  allowedJP: ana.production.allowedJP.map((a) => `${a.j}${a.p > 0 ? '+' : '-'}`),
-                  cRequired: ana.production.cRequired ?? null,
-                }
-              : undefined,
+            ...(production !== undefined ? { production } : {}),
             decaySteps: ana.decaySteps.map((s) => {
               const step: { daughters: string[]; identical: boolean; cDefined: boolean; sl?: [number, number][]; jpc: string[] } = {
                 daughters: s.daughters,
@@ -608,7 +718,29 @@ export function apply(ctx: Context) {
           resonances: { type: 'array', items: { type: 'object', additionalProperties: true } },
           kinematics: { type: 'array', items: { type: 'object', additionalProperties: true } },
           constraints: { type: 'object', additionalProperties: true },
-          validation: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' }, errors: { type: 'array', items: { type: 'object', additionalProperties: false } }, warnings: { type: 'array', items: { type: 'object', additionalProperties: false } } } },
+          validation: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              ok: { type: 'boolean' },
+              errors: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } },
+                },
+              },
+              warnings: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } },
+                },
+              },
+            },
+          },
           spilled: {
             type: 'object',
             additionalProperties: false,
@@ -623,7 +755,7 @@ export function apply(ctx: Context) {
       render: (_args, value: {
         particles?: { name: string; jp: string; mass: number }[]
         chains?: { name: string; intermediates: string; steps: number }[]
-        resonances?: { name: string; jp: string; model: string; pdg?: string | null; jpcMatch?: boolean; thresholdMargin?: { chain: string; margin: number } | null }[]
+        resonances?: { name: string; jp: string; jpSource?: string; model: string; pdg?: string | null; jpcMatch?: boolean | null; thresholdMargin?: { chain: string; margin: number } | null }[]
         kinematics?: { intermediate: string; threshold: number }[]
         constraints?: { identical?: string[][]; maxL?: number; trans?: number }
         validation?: { ok: boolean; errors: { code: string; message: string }[]; warnings: { code: string; message: string }[] }
@@ -636,7 +768,7 @@ export function apply(ctx: Context) {
         for (const r of value.resonances ?? []) {
           const m = r.thresholdMargin
           lines.push(
-            `  ${r.name} [${r.jp}] ${r.model} ${r.pdg ? `PDG=${r.pdg}${r.jpcMatch ? '' : ' (JPC 不一致!)'}` : 'PDG 未命中'}${m ? ` 阈值余量 ${m.margin >= 0 ? '+' : ''}${m.margin.toFixed(4)}` : ''}`,
+            `  ${r.name} [${r.jp}${r.jpSource === 'group' ? ' 由组决定' : ''}] ${r.model} ${r.pdg ? `PDG=${r.pdg}${r.jpcMatch === false ? ' (JPC 不一致!)' : ''}` : 'PDG 未命中'}${m ? ` 阈值余量 ${m.margin >= 0 ? '+' : ''}${m.margin.toFixed(4)}` : ''}`,
           )
         }
         for (const k of value.kinematics ?? []) {
@@ -685,25 +817,41 @@ export function apply(ctx: Context) {
         out.resonances = Object.entries(cfg.resonances).map(([name, spec]) => {
           const hit = lookupResonance(defaultDb, { name })[0]
           let thresholdMargin: { chain: string; margin: number } | null = null
+          // ctpwa lets a resonance omit J/P: the intermediates [J,P] group then
+          // governs, so collect every group the state is attached to (a
+          // CP-conjugate state legitimately appears as 3/2+ and 3/2-).
+          const groupJps = new Set<string>()
           for (const [cname, chain] of Object.entries(cfg.decayChains)) {
             for (const [intName, int] of Object.entries(chain.intermediates)) {
-              if (int.groups.some((g) => g.names.includes(name))) {
-                const kin = cfg.kinematics[intName]
-                if (kin) {
-                  thresholdMargin = { chain: cname, margin: kin.threshold - spec.parameters[0] }
-                }
+              if (!int.groups.some((g) => g.names.includes(name))) continue
+              for (const g of int.groups) {
+                if (g.names.includes(name)) groupJps.add(`${g.jp.j}${g.jp.p > 0 ? '+' : '-'}`)
+              }
+              const kin = cfg.kinematics[intName]
+              if (kin) {
+                thresholdMargin = { chain: cname, margin: kin.threshold - spec.parameters[0] }
               }
             }
           }
+          const exJp = explicitJp(spec)
+          const jp =
+            exJp !== undefined
+              ? `${exJp.j}${exJp.p > 0 ? '+' : '-'}`
+              : groupJps.size > 0
+                ? [...groupJps].join('/')
+                : '?'
           return {
             name,
-            jp: `${spec.j}${spec.p > 0 ? '+' : '-'}`,
+            jp,
+            // 'resonance' = J/P written on the entry; 'group' = governed by the
+            // intermediates [J,P] (ctpwa's normal, CP-conjugate-safe form).
+            jpSource: exJp !== undefined ? 'resonance' : 'group',
             model: spec.model,
             parameters: spec.parameters,
             free: spec.free ?? null,
             reference: spec.reference ?? null,
             pdg: hit ? { id: hit.id, jp: `${hit.jp.j}${hit.jp.p > 0 ? '+' : '-'}`, c: hit.c ?? null, mass: hit.mass } : null,
-            jpcMatch: hit !== undefined && hit.jp.j === spec.j && hit.jp.p === spec.p,
+            jpcMatch: hit !== undefined && exJp !== undefined ? hit.jp.j === exJp.j && hit.jp.p === exJp.p : null,
             thresholdMargin,
           }
         })
@@ -999,6 +1147,119 @@ export function apply(ctx: Context) {
   }))
 
   // ---------------------------------------------------------------------
+  // auto_pwa_remove_resonance
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_remove_resonance',
+    description: '从 config.yml 删除/摘除共振态（添加的逆操作；显著性检查主力）：先 dry-run 校验（存在性、作用域、删除后交叉引用）→ 结构化摘除 → 全 config 写前总闸 → 原子写（自动备份 .bak）。摘除按名进行，[J,P] 组即使变空也保留（维持 Constraints.trans 的振幅块索引）；Resonances 定义仅在无组引用时删除（dropDefinition:false 可保留参数）。',
+    parameters: {
+      configPath: { type: 'string', required: true, description: 'config.yml 绝对路径（会被修改）' },
+      removals: { ...removalListParam, required: true },
+      reason: { type: 'string', description: '删除原因（写入返回，便于迭代日记归因，如 "份额 < 2σ / 撞 free_range 边界"）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          written: { type: 'boolean', required: true },
+          changed: { type: 'array', required: true, items: { type: 'string' } },
+          detached: { type: 'array', required: true, items: { type: 'string' } },
+          dropped: { type: 'array', required: true, items: { type: 'string' } },
+          errors: {
+            type: 'array',
+            required: true,
+            items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } },
+          },
+          warnings: {
+            type: 'array',
+            required: true,
+            items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } },
+          },
+          configPath: { type: 'string', required: true },
+          backupPath: { type: 'string' },
+          resonanceCount: { type: 'integer', required: true },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        written: boolean
+        changed: string[]
+        detached: string[]
+        dropped: string[]
+        errors: { code: string; message: string }[]
+        warnings: { code: string; message: string }[]
+        configPath: string
+        backupPath?: string
+        resonanceCount: number
+      }) => {
+        if (!value.ok) {
+          return text(`拒绝删除（${value.errors.length} errors）:\n${value.errors.map((e) => `  [error] ${e.code}: ${e.message}`).join('\n')}`)
+        }
+        const lines = [`已删除（写入 ${value.configPath}，备份 ${value.backupPath}）:`, ...value.changed.map((c) => `  ${c}`)]
+        if (value.dropped.length > 0) lines.push(`  删除的 Resonances 定义: ${value.dropped.join(', ')}`)
+        if (value.warnings.length > 0) lines.push(...value.warnings.slice(0, 6).map((w) => `  [warn] ${w.code}: ${w.message}`))
+        if (value.warnings.length > 6) lines.push(`  … 共 ${value.warnings.length} 条 warning`)
+        lines.push(`剩余共振态总数: ${value.resonanceCount}`)
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { configPath: string; removals: ResonanceRemoval[]; reason?: string }) {
+      const configPath = args.configPath
+      const cfg = parseConfig(readFileSync(configPath, 'utf8'))
+      const before = Object.keys(cfg.resonances).length
+      const detached: string[] = []
+      const dropped: string[] = []
+      for (const r of args.removals) {
+        const dry = validateResonanceRemoval(cfg, r)
+        if (!dry.ok) {
+          return { ok: false, written: false, changed: [], detached, dropped, errors: dry.errors, warnings: dry.warnings, configPath, resonanceCount: before }
+        }
+        detached.push(...dry.detached)
+        if (dry.definitionDropped) dropped.push(r.name)
+        const ap = applyResonanceRemoval(cfg, r)
+        if (ap.errors.length > 0) {
+          return { ok: false, written: false, changed: [], detached, dropped, errors: ap.errors, warnings: dry.warnings, configPath, resonanceCount: before }
+        }
+      }
+      // Final gate: whole-config structural + cross-reference validation.
+      const finalV = validateConfig(cfg)
+      const finalXref = crossReferenceErrors(cfg)
+      if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
+        return {
+          ok: false,
+          written: false,
+          changed: [],
+          detached,
+          dropped,
+          errors: [...finalV.errors, ...finalXref.errors],
+          warnings: [...finalV.warnings, ...finalXref.warnings],
+          configPath,
+          resonanceCount: before,
+        }
+      }
+      const backupPath = `${configPath}.bak`
+      copyFileSync(configPath, backupPath)
+      const tmpPath = join(dirname(configPath), `.config.yml.tmp-${Date.now().toString(36)}`)
+      writeFileSync(tmpPath, dumpConfig(cfg))
+      renameSync(tmpPath, configPath)
+      return {
+        ok: true,
+        written: true,
+        changed: detached,
+        detached,
+        dropped,
+        errors: [],
+        warnings: [...finalV.warnings, ...finalXref.warnings],
+        configPath,
+        backupPath,
+        resonanceCount: Object.keys(cfg.resonances).length,
+      }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
   // auto_pwa_round（一步化主路径：评估上轮 + 迭代 + 提交）
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
@@ -1007,6 +1268,7 @@ export function apply(ctx: Context) {
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-004），其 config.yml 为基座、results/ 被评估' },
       proposal: { ...proposalParam, description: '要添加/挂载的共振态（省略 = 纯评估模式，不创建新轮）' },
+      removals: removalListParam,
       fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py，AI 适配驱动；可用 PWA_FIT_SCRIPT 覆盖）' },
       plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
     },
@@ -1089,7 +1351,7 @@ export function apply(ctx: Context) {
         return text(lines.join('\n'))
       },
     },
-    async execute(args: { baseIterDir: string; proposal?: ResonanceProposal; fitScriptPath?: string; plotScriptPath?: string }, exec) {
+    async execute(args: { baseIterDir: string; proposal?: ResonanceProposal; removals?: ResonanceRemoval[]; fitScriptPath?: string; plotScriptPath?: string }, exec) {
       const baseConfig = `${args.baseIterDir}/config.yml`
       const iterationsRoot = iterationsRootOf(args.baseIterDir)
       const errors: { code: string; message: string }[] = []
@@ -1161,16 +1423,10 @@ export function apply(ctx: Context) {
         errors.push({ code: 'no-base-config', message: `基座 config 不存在: ${baseConfig}` })
       }
 
-      // ---- 2. iterate when a proposal is given ----
-      if (args.proposal && baseCfgExists) {
+      // ---- 2. iterate when a removal and/or a proposal is given ----
+      const removals = args.removals ?? []
+      if ((args.proposal !== undefined || removals.length > 0) && baseCfgExists) {
         out.mode = 'iterate'
-        const cfg = parseConfig(readFileSync(baseConfig, 'utf8'))
-        const v = validateResonanceAddition(defaultDb, cfg, args.proposal)
-        warnings.push(...v.warnings)
-        if (!v.ok) {
-          errors.push(...v.errors)
-          return out
-        }
         let started: { iterDir: string; iter: number; changed: string[]; warnings: string[] }
         try {
           started = startIteration({
@@ -1188,7 +1444,8 @@ export function apply(ctx: Context) {
         out.iter = started.iter
         out.iterDir = started.iterDir
         const newCfg = parseConfig(readFileSync(`${started.iterDir}/config.yml`, 'utf8'))
-        const applied = applyResonanceAddition(newCfg, args.proposal)
+        const applied = applyRoundEdits(newCfg, removals, args.proposal)
+        warnings.push(...applied.warnings)
         if (applied.errors.length > 0) {
           errors.push(...applied.errors)
           return out
@@ -1197,15 +1454,15 @@ export function apply(ctx: Context) {
         // Final gate: the whole resulting config must pass structural +
         // cross-reference validation before the write (same gate as
         // auto_pwa_edit_config).
-        const finalV = validateConfig(applied.config)
-        const finalXref = crossReferenceErrors(applied.config)
+        const finalV = validateConfig(newCfg)
+        const finalXref = crossReferenceErrors(newCfg)
         if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
           errors.push(...finalV.errors, ...finalXref.errors)
           return out
         }
         copyFileSync(target, `${target}.bak`)
         const tmp = `${target}.tmp-${Date.now().toString(36)}`
-        writeFileSync(tmp, dumpConfig(applied.config))
+        writeFileSync(tmp, dumpConfig(newCfg))
         renameSync(tmp, target)
         changed.push(...applied.changed)
         warnings.push(...finalXref.warnings, ...finalV.warnings)
@@ -1481,6 +1738,7 @@ export function apply(ctx: Context) {
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-000），其 config.yml 作为本轮基座' },
       proposal: proposalParam,
+      removals: removalListParam,
       fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
       plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
     },
@@ -1521,17 +1779,21 @@ export function apply(ctx: Context) {
         return text(`iter-${String(value.iter).padStart(3, '0')} 已创建并提交拟合（job ${value.jobId}）:\n${value.changed.map((c) => '  ' + c).join('\n')}${value.warnings.length > 0 ? '\n' + value.warnings.slice(0, 3).map((w) => `  [warn] ${w.message}`).join('\n') : ''}`)
       },
     },
-    async execute(args: { baseIterDir: string; proposal: ResonanceProposal; fitScriptPath?: string; plotScriptPath?: string }, exec) {
+    async execute(args: { baseIterDir: string; proposal?: ResonanceProposal; removals?: ResonanceRemoval[]; fitScriptPath?: string; plotScriptPath?: string }, exec) {
       const baseConfig = `${args.baseIterDir}/config.yml`
       const iterationsRoot = iterationsRootOf(args.baseIterDir)
+      const removals = args.removals ?? []
+      if (args.proposal === undefined && removals.length === 0) {
+        return { ok: false, iter: -1, iterDir: '', changed: [], errors: [{ code: 'no-edit', message: '既没有 proposal 也没有 removals —— 无内容可迭代' }], warnings: [] }
+      }
       if (!existsSync(baseConfig)) {
         return { ok: false, iter: -1, iterDir: '', changed: [], errors: [{ code: 'no-base-config', message: `基座 config 不存在: ${baseConfig}` }], warnings: [] }
       }
-      // 1. validate against the base config
+      // 1. validate removals + proposal against the base config (dry run)
       const cfg = parseConfig(readFileSync(baseConfig, 'utf8'))
-      const v = validateResonanceAddition(defaultDb, cfg, args.proposal)
-      if (!v.ok) {
-        return { ok: false, iter: -1, iterDir: '', changed: [], errors: v.errors, warnings: v.warnings }
+      const pre = applyRoundEdits(cfg, removals, args.proposal)
+      if (pre.errors.length > 0) {
+        return { ok: false, iter: -1, iterDir: '', changed: [], errors: pre.errors, warnings: pre.warnings }
       }
       // 2. new iteration dir (config copied + Data paths absolutized)
       let started: { iterDir: string; iter: number; changed: string[]; warnings: string[] }
@@ -1548,15 +1810,15 @@ export function apply(ctx: Context) {
       const startWarnings = started.warnings
       // 3. apply + write config in the new dir
       const newCfg = parseConfig(readFileSync(`${started.iterDir}/config.yml`, 'utf8'))
-      const applied = applyResonanceAddition(newCfg, args.proposal)
+      const applied = applyRoundEdits(newCfg, removals, args.proposal)
       if (applied.errors.length > 0) {
-        return { ok: false, iter: started.iter, iterDir: started.iterDir, changed: started.changed, errors: applied.errors, warnings: v.warnings }
+        return { ok: false, iter: started.iter, iterDir: started.iterDir, changed: started.changed, errors: applied.errors, warnings: applied.warnings }
       }
       const target = `${started.iterDir}/config.yml`
       // Final gate: whole-config structural + cross-reference validation
       // before the write (same gate as auto_pwa_edit_config).
-      const finalV = validateConfig(applied.config)
-      const finalXref = crossReferenceErrors(applied.config)
+      const finalV = validateConfig(newCfg)
+      const finalXref = crossReferenceErrors(newCfg)
       if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
         return {
           ok: false,
@@ -1564,12 +1826,12 @@ export function apply(ctx: Context) {
           iterDir: started.iterDir,
           changed: started.changed,
           errors: [...finalV.errors, ...finalXref.errors],
-          warnings: [...v.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
+          warnings: [...applied.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
         }
       }
       copyFileSync(target, `${target}.bak`)
       const tmp = `${target}.tmp-${Date.now().toString(36)}`
-      writeFileSync(tmp, dumpConfig(applied.config))
+      writeFileSync(tmp, dumpConfig(newCfg))
       renameSync(tmp, target)
       // 4. submit fit
       let jobId: string | undefined
@@ -1582,7 +1844,7 @@ export function apply(ctx: Context) {
           iterDir: started.iterDir,
           changed: [...started.changed, ...applied.changed],
           errors: [{ code: 'fit-submit-failed', message: (e as Error).message }],
-          warnings: [...v.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
+          warnings: [...applied.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
         }
       }
       return {
@@ -1592,7 +1854,7 @@ export function apply(ctx: Context) {
         jobId,
         changed: [...started.changed, ...applied.changed],
         errors: [],
-        warnings: [...v.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
+        warnings: [...applied.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
       }
     },
   }))
@@ -2408,14 +2670,18 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_try_candidates',
-    description: '并行试探多个候选（执行层）：在同一基座 config 上各加一个候选，建独立 trial 目录（iterations/_trials/，不进 iter-N 序列），以短拟合（--runs 1 --max-iter 500，可用 PWA_AIFIT_RUNS 风格参数调整）提交后台任务。全部完成后用 auto_pwa_compare 比较 ΔNLL 选出最优者。物理门禁与写前总闸与正式迭代一致。',
+    description: '并行试探多个候选（执行层）：在同一基座 config 上各加一个候选（或各删一个 removals），建独立 trial 目录（iterations/_trials/，不进 iter-N 序列），以短拟合（--runs 1 --max-iter 500，可用 PWA_AIFIT_RUNS 风格参数调整）提交后台任务。全部完成后用 auto_pwa_compare 比较 ΔNLL 选出最优者（删共振态的显著性检查 = 删它后 ΔNLL 是否显著变差）。物理门禁与写前总闸与正式迭代一致。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '基座迭代目录（其 config.yml 作为所有候选的公共起点）' },
       candidates: {
         type: 'array',
-        required: true,
         items: proposalParam,
-        description: '要试探的共振态候选（每个都会被独立验证；无效的会被跳过并说明原因），最多 5 个',
+        description: '要试探的添加候选（每个都会被独立验证；无效的会被跳过并说明原因），最多 5 个',
+      },
+      removals: {
+        type: 'array',
+        items: removalParam,
+        description: '要试探的删除候选（显著性检查：删掉份额不显著/撞边界的态，看 ΔNLL 是否显著变差），最多 5 个。candidates 与 removals 至少给一个',
       },
       fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
       shortRuns: { type: 'integer', description: '短拟合运行次数（默认 1）' },
@@ -2488,7 +2754,8 @@ export function apply(ctx: Context) {
     },
     async execute(args: {
       baseIterDir: string
-      candidates: ResonanceProposal[]
+      candidates?: ResonanceProposal[]
+      removals?: ResonanceRemoval[]
       fitScriptPath?: string
       shortRuns?: number
       shortMaxIter?: number
@@ -2507,46 +2774,57 @@ export function apply(ctx: Context) {
       const skipped: { candidate: string; errors: { code: string; message: string }[] }[] = []
       const warnings: string[] = []
       const baseIterName = args.baseIterDir.split(/[\\/]/).pop() ?? 'base'
+      const candidateCount = (args.candidates?.length ?? 0) + (args.removals?.length ?? 0)
+      if (candidateCount === 0) {
+        return { ok: false, baseIterDir: args.baseIterDir, jobs: [], skipped: [], batchMode: 'off', error: 'candidates 与 removals 至少给一个' }
+      }
       // Validate + build trial dirs for every candidate first (skipping invalid),
       // so we can decide to batch them under one job after the fact.
       const pending: { candidate: string; iterDir: string; changed: string[] }[] = []
       let idx = 0
-      for (const proposal of args.candidates) {
-        idx += 1
+      /** Apply one edit to a fresh copy of the base config and materialize a trial dir. */
+      const buildTrial = (
+        label: string,
+        candidateId: string,
+        edit: (cfg: ReturnType<typeof parseConfig>) => { errors: { code: string; message: string }[]; changed: string[] },
+      ): void => {
         try {
           const cfg = parseConfig(readFileSync(baseConfig, 'utf8'))
-          const v = validateResonanceAddition(defaultDb, cfg, proposal)
-          if (!v.ok) {
-            skipped.push({ candidate: proposal.name, errors: v.errors })
-            continue
+          const res = edit(cfg)
+          if (res.errors.length > 0) {
+            skipped.push({ candidate: candidateId, errors: res.errors })
+            return
           }
-          const applied = applyResonanceAddition(cfg, proposal)
-          if (applied.errors.length > 0) {
-            skipped.push({ candidate: proposal.name, errors: applied.errors })
-            continue
-          }
-          const finalV = validateConfig(applied.config)
-          const finalXref = crossReferenceErrors(applied.config)
+          const finalV = validateConfig(cfg)
+          const finalXref = crossReferenceErrors(cfg)
           if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
-            skipped.push({ candidate: proposal.name, errors: [...finalV.errors, ...finalXref.errors] })
-            continue
+            skipped.push({ candidate: candidateId, errors: [...finalV.errors, ...finalXref.errors] })
+            return
           }
           const { trialDir, changed, warnings: trialWarnings } = createTrialDir({
             iterationsRoot,
             baseConfigPath: baseConfig,
-            label: `${baseIterName}-${idx}-${proposal.name}`,
+            label,
             fitScriptPath,
           })
           warnings.push(...trialWarnings)
           const target = `${trialDir}/config.yml`
           copyFileSync(target, `${target}.bak`)
           const tmp = `${target}.tmp-${Date.now().toString(36)}`
-          writeFileSync(tmp, dumpConfig(applied.config))
+          writeFileSync(tmp, dumpConfig(cfg))
           renameSync(tmp, target)
-          pending.push({ candidate: proposal.name, iterDir: trialDir, changed: [...changed, ...applied.changed] })
+          pending.push({ candidate: candidateId, iterDir: trialDir, changed: [...changed, ...res.changed] })
         } catch (e) {
-          skipped.push({ candidate: proposal.name, errors: [{ code: 'trial-failed', message: (e as Error).message }] })
+          skipped.push({ candidate: candidateId, errors: [{ code: 'trial-failed', message: (e as Error).message }] })
         }
+      }
+      for (const proposal of args.candidates ?? []) {
+        idx += 1
+        buildTrial(`${baseIterName}-${idx}-${proposal.name}`, proposal.name, (cfg) => applyRoundEdits(cfg, undefined, proposal))
+      }
+      for (const removal of args.removals ?? []) {
+        idx += 1
+        buildTrial(`${baseIterName}-rm${idx}-${removal.name}`, `rm:${removal.name}`, (cfg) => applyRoundEdits(cfg, [removal], undefined))
       }
       // Decide batching: only the SLURM transport batches (local stays one DSH
       // job per candidate, the historical behavior).
@@ -3038,7 +3316,8 @@ export function apply(ctx: Context) {
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
       action: { type: 'string', required: true, enum: ['iterate', 'rollback', 'converge'], description: '决策动作' },
-      proposal: { ...proposalParam, description: 'action=iterate 时必填：要添加的共振态' },
+      proposal: { ...proposalParam, description: 'action=iterate 时要添加的共振态（与 removals 至少给一个）' },
+      removals: removalListParam,
       hypothesis: { type: 'string', description: '本决策的物理假设（如 "f2(1270) 吸收 R_KK 1.2-1.35 GeV 的 pull"）——与 prediction 一起构成可检验的预测' },
       prediction: {
         type: 'object',
@@ -3097,6 +3376,7 @@ export function apply(ctx: Context) {
       iterationsRoot: string
       action: 'iterate' | 'rollback' | 'converge'
       proposal?: ResonanceProposal
+      removals?: ResonanceRemoval[]
       hypothesis?: string
       prediction?: Prediction
       reason?: string
@@ -3109,8 +3389,9 @@ export function apply(ctx: Context) {
       }
       try {
         if (args.action === 'iterate') {
-          if (args.proposal === undefined) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: 'iterate 需要 proposal' }
+          const removals = args.removals ?? []
+          if (args.proposal === undefined && removals.length === 0) {
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: 'iterate 需要 proposal 或 removals' }
           }
           const baseConfig = `${state.currentIterDir}/config.yml`
           if (!existsSync(baseConfig)) {
@@ -3118,9 +3399,9 @@ export function apply(ctx: Context) {
           }
           const env = resolveEnv()
           const cfg = parseConfig(readFileSync(baseConfig, 'utf8'))
-          const v = validateResonanceAddition(defaultDb, cfg, args.proposal)
-          if (!v.ok) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: v.errors, error: 'proposal 未通过物理门禁' }
+          const pre = applyRoundEdits(cfg, removals, args.proposal)
+          if (pre.errors.length > 0) {
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: pre.errors, error: 'removals/proposal 未通过物理门禁' }
           }
           const started = startIteration({
             iterationsRoot: state.iterationsRoot,
@@ -3129,19 +3410,19 @@ export function apply(ctx: Context) {
             plotScriptPath: args.plotScriptPath ?? env.plotScript,
           })
           const newCfg = parseConfig(readFileSync(`${started.iterDir}/config.yml`, 'utf8'))
-          const applied = applyResonanceAddition(newCfg, args.proposal)
+          const applied = applyRoundEdits(newCfg, removals, args.proposal)
           if (applied.errors.length > 0) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: applied.errors, error: '应用 proposal 失败' }
+            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: applied.errors, error: '应用 removals/proposal 失败' }
           }
-          const finalV = validateConfig(applied.config)
-          const finalXref = crossReferenceErrors(applied.config)
+          const finalV = validateConfig(newCfg)
+          const finalXref = crossReferenceErrors(newCfg)
           if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
             return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: [...finalV.errors, ...finalXref.errors], error: '写前总闸未通过' }
           }
           const target = `${started.iterDir}/config.yml`
           copyFileSync(target, `${target}.bak`)
           const tmp = `${target}.tmp-${Date.now().toString(36)}`
-          writeFileSync(tmp, dumpConfig(applied.config))
+          writeFileSync(tmp, dumpConfig(newCfg))
           renameSync(tmp, target)
           const jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
           state.baseIterDir = state.currentIterDir
@@ -3166,7 +3447,7 @@ export function apply(ctx: Context) {
               ...started.changed,
               ...started.warnings.map((w) => `[warn] ${w}`),
               ...applied.changed,
-              ...[...v.warnings, ...finalXref.warnings, ...finalV.warnings].map((w) => `[warn] ${w.code}: ${w.message}`),
+              ...[...applied.warnings, ...finalXref.warnings, ...finalV.warnings].map((w) => `[warn] ${w.code}: ${w.message}`),
             ],
             errors: [],
           }

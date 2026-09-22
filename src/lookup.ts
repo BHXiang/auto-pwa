@@ -63,9 +63,22 @@ export function lookupResonance(db: ResonanceDb, query: LookupQuery): ResonanceE
 }
 
 /**
+ * C parity of standard particles the resonance table does not carry.
+ * The table mixes resonances with a few light mesons; the photon is neither,
+ * so it is absent, and without it the production-vertex check of a radiative
+ * decay (A -> gamma + X) has no C requirement to enforce.
+ */
+const PARTICLE_C: Record<string, 1 | -1> = {
+  gamma: -1,
+  photon: -1,
+}
+
+/**
  * Charge conjugation of a particle by name (self-conjugate states only).
  * @returns +1/-1, or undefined when the name is unknown or C is not defined.
  */
 export function lookupC(db: ResonanceDb, name: string): 1 | -1 | undefined {
-  return lookupResonance(db, { name })[0]?.c
+  const hit = lookupResonance(db, { name })[0]?.c
+  if (hit !== undefined) return hit
+  return PARTICLE_C[normalizeName(name)]
 }

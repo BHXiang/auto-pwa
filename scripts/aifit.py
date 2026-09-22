@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -66,10 +67,26 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _json_safe(value):
+    """NaN/Inf -> None so fit.json is always strict, parseable JSON.
+
+    A degenerate Hessian makes ctpwa report min_eigenvalue / condition_number
+    as NaN; json.dump would then emit the bare token NaN, which every strict
+    JSON reader (JSON.parse, jq, ...) rejects for the WHOLE file.
+    """
+    if isinstance(value, float):
+        return None if (math.isnan(value) or math.isinf(value)) else value
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def write_json(path: str, data: dict) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        json.dump(_json_safe(data), f, indent=2, ensure_ascii=False, allow_nan=False)
         f.write("\n")
 
 

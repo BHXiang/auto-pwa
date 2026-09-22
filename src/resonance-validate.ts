@@ -32,6 +32,7 @@
 import { normalizeName } from './lookup.js'
 import { hasDecayTo, allowedIntermediateJP } from './decay-check.js'
 import { analyzeIntermediateJPC } from './intermediate-jpc.js'
+import { explicitJp } from './jpc.js'
 import type {
   ChainKinematics,
   DecayStep,
@@ -81,7 +82,8 @@ export interface ValidateOptions {
 /** The config surface validation reads (PwaConfig subset). */
 export interface ValidationConfig {
   particles: Record<string, { j: number; p: 1 | -1; mass: number }>
-  resonances: Record<string, { j: number; p: 1 | -1; parameters: number[] }>
+  /** Resonance specs; J/P are OPTIONAL (ctpwa: the intermediates group governs). */
+  resonances: Record<string, { j?: number; p?: 1 | -1; parameters: number[] }>
   decayChains?: PwaConfig['decayChains']
   kinematics: Record<string, ChainKinematics>
   constraints?: PwaConstraints
@@ -194,6 +196,14 @@ export function validateResonanceAddition(
 
   // --- 3. JPC consistency --------------------------------------------------
   if (isParticle && pdg && !sameJp(pdg.jp, proposal.jpGroup)) {
+    // A resonance-level J/P is optional in ctpwa; when it is absent the [J,P]
+    // of the intermediates group governs. For charge-conjugate chains the
+    // group parity legitimately flips relative to the PDG value (the config's
+    // antiparticle parity convention, e.g. N(1720) 3/2+ in N* → p η but 3/2−
+    // in N̄* → p̄ η), so only J is enforced strictly there; a P flip is a
+    // warning. A J/P written explicitly on the resonance entry is a human
+    // assertion and stays strict.
+    const explicit = explicitJp(config.resonances[proposal.name] ?? {})
     if (hasReference) {
       warnings.push(
         warn(
@@ -201,6 +211,17 @@ export function validateResonanceAddition(
           `PDG gives ${proposal.name} J^P = ${jpLabel(pdg.jp)}, but the proposal targets ` +
             `${jpLabel(proposal.jpGroup)} (reference "${proposal.reference}"). ` +
             `Adopted per reference; verify the recent measurement supports the assignment.`,
+        ),
+      )
+    } else if (pdg.jp.j === proposal.jpGroup.j && explicit === undefined) {
+      warnings.push(
+        warn(
+          'jpc-parity-convention',
+          `PDG gives ${proposal.name} J^P = ${jpLabel(pdg.jp)}, but the proposal targets ` +
+            `${jpLabel(proposal.jpGroup)} (same J, opposite P). Allowed because the resonance ` +
+            `writes no J/P and the [J,P] group governs: the parity sign flips for the ` +
+            `charge-conjugate chain (antiparticle intrinsic-parity convention). ` +
+            `Verify this is the intended CP-conjugate wave.`,
         ),
       )
     } else {
@@ -289,13 +310,17 @@ export function validateResonanceAddition(
   }
   const existing = config.resonances[proposal.name]
   if (existing !== undefined) {
-    // Attaching a resonance that is already defined (e.g. a reserve wave):
-    // legal when JP and parameters agree; the edit then only links the chain.
-    if (existing.j !== proposal.jpGroup.j || existing.p !== proposal.jpGroup.p) {
+    // Attaching a resonance that is already defined (e.g. a reserve wave or
+    // the CP-conjugate partner group): legal when the J/P agrees and the
+    // parameters match — the edit then only links the chain. A resonance with
+    // NO explicit J/P (ctpwa's normal form) has no defined quantum number of
+    // its own, so any group J/P is acceptable: the group governs.
+    const exJp = explicitJp(existing)
+    if (exJp !== undefined && (exJp.j !== proposal.jpGroup.j || exJp.p !== proposal.jpGroup.p)) {
       errors.push(
         err(
           'jpc-conflict',
-          `"${proposal.name}" is already defined with J^P ${existing.j}${existing.p > 0 ? '+' : '-'} but the ` +
+          `"${proposal.name}" is already defined with J^P ${jpLabel(exJp)} but the ` +
             `proposal targets ${jpLabel(proposal.jpGroup)} — attach it under its defined J^P or rename`,
         ),
       )

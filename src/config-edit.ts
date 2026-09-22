@@ -14,6 +14,7 @@
  */
 import { parseDocument, stringify } from 'yaml'
 import { normalizeName } from './lookup.js'
+import { explicitJp, jpLabel } from './jpc.js'
 import type {
   ChainKinematics,
   ConfigEditResult,
@@ -25,7 +26,9 @@ import type {
   PwaConstraints,
   ResonanceModel,
   ResonanceProposal,
+  ResonanceRemoval,
   ResonanceSpec,
+  RemovalValidation,
   ValidationIssue,
 } from './types.js'
 import { RESONANCE_MODELS } from './resonance-validate.js'
@@ -98,13 +101,17 @@ export function rebuildViews(
       const p = asNum(spec.get('P'))
       const model = asStr(spec.get('model'))
       const parameters = asArr(spec.get('parameters'))?.map(asNum) ?? []
-      if (j === undefined || p === undefined || model === undefined || parameters.some((x) => x === undefined)) continue
+      // J/P are OPTIONAL (ctpwa parseResonances): when absent the [J,P] of the
+      // intermediates group governs. Dropping such entries would (a) hide
+      // CP-conjugate resonances (same state, opposite parity in two chains)
+      // from the views and (b) make the write gate redefine/clobber them.
+      if (model === undefined || parameters.some((x) => x === undefined)) continue
       const resonance: ResonanceSpec = {
-        j,
-        p: p === 1 ? 1 : -1,
         model: model as ResonanceModel,
         parameters: parameters as number[],
       }
+      if (j !== undefined) resonance.j = j
+      if (p !== undefined) resonance.p = p === 1 ? 1 : -1
       const free = asArr(spec.get('free'))?.map(asNum).filter((x): x is number => x !== undefined)
       if (free !== undefined) resonance.free = free
       const freeRange = asArr(spec.get('free_range'))
@@ -335,21 +342,35 @@ function parseDaughterModes(raw: unknown): { d1: string; d2: string; opts: Map<u
 /** Per-step opts -> DecayStep fields (ctpwa Config.cu parsing, sl flat or nested). */
 function stepOpts(opts: Map<unknown, unknown>): Pick<DecayStep, 'sl' | 'pBreak' | 'hasBf' | 'bfD'> {
   const out: Pick<DecayStep, 'sl' | 'pBreak' | 'hasBf' | 'bfD'> = {}
+  // Wave whitelist, mirroring ctpwa ConfigParser::parseSLFilter exactly:
+  //   sl: [S, L] / [[S, L], ...]   (S first)
+  //   ls: [L, S] / [[L, S], ...]   (L first, TFPWA ls_list order)
+  // S is the PHYSICAL total spin (integer OR half-integer: a baryon step has
+  // S = 1/2, 3/2, ...), converted to ctpwa's internal {2S+1, L} notation that
+  // Amp2BD::ComSL / jpc.enumerateSL use. Accepting only even/odd 2S+1 here
+  // would silently drop every fermion step.
+  const lsRaw = opts.get('ls')
   const slRaw = opts.get('sl')
-  if (slRaw !== undefined) {
-    const list = asArr(slRaw)
+  const raw = lsRaw !== undefined ? lsRaw : slRaw
+  const lsFirst = lsRaw !== undefined
+  if (raw !== undefined) {
+    const list = asArr(raw)
     if (list) {
       const rows: [number, number][] = []
       const pushRow = (r: unknown): void => {
         const row = asArr(r)
         if (row && row.length >= 2) {
-          const s = asNum(row[0])
-          const l = asNum(row[1])
-          if (s !== undefined && l !== undefined) rows.push([s, l])
+          const a = asNum(row[0])
+          const b = asNum(row[1])
+          if (a !== undefined && b !== undefined) {
+            const sPhys = lsFirst ? b : a
+            const l = lsFirst ? a : b
+            rows.push([Math.round(2 * sPhys + 1), l])
+          }
         }
       }
-      if (asNum(list[0]) !== undefined) pushRow(list) // flat [S, L]
-      else for (const r of list) pushRow(r) // nested [[S, L], ...]
+      if (asNum(list[0]) !== undefined) pushRow(list) // flat [S, L] / [L, S]
+      else for (const r of list) pushRow(r) // nested
       if (rows.length > 0) out.sl = rows
     }
   }
@@ -475,9 +496,13 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
     return { config, changed, errors }
   }
   if (alreadyDefined) {
-    const ex = config.resonances[proposal.name]
-    if (ex.j !== proposal.jpGroup.j || ex.p !== proposal.jpGroup.p) {
-      errors.push({ code: 'jpc-conflict', message: `"${proposal.name}" is defined as ${ex.j}${ex.p > 0 ? '+' : '-'}; attach under that J^P` })
+    const ex = config.resonances[proposal.name]!
+    const exJp = explicitJp(ex)
+    // Only an EXPLICIT resonance-level J/P can conflict: with none written the
+    // group's [J,P] governs, so the same state may legitimately be attached to
+    // opposite-parity groups (CP-conjugate chains).
+    if (exJp !== undefined && (exJp.j !== proposal.jpGroup.j || exJp.p !== proposal.jpGroup.p)) {
+      errors.push({ code: 'jpc-conflict', message: `"${proposal.name}" is defined as ${jpLabel(exJp)}; attach under that J^P` })
       return { config, changed, errors }
     }
     if (ex.parameters.length !== proposal.parameters.length || ex.parameters.some((v, i) => Math.abs(v - proposal.parameters[i]) > 1e-6)) {
@@ -567,8 +592,10 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
       return { config, changed, errors }
     }
     const spec: Record<string, unknown> = {
-      J: proposal.jpGroup.j,
-      P: proposal.jpGroup.p,
+      // No J/P here on purpose: ctpwa takes the quantum numbers from the
+      // intermediates [J,P] group. Stamping them would break the CP-conjugate
+      // case (same state added to a +P and a −P group) and contradicts the
+      // engine's own convention.
       model: proposal.model,
       parameters: proposal.parameters,
     }
@@ -600,6 +627,170 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
     return { config, changed, errors }
   }
   return { config, changed, errors }
+}
+
+// ---------------------------------------------------------------------------
+// Resonance removal
+// ---------------------------------------------------------------------------
+
+/** Every (chain, intermediate, [J,P] group) holding `removal.name` in scope. */
+function removalTargets(
+  config: PwaConfig,
+  removal: ResonanceRemoval,
+): { chainName: string; intName: string; jp: JP }[] {
+  const out: { chainName: string; intName: string; jp: JP }[] = []
+  for (const [chainName, chain] of Object.entries(config.decayChains)) {
+    for (const [intName, int] of Object.entries(chain.intermediates)) {
+      if (removal.chain !== undefined && removal.chain !== intName) continue
+      for (const g of int.groups) {
+        if (removal.jpGroup !== undefined && (g.jp.j !== removal.jpGroup.j || g.jp.p !== removal.jpGroup.p)) continue
+        if (g.names.includes(removal.name)) out.push({ chainName, intName, jp: g.jp })
+      }
+    }
+  }
+  return out
+}
+
+/** Total number of group occurrences of `name` across the whole config. */
+function referenceCount(config: PwaConfig, name: string): number {
+  let n = 0
+  for (const chain of Object.values(config.decayChains)) {
+    for (const int of Object.values(chain.intermediates)) {
+      for (const g of int.groups) if (g.names.includes(name)) n++
+    }
+  }
+  return n
+}
+
+/**
+ * Dry-run a resonance removal against the config. Errors block the edit.
+ *
+ * Name-level detachment never renumbers [J,P] groups (a group emptied by the
+ * removal is KEPT), so `Constraints.trans` block indices stay valid. The
+ * `Resonances.<name>` definition is dropped only when no group references it
+ * any more (unless `dropDefinition: false`).
+ */
+export function validateResonanceRemoval(config: PwaConfig, removal: ResonanceRemoval): RemovalValidation {
+  const errors: ValidationIssue[] = []
+  const warnings: ValidationIssue[] = []
+  const name = removal.name
+  if (typeof name !== 'string' || name.trim() === '') {
+    errors.push({ code: 'invalid-name', message: 'removal.name must be a non-empty resonance name' })
+    return { ok: false, errors, warnings, detached: [], definitionDropped: false }
+  }
+  const defined = config.resonances[name] !== undefined
+  const targets = removalTargets(config, removal)
+  const scoped = removal.chain !== undefined || removal.jpGroup !== undefined
+  const total = referenceCount(config, name)
+
+  if (targets.length === 0 && !defined) {
+    errors.push({
+      code: 'not-found',
+      message: `"${name}" is neither defined in Resonances nor attached to any intermediate group`,
+    })
+  } else if (targets.length === 0 && defined && scoped) {
+    errors.push({
+      code: 'not-in-scope',
+      message: `"${name}" is defined but not attached to the requested ${removal.chain ?? ''}${removal.jpGroup !== undefined ? ` [${jpLabel(removal.jpGroup)}]` : ''} scope — nothing to detach (drop the scope to delete the definition instead)`,
+    })
+  } else if (targets.length === 0 && defined) {
+    warnings.push({
+      code: 'detach-nothing',
+      message: `"${name}" is defined but not attached to any group — only the Resonances definition will be removed`,
+    })
+  }
+
+  const detached = targets.map((t) => `${t.chainName}.${t.intName} [${jpLabel(t.jp)}]`)
+  const remaining = total - targets.length
+  const wantDrop = removal.dropDefinition !== false
+  const definitionDropped = wantDrop && remaining === 0 && defined
+  if (!wantDrop && remaining === 0 && defined) {
+    warnings.push({
+      code: 'definition-kept',
+      message: `dropDefinition=false: the Resonances.${name} definition is kept even though no group references it`,
+    })
+  }
+
+  // Emptying a group is legal (the group stays, indices preserved) but it is
+  // a real model change the caller should notice.
+  for (const t of targets) {
+    const g = config.decayChains[t.chainName]?.intermediates[t.intName]?.groups.find(
+      (x) => x.jp.j === t.jp.j && x.jp.p === t.jp.p,
+    )
+    if (g !== undefined && g.names.length === 1) {
+      warnings.push({
+        code: 'group-emptied',
+        message: `${t.chainName}.${t.intName} [${jpLabel(t.jp)}] becomes empty; the group is kept so Constraints.trans block indices stay valid`,
+      })
+    }
+  }
+  // No resonance left in an intermediate => those chains contribute nothing.
+  for (const t of targets) {
+    const int = config.decayChains[t.chainName]?.intermediates[t.intName]
+    if (int !== undefined && int.groups.every((g) => g.names.every((n) => n === name))) {
+      warnings.push({
+        code: 'intermediate-empty',
+        message: `${t.chainName}.${t.intName} has no resonance left after this removal — the chain contributes no amplitude`,
+      })
+    }
+  }
+
+  return { ok: errors.length === 0, errors, warnings, detached, definitionDropped }
+}
+
+/**
+ * Apply a resonance removal (mutates `config.raw` and rebuilds the views).
+ * Structural/physics errors are returned without modifying the config.
+ */
+export function applyResonanceRemoval(config: PwaConfig, removal: ResonanceRemoval): ConfigEditResult {
+  const changed: string[] = []
+  const dry = validateResonanceRemoval(config, removal)
+  if (!dry.ok) return { config, changed, errors: dry.errors }
+
+  const chainsRaw = asMap(config.raw.get('DecayChains')) ?? asMap(config.raw.get('decay_chains'))
+  if (chainsRaw) {
+    const particles = parseParticles(config.raw)
+    for (const [chainName, chainRaw] of chainsRaw) {
+      if (typeof chainName !== 'string') continue
+      const chain = asMap(chainRaw)
+      if (!chain) continue
+      // Explicit `intermediates:` sub-block, or top-level spin-chain keys.
+      const entries = collectIntermediateEntries(chain, particles)
+      for (const [intName, groupsRaw] of entries) {
+        if (removal.chain !== undefined && removal.chain !== intName) continue
+        const list = asArr(groupsRaw)
+        if (!list) continue
+        for (const groupRaw of list) {
+          const groupMap = asMap(groupRaw)
+          if (!groupMap) continue
+          for (const [key, namesRaw] of groupMap) {
+            const jp = decodeJpKey(key)
+            if (!jp) continue
+            if (removal.jpGroup !== undefined && (jp.j !== removal.jpGroup.j || jp.p !== removal.jpGroup.p)) continue
+            const names = asArr(namesRaw)
+            if (!names || !names.includes(removal.name)) continue
+            // Name-level splice: the group (and its index) survives even when
+            // it becomes empty.
+            groupMap.set(key, names.filter((n) => n !== removal.name))
+            changed.push(`${chainName}.${intName} [${jpLabel(jp)}] -= ${removal.name}`)
+          }
+        }
+      }
+    }
+  }
+
+  if (dry.definitionDropped) {
+    const resRaw = asMap(config.raw.get('Resonances')) ?? asMap(config.raw.get('resonances'))
+    resRaw?.delete(removal.name)
+    changed.push(`Resonances.${removal.name} 删除（已无 [J,P] 组引用）`)
+  }
+
+  Object.assign(config, rebuildViews(config.raw))
+  const xref = crossReferenceErrors(config)
+  if (xref.errors.length > 0) {
+    return { config, changed, errors: xref.errors }
+  }
+  return { config, changed, errors: [] }
 }
 
 /**
@@ -789,12 +980,20 @@ export function validateConfig(config: PwaConfig): { errors: ValidationIssue[]; 
   }
 
   for (const t of constraints.trans ?? []) {
+    // A trans reference may be either form ctpwa accepts
+    // (Parameters.cu buildWithTrans):
+    //   - a bare intermediate name ("R_pbareta") — substring/instance match,
+    //     the usual charge-conjugation coupling constraint; or
+    //   - "<intermediate>_<blockIndex>" — explicit amplitude-block index.
+    const isIntermediate = (n: string): boolean =>
+      Object.values(config.decayChains).some((c) => c.intermediates[n] !== undefined)
     for (const name of t.names) {
+      if (isIntermediate(name)) continue
       const m = /^(.+)_(\d+)$/.exec(name)
       if (!m) {
         errors.push({
           code: 'trans-bad-name',
-          message: `trans references "${name}" — expected <intermediate>_<groupIndex> (e.g. R_Keta_0)`,
+          message: `trans references "${name}" — expected an intermediate name (e.g. R_Keta) or <intermediate>_<groupIndex> (e.g. R_Keta_0)`,
         })
         continue
       }
@@ -843,13 +1042,39 @@ export function validateConfig(config: PwaConfig): { errors: ValidationIssue[]; 
   }
 
   for (const chain of Object.values(config.decayChains)) {
+    // Resolve a daughter's spin: a Particles entry, or (for a cascade) the
+    // J of the first [J,P] group of the intermediate in this chain.
+    const spinOf = (name: string): number | undefined => {
+      const p = config.particles[name]
+      if (p !== undefined) return p.j
+      return chain.intermediates[name]?.groups?.[0]?.jp.j
+    }
     for (const step of chain.steps) {
       for (const [s, l] of step.sl ?? []) {
-        if (!Number.isInteger(s) || s < 1 || s % 2 !== 1) {
+        // Internal representation is {2S+1, L} (ctpwa Amp2BD::ComSL):
+        // 2S+1 is a POSITIVE INTEGER for both integer and half-integer S
+        // (S=0 -> 1, S=1/2 -> 2, S=1 -> 3); requiring odd 2S+1 would reject
+        // every fermion (baryon) decay step.
+        if (!Number.isInteger(s) || s < 1) {
           errors.push({
             code: 'sl-invalid-multiplicity',
-            message: `step ${step.mother} -> ${step.daughters.join(' + ')}: sl multiplicity ${s} must be 2S+1 (odd positive integer)`,
+            message: `step ${step.mother} -> ${step.daughters.join(' + ')}: sl multiplicity 2S+1 = ${s} must be a positive integer (S integer or half-integer)`,
           })
+        } else if (step.daughters.length >= 2) {
+          const j1 = spinOf(step.daughters[0]!)
+          const j2 = spinOf(step.daughters[1]!)
+          if (j1 !== undefined && j2 !== undefined) {
+            const twoJ1 = Math.round(j1 * 2)
+            const twoJ2 = Math.round(j2 * 2)
+            const lo = Math.abs(twoJ1 - twoJ2) + 1
+            const hi = twoJ1 + twoJ2 + 1
+            if (s < lo || s > hi || (s - lo) % 2 !== 0) {
+              errors.push({
+                code: 'sl-spin-mismatch',
+                message: `step ${step.mother} -> ${step.daughters.join(' + ')}: 2S+1 = ${s} is not realizable for J(${step.daughters[0]}) = ${j1} and J(${step.daughters[1]}) = ${j2} (2S+1 in {${Array.from({ length: (hi - lo) / 2 + 1 }, (_, i) => lo + 2 * i).join(', ')}})`,
+              })
+            }
+          }
         }
         if (!Number.isInteger(l) || l < 0) {
           errors.push({

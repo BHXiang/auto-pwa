@@ -51,13 +51,23 @@ export interface AutoPwaEnv {
 import { existsSync } from 'node:fs'
 
 /** Locate the bundled scripts/aifit.py from source (src/), built lib/, or the
- * published package (top-level scripts/). */
+ * published package (top-level scripts/).
+ *
+ * Both `src/config.ts` (`../scripts`) and `lib/src/config.js` (`../../scripts`)
+ * resolve to the PACKAGE ROOT `scripts/`; the compiled layout's `../scripts`
+ * lands on `lib/scripts/`, a duplicate that some published tarballs carry.
+ * That duplicate is stale, so it must never shadow the real script: prefer
+ * any candidate outside `lib/`. */
 export function bundledAifitPath(): string {
-  const fromSource = new URL('../scripts/aifit.py', import.meta.url).pathname // src/config.ts -> scripts/
-  const fromLib = new URL('../../scripts/aifit.py', import.meta.url).pathname // lib/src/config.js -> scripts/
-  if (existsSync(fromSource)) return fromSource
-  if (existsSync(fromLib)) return fromLib
-  return fromSource // best-effort; resolveEnv callers surface a clear "not found"
+  const candidates = [
+    new URL('../scripts/aifit.py', import.meta.url).pathname, // source: root scripts/
+    new URL('../../scripts/aifit.py', import.meta.url).pathname, // lib/src/: root scripts/
+  ]
+  return (
+    candidates.find((p) => !p.includes('/lib/scripts/') && existsSync(p)) ??
+    candidates.find((p) => existsSync(p)) ??
+    candidates[0]!
+  )
 }
 
 export const PWA_DEFAULTS = {

@@ -5,7 +5,7 @@
 分两层架构：
 
 - **`src/` — 纯物理核心**（无 DSH 依赖）：PDG-2026 查询、J^P 可达性、两顶点 J^PC 规则（`jpc.ts`：逐点复刻 ctpwa `Amp2BD::ComSL` 波枚举、共轭对/全同粒子 C 规则）、共振态添加校验（10 条硬规则）、结构化 config.yml 编辑（含 Constraints/衰变步解析与 `validateConfig`）、float 策略建议、拟合结果解析、迭代日记（JSONL + HTML）、本地拟合运行器。
-- **`plugin/` — 薄 DSH 集成**：十四个 `auto_pwa_*` 工具包装核心，经 `--patch` 挂入任意 DSH profile。
+- **`plugin/` — 薄 DSH 集成**：二十四个 `auto_pwa_*` 工具包装核心，经 `--patch` 挂入任意 DSH profile。
 
 ## 快速开始
 
@@ -27,8 +27,8 @@ npm run build
 包 manifest 声明 `dsh.bundle.patch`（`patch/auto-pwa.bundle.yml`），可发布到 npm（公开或私有 registry）后像任何 DSH 插件一样安装：
 
 ```sh
-# 1. 安装依赖 + 声明 bundle（转发 pnpm；然后手动在 profile package.json 的
-#    dsh.profile.bundles 列表加一行 "auto-pwa"）
+# 1. 一条命令完成：安装依赖，且因包声明了 dsh.bundle.patch，
+#    dsh plugin add 会自动把它 reconcile 进 profile 的 dsh.profile.bundles 层栈
 pnpm dsh plugin --profile web add auto-pwa
 
 # 2. 之后每次启动都生效，无需 --patch：
@@ -52,7 +52,7 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 | `plugin/pwa-fit-local.ts` | 本地 Provider：拟合注册为 DSH 后台任务（`ctpwa-N`，owner 围栏）；完成自动通知代理进入下一轮 |
 | `plugin/pwa-guard.ts` | 单调 deny 门禁：直接 `write`/`edit`/bash 写 `config.yml` 一律拦截（必须走 `auto_pwa_edit_config`） |
 | `plugin/pwa-commands.ts` | `/pwa-status [<iterationsRoot>]` — 实时后台任务 + 迭代日记摘要 |
-| `plugin/auto-pwa.ts` | Consumer：二十一个 `auto_pwa_*` 工具；run_fit/fit_status 走 `ctx.pwaFit`；大输出 spill 进 `ctx.spillStore`；`auto_pwa_note` 记录每轮 token 消耗 |
+| `plugin/auto-pwa.ts` | Consumer：二十四个 `auto_pwa_*` 工具；run_fit/fit_status 走 `ctx.pwaFit`；大输出 spill 进 `ctx.spillStore`；`auto_pwa_note` 记录每轮 token 消耗 |
 
 ## 工具
 

@@ -5,21 +5,96 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { apply } from '../plugin/auto-pwa.js'
 import { apply as applyGuard } from '../plugin/pwa-guard.js'
+import { parseConfig } from '../src/config-edit.js'
 import { IterationLog } from '../src/iteration-log.js'
 import { defaultFitRunnerConfig } from '../src/fit-runner.js'
 
 /** Minimal ctx mock: collects tool definitions instead of registering them. */
 function collectDefinitions() {
-  const definitions: { name: string; description?: string; execute?: (args: never, exec: never) => Promise<unknown> }[] = []
+  const definitions: {
+    name: string
+    description?: string
+    output?: { schema?: unknown }
+    execute?: (args: never, exec: never) => Promise<unknown>
+  }[] = []
   const ctx = {
     tools: {
-      register: (def: { name: string; description?: string; execute?: (args: never, exec: never) => Promise<unknown> }) => {
+      register: (def: {
+        name: string
+        description?: string
+        output?: { schema?: unknown }
+        execute?: (args: never, exec: never) => Promise<unknown>
+      }) => {
         definitions.push(def)
       },
     },
   }
   apply(ctx as never)
   return definitions
+}
+
+/**
+ * Validate a value against a tool's declared output schema (the subset the
+ * plugins use: type / properties / items / additionalProperties / required).
+ * The harness rejects a tool result whose shape violates its own schema, so
+ * this catches "declares additionalProperties:false but returns extra fields"
+ * bugs in CI instead of at runtime.
+ */
+function assertSchema(value: unknown, schema: unknown, path = '$'): void {
+  if (schema === null || typeof schema !== 'object') return
+  const s = schema as {
+    type?: string
+    properties?: Record<string, unknown>
+    items?: unknown
+    additionalProperties?: boolean
+    required?: boolean | string[]
+  }
+  if (s.type === 'object') {
+    expect(typeof value, path).toBe('object')
+    const obj = value as Record<string, unknown>
+    const props = s.properties ?? {}
+    if (s.additionalProperties === false) {
+      for (const k of Object.keys(obj)) {
+        if (props[k] === undefined) throw new Error(`${path}.${k} is not a declared property (additionalProperties:false)`)
+      }
+    }
+    for (const [k, sub] of Object.entries(props)) {
+      const subSchema = sub as { required?: boolean }
+      const required = subSchema.required === true || (Array.isArray(s.required) && s.required.includes(k))
+      if (required && obj[k] === undefined) throw new Error(`${path}.${k} is required`)
+      if (obj[k] !== undefined) assertSchema(obj[k], sub, `${path}.${k}`)
+    }
+  } else if (s.type === 'array') {
+    expect(Array.isArray(value), path).toBe(true)
+    ;(value as unknown[]).forEach((v, i) => assertSchema(v, s.items, `${path}[${i}]`))
+  } else if (s.type === 'string') {
+    expect(typeof value, path).toBe('string')
+  } else if (s.type === 'number' || s.type === 'integer') {
+    expect(typeof value, path).toBe('number')
+  } else if (s.type === 'boolean') {
+    expect(typeof value, path).toBe('boolean')
+  }
+}
+
+/**
+ * The harness snapshots every tool result as lossless JSON: an own property
+ * whose value is undefined (or an undefined array element) makes the whole
+ * result invalid, even though the declared schema allows the key to be
+ * absent. Assert the executed value carries no such hole.
+ */
+function assertNoUndefined(value: unknown, path = '$'): void {
+  if (Array.isArray(value)) {
+    value.forEach((v, i) => {
+      if (v === undefined) throw new Error(`${path}[${i}] is undefined`)
+      assertNoUndefined(v, `${path}[${i}]`)
+    })
+    return
+  }
+  if (typeof value !== 'object' || value === null) return
+  for (const [k, v] of Object.entries(value)) {
+    if (v === undefined) throw new Error(`${path}.${k} is undefined`)
+    assertNoUndefined(v, `${path}.${k}`)
+  }
 }
 
 describe('auto-pwa plugin', () => {
@@ -33,6 +108,7 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_suggest',
       'auto_pwa_validate_add',
       'auto_pwa_edit_config',
+      'auto_pwa_remove_resonance',
       'auto_pwa_round',
       'auto_pwa_iter_start',
       'auto_pwa_note',
@@ -159,6 +235,122 @@ Resonances:
     })
   })
 
+  // A radiative 4-body chain: the top intermediate has a production vertex,
+  // the nested ones do not. Their missing production must be an ABSENT key,
+  // not `production: undefined` (which the harness rejects as lossy JSON).
+  const RADIATIVE_CONFIG = `Particles:
+  Jpsi:
+    J: 1
+    P: -1
+    mass: 3.0969
+  gamma:
+    J: 1
+    P: -1
+    mass: 0
+  Kp:
+    J: 0
+    P: -1
+    mass: 0.4937
+  Km:
+    J: 0
+    P: -1
+    mass: 0.4937
+  pi01:
+    J: 0
+    P: -1
+    mass: 0.135
+  pi02:
+    J: 0
+    P: -1
+    mass: 0.135
+
+DecayChains:
+  decay1:
+    Jpsi:
+      - [R_KKpipi, gamma]
+    R_KKpipi:
+      - [R_KK, R_pipi]
+    R_KK: [Kp, Km]
+    R_pipi: [pi01, pi02]
+    intermediates:
+      R_KKpipi:
+        - [J: 0, P: 1]: [f0_1710]
+        - [J: 0, P: -1]: [etac]
+      R_KK:
+        - [J: 1, P: -1]: [phi1020]
+      R_pipi:
+        - [J: 0, P: 1]: [f0_980]
+
+Constraints:
+  identical:
+    - [pi01, pi02]
+  maxL: 4
+
+Resonances:
+  f0_1710:
+    J: 0
+    P: 1
+    model: BWR
+    parameters: [1.723, 0.149]
+  etac:
+    J: 0
+    P: -1
+    model: BWR
+    parameters: [2.9839, 0.032]
+  phi1020:
+    J: 1
+    P: -1
+    model: BWR
+    parameters: [1.0195, 0.0045]
+  f0_980:
+    J: 0
+    P: 1
+    model: BWR
+    parameters: [0.99, 0.06]
+`
+
+  function withConfigText(text: string, fn: (configPath: string) => Promise<void>) {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-plugin-'))
+    const configPath = join(dir, 'config.yml')
+    writeFileSync(configPath, text)
+    return fn(configPath).finally(() => rmSync(dir, { recursive: true, force: true }))
+  }
+
+  it('auto_pwa_jpc_check omits production for intermediates that have no production vertex', async () => {
+    await withConfigText(RADIATIVE_CONFIG, async (configPath) => {
+      const out = await execute('auto_pwa_jpc_check', { configPath } as never)
+      assertNoUndefined(out)
+      const body = (out as { intermediates: { name: string; production?: unknown }[] }).intermediates
+      const top = body.find((i) => i.name === 'R_KKpipi')!
+      expect(top.production).toBeDefined()
+      const nested = body.find((i) => i.name === 'R_KK')!
+      expect(nested.production).toBeUndefined()
+      expect(Object.keys(nested)).not.toContain('production')
+    })
+  })
+
+  it('auto_pwa_jpc_check enforces C(X) = +1 at a J/psi -> gamma + X vertex', async () => {
+    await withConfigText(RADIATIVE_CONFIG, async (configPath) => {
+      const out = (await execute('auto_pwa_jpc_check', { configPath } as never)) as {
+        intermediates: { name: string; production?: { cRequired: number | null } }[]
+      }
+      // C(J/psi) = -1 and C(gamma) = -1, so the recoil system must carry C = +1.
+      expect(out.intermediates.find((i) => i.name === 'R_KKpipi')!.production!.cRequired).toBe(1)
+    })
+  })
+
+  it('auto_pwa_decay_check returns lossless JSON when decayTo is omitted', async () => {
+    const out = await execute('auto_pwa_decay_check', {
+      mother: { j: 1, p: -1, mass: 3.0969 },
+      daughter: { j: 1, p: -1, mass: 0 },
+      maxL: 4,
+    } as never)
+    assertNoUndefined(out)
+    const candidates = (out as { candidates: { resonances: Record<string, unknown>[] }[] }).candidates
+    expect(candidates.length).toBeGreaterThan(0)
+    expect(candidates.some((c) => c.resonances.length > 0)).toBe(true)
+  })
+
   it('auto_pwa_config_view: constraints parsed, validation clean, PDG cross-refs present', async () => {
     await withConfig(async (configPath) => {
       const out = (await execute('auto_pwa_config_view', { configPath } as never)) as {
@@ -179,6 +371,54 @@ Resonances:
     })
   })
 
+  it('auto_pwa_config_view output conforms to its declared schema when validation fails', async () => {
+    // A bad trans index makes validateConfig emit errors: the tool result then
+    // carries validation.errors items whose {code,message} fields MUST be
+    // declared in the output schema (the harness rejects undeclared fields).
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-plugin-'))
+    const configPath = join(dir, 'config.yml')
+    writeFileSync(configPath, CONFIG.replace('[R_Keta_0, R_Keta_1]', '[R_Keta_9, R_Keta_1]'))
+    try {
+      const def = collectDefinitions().find((d) => d.name === 'auto_pwa_config_view')!
+      const out = (await def.execute!({ configPath } as never, {} as never)) as {
+        validation: { ok: boolean; errors: { code: string; message: string }[] }
+      }
+      expect(out.validation.ok).toBe(false)
+      expect(out.validation.errors.length).toBeGreaterThan(0)
+      expect(out.validation.errors[0]).toHaveProperty('code')
+      expect(out.validation.errors[0]).toHaveProperty('message')
+      assertSchema(out, def.output?.schema)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_remove_resonance detaches a name, keeps the group, drops the definition', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-plugin-'))
+    const configPath = join(dir, 'config.yml')
+    writeFileSync(configPath, CONFIG)
+    try {
+      const def = collectDefinitions().find((d) => d.name === 'auto_pwa_remove_resonance')!
+      const out = (await def.execute!({ configPath, removals: [{ name: 'K2_1430' }] } as never, {} as never)) as {
+        ok: boolean
+        written: boolean
+        changed: string[]
+        dropped: string[]
+      }
+      expect(out.ok).toBe(true)
+      expect(out.written).toBe(true)
+      expect(out.dropped).toEqual(['K2_1430'])
+      assertSchema(out, def.output?.schema)
+      const after = parseConfig(readFileSyncSync(configPath, 'utf8'))
+      expect(after.resonances.K2_1430).toBeUndefined()
+      // The [2+] group stays (empty) so Constraints.trans indices are intact.
+      expect(after.decayChains.decay1?.intermediates.R_Keta?.groups).toHaveLength(2)
+      expect(after.decayChains.decay1?.intermediates.R_Keta?.groups[1]?.names).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('auto_pwa_validate_add runs rules 10-12 against the real PDG table', async () => {
     await withConfig(async (configPath) => {
       const out = (await execute('auto_pwa_validate_add', {
@@ -194,6 +434,60 @@ Resonances:
       expect(out.ok).toBe(false)
       expect(out.errors.map((e) => e.code)).toContain('c-violation')
     })
+  })
+
+  it('auto_pwa_validate_add accepts a half-integer baryon (N(1520) 3/2-)', async () => {
+    // chic0(0+) -> N* + pbar can only reach half-integer J_R; N(1520) 3/2- is
+    // realizable with L=2. Before the half-integer fix the production-vertex
+    // enumeration was empty, so every baryon proposal failed the J^P gate.
+    const BARYON = `Particles:
+  psip: {J: 1, P: -1, mass: 3.686}
+  gamma: {J: 1, P: -1, mass: 0.0}
+  eta: {J: 0, P: -1, mass: 0.547862}
+  p: {J: 0.5, P: 1, mass: 0.938272}
+  pbar: {J: 0.5, P: -1, mass: 0.938272}
+DecayChains:
+  chain1:
+    psip:
+      - [gamma, R_chicj, {ls: [1, 1]}]
+    R_chicj:
+      - [R_peta, pbar]
+    R_peta:
+      - [p, eta]
+    intermediates:
+      R_chicj:
+        - [J: 0, P: 1]: [chic0]
+      R_peta:
+        - [J: 1.5, P: 1]: []
+Resonances:
+  chic0:
+    J: 0
+    P: 1
+    model: ONE
+    parameters: [3.41471]
+`
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-plugin-'))
+    const configPath = join(dir, 'config.yml')
+    writeFileSync(configPath, BARYON)
+    try {
+      const out = (await execute('auto_pwa_validate_add', {
+        configPath,
+        proposal: {
+          name: 'N1520',
+          chain: 'R_peta',
+          jpGroup: { j: 1.5, p: -1 },
+          model: 'BW',
+          parameters: [1.515, 0.11],
+          free: [0],
+          freeRange: [[1.45, 1.6]],
+        },
+        decayTo: ['p', 'eta'],
+      } as never)) as { ok: boolean; errors: { code: string }[]; warnings: { code: string }[] }
+      expect(out.errors).toEqual([])
+      expect(out.ok).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -399,6 +693,33 @@ Resonances:
     }
   })
 
+  it('auto_pwa_try_candidates: removals get their own trials (significance pruning)', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-trial-rm-'))
+    try {
+      const iterationsRoot = join(dir, 'iterations')
+      const iterDir = join(iterationsRoot, 'iter-000')
+      mkdirSync(join(iterDir, 'results'), { recursive: true })
+      writeFileSync(join(iterDir, 'config.yml'), LOOP_CONFIG)
+      const out = (await run(
+        h,
+        'auto_pwa_try_candidates',
+        { baseIterDir: iterDir, removals: [{ name: 'K2_1430' }], shortRuns: 1, shortMaxIter: 300 },
+        { agent: { sessionId: 'sess-1' } },
+      )) as { ok: boolean; jobs: { candidate: string; iterDir: string }[]; skipped: unknown[] }
+      expect(out.ok).toBe(true)
+      expect(out.skipped).toHaveLength(0)
+      expect(out.jobs).toHaveLength(1)
+      expect(out.jobs[0]!.candidate).toBe('rm:K2_1430')
+      // The trial config really has the state removed (trial dir, base untouched).
+      const trialCfg = parseConfig(readFileSyncSync(join(out.jobs[0]!.iterDir, 'config.yml'), 'utf8'))
+      expect(trialCfg.resonances.K2_1430).toBeUndefined()
+      expect(parseConfig(readFileSyncSync(join(iterDir, 'config.yml'), 'utf8')).resonances.K2_1430).toBeDefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('auto_pwa_loop: next(propose) -> decide(iterate) -> next(converge) writes FINAL-REPORT.md', async () => {
     const h = harnessCtx()
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-loop-'))
@@ -473,6 +794,44 @@ Resonances:
       expect(second.converged).toBe(true)
       expect(second.reportPath).toContain('FINAL-REPORT.md')
       expect(readFileSyncSync(join(iterationsRoot, 'FINAL-REPORT.md'), 'utf8')).toContain('收敛')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_loop_decide iterate accepts removals without a proposal', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-loop-rm-'))
+    try {
+      const iterationsRoot = join(dir, 'iterations')
+      const iter0 = join(iterationsRoot, 'iter-000')
+      mkdirSync(join(iter0, 'results'), { recursive: true })
+      writeFileSync(join(iter0, 'config.yml'), LOOP_CONFIG)
+      writeFileSync(join(iter0, 'results', 'fit.json'), fitJson(100))
+      new IterationLog({ rootDir: iterationsRoot }).append({
+        iter: 0,
+        timestamp: new Date().toISOString(),
+        title: '基线',
+        kind: 'other',
+        configPath: join(iter0, 'config.yml'),
+        iterDir: iter0,
+        nll: 100,
+        conclusion: 'baseline',
+      })
+      await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter0 }, { agent: { sessionId: 'sess-1' } })
+      // Prune K2_1430 (the [2+] group is emptied but kept) instead of adding.
+      const decided = (await run(
+        h,
+        'auto_pwa_loop_decide',
+        { iterationsRoot, action: 'iterate', removals: [{ name: 'K2_1430' }] },
+        { agent: { sessionId: 'sess-1' } },
+      )) as { ok: boolean; iter: number; iterDir: string; jobId?: string }
+      expect(decided.ok).toBe(true)
+      expect(decided.jobId).toBe('ctpwa-9')
+      const after = parseConfig(readFileSyncSync(join(decided.iterDir, 'config.yml'), 'utf8'))
+      expect(after.resonances.K2_1430).toBeUndefined()
+      expect(after.decayChains.decay1?.intermediates.R_Keta?.groups).toHaveLength(2)
+      expect(after.decayChains.decay1?.intermediates.R_Keta?.groups[1]?.names).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -705,7 +1064,7 @@ describe.skipIf(!HAS_UPROOT || !existsSync(WAVE_ROOT) || !existsSync(WAVE_CFG))(
 
 describe('auto-pwa skill self-registration', () => {
   it('registers the bundled SKILL.md as a runtime skill when ctx.skills is present', () => {
-    const registered: { name?: string; description?: string; content?: string; invocation?: unknown }[] = []
+    const registered: { name?: string; description?: string; content?: string; invocation?: unknown; source?: string }[] = []
     const ctx = {
       get: (name: string) => (name === 'skills' ? { register: (s: unknown) => { registered.push(s as never); return () => {} } } : undefined),
       on: () => {},

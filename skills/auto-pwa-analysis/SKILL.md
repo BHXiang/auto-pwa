@@ -60,13 +60,26 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - **案例 2（衰变顶点宇称）**：R_Keta→K⁺η 的 1⁺ 波不存在（P=(−1)^L 迫使 J=L 时 P=−1）→ **K1(1410) 按 1⁺ 提案被 `decay-vertex-forbidden` 拒绝**。
 - **案例 3（全同选择定则）**：π⁰π⁰ 只允许 L 偶（0⁺⁺,2⁺⁺,4⁺⁺）；ΛΛ（费米子）要求 (−1)^{L+S}=−1。两个全同粒子**必须声明进 `Constraints.identical`**，否则引擎不对称化（validate 会 warning）。
 
-**sl 白名单记号**：config 的 `sl` 条目是 **(2S+1, L)**（如 `[1, 1]` = S=0, L=1），与工具输出的波表一致；S 物理值 = (2S+1−1)/2。
+**sl 白名单记号**：config 里 `sl: [S, L]`、`ls: [L, S]`，**S 是物理自旋（整数或半整数，如 0.5 / 1.5）**，与 ctpwa `ConfigParser::parseSLFilter` 一致；工具内部转成 ctpwa 的 **(2S+1, L)** 记号（如 `sl: [0.5, 1]` → 内部 `[2, 1]`；`ls: [1, 1]` → 内部 `[3, 1]`），工具输出的波表用内部记号。两个键都支持，`ls` 在前者优先。
+
+**半整数角动量（重子共振态）**：末态含核子时（p pbar η、K Λ …），中间态 J 是半整数（1/2, 3/2, 5/2 …），`Particles` 的 J 写 `0.5`/`1.5` 或 `"1/2"`/`"3/2"`，`[J, P]` 组同理。产生顶点枚举、波表、`sl` 门禁都支持半整数（2S+1 可为偶数，如 p+η 只有 S=1/2 → 2S+1=2）；PDG 表已含 N*/Δ* 全谱（`auto_pwa_lookup` 可查 N(1720)、N(1520)、Δ(1905) 等）。
+
+## 2.2 删除共振态（显著性剪枝，与"加"对称）
+
+模型太满时必须能删；显著性检查的标准做法就是**删掉某个态再看 ΔNLL**（ΔNLL 不显著 = 该态多余）。
+
+- **`auto_pwa_remove_resonance`**：独立删除工具（`removals: [{name, chain?, jpGroup?, dropDefinition?}]`）。先 dry-run 校验（存在性/作用域/删除后交叉引用）→ 结构化摘除 → 全 config 写前总闸 → 原子写（自动 `.bak`）。errors 非空绝不写。
+- **语义（重要）**：删除是**按名摘除**，`[J,P]` 组**即使变空也保留**——因为组顺序决定振幅块索引，`Constraints.trans` 引用的是索引（删组会让后面全部错位）。`Resonances.<name>` 定义只在**已无任何组引用**时删除；`dropDefinition: false` 保留参数以便再挂回。只会影响指定 `chain`/`jpGroup` 的那一处（共轭链可以只删一边）。
+- **迭代内删除**：`auto_pwa_round` / `auto_pwa_iterate` / `auto_pwa_loop_decide`(action=iterate) 都接受 `removals`，可与 `proposal` 同时给（先删后加）；只给 `removals` 也能开一轮（纯剪枝轮）。
+- **并行显著性试探**：`auto_pwa_try_candidates` 也接受 `removals`（每个删除候选一个 trial），跑完用 `auto_pwa_compare` 看 ΔNLL——**删掉后 ΔNLL 显著变差 ⇒ 该态不可删；ΔNLL 变化在阈值内 ⇒ 可删**。
+- **何时删**：`auto_pwa_diagnose` 报份额 < 2σ、参数撞 `free_range` 边界、或强简并（|ρ|>0.8）时。删完必须重拟合并用 ΔNLL/份额确认。
 
 ## 3. 物理硬规则（程序强制，模型需理解）
 
 - **PDG 依据**：BWR/BW/Flatte 共振态必须能在 PDG 表命中（名字匹配 id/别名）。**PDG 上没有的新粒子一律拒绝**——分波分析不能发明粒子。唯一例外：`model: ONE`（相空间项），其振幅 = 势垒因子，mass 参数不参与振幅，命名惯例 `NR*`（如 NR1_KK）。
 - **出处（reference）例外**：若参数来自**最新实验结果**（而非 PDG 平均）或该态尚未被 PDG 收录，提案必须带 `reference`（DOI 或论文名）——此时 PDG 平均一致性检查（质量/J^P/未收录）降为警告并记录出处，但**物理门禁（阈值/衰变顶点 J^P/C 守恒）绝不豁免**。reference 会写入 config.yml 并随迭代继承。用 `auto_pwa_lookup` 看单实验测量历史（stat/syst 分离 + DOI），确认引用的实验值真实存在。
 - **JPC 一致性**：提案 (J,P) 必须与 PDG 条目一致。ρ(770) 是 1⁻，写成 0⁺ 会被拒。
+- **共振态 J/P 可以不写（ctpwa 约定）**：`Resonances.<name>` 里不写 `J`/`P` 时，量子数完全由它所在的 intermediates `[J,P]` 组决定——**这正是共轭链的写法**：同一个 N(1720) 在 `R_peta`（N*→p η）是 `[1.5, +1]`，在 `R_pbareta`（N̄*→p̄ η）是 `[1.5, −1]`（反粒子内禀宇称约定使 P 反号）。工具**新增共振态时不写 J/P**（只写 model/parameters/free/…），并且不会因为同一态进了 P 相反的组而报 `jpc-conflict`。门禁按组的 J 与 PDG 对齐：**J 不一致 = error**；只在 J 相同、P 相反且共振态没有显式 J/P 时给 `jpc-parity-convention` **warning**（提示确认这是有意的共轭波）。若共振态**显式**写了 J/P（如 `J: 1.5, P: -1`），则与提案组不一致仍是 `jpc-conflict` error。
 - **运动学阈值**：m_R ≤ m_A − m_B（on-shell）。接近阈值 → off-shell 风险 → 建议 float 质量；具体阈值随通道而变，用 `auto_pwa_decay_check` 查你的通道。
 - **参数结构**：BWR/BW 恰好 [质量, 宽度] GeV；ONE 恰好 1 个参数；Flatte 需要 channels 字段。参数长度错 ctpwa 直接崩溃。
 - **J^P 可达性**：J/ψ(1⁻) → 0⁻ + R 时，可达 J^P 为 0⁻, 1±, 2±, 3±, 4±, 5⁺（maxL=4）。**0⁺ 不可达**（需要 L=0 但角动量要求 L=1）。

@@ -89,9 +89,27 @@ export interface FitJsonView {
   }
 }
 
+/**
+ * JSON.parse that tolerates Python-style bare NaN / Infinity / -Infinity
+ * tokens. Python's json.dump emits them by default, and older aifit.py
+ * outputs (before the writer sanitized them) contain e.g.
+ * `"minEigenvalue": NaN`, which makes a strict JSON.parse throw and takes
+ * the whole diagnostics channel down. The substitution only runs after a
+ * strict parse failed, and only in value position (after `:`, `,` or `[`),
+ * so a NaN inside a string literal can never be touched.
+ */
+export function parseJsonLoose(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    const sanitized = text.replace(/([:,\[]\s*)(NaN|[-+]?Infinity)\b/g, '$1null')
+    return JSON.parse(sanitized)
+  }
+}
+
 /** Parse results/fit.json (aifit.py schema; tolerant of missing fields). */
 export function parseFitJson(text: string): FitJsonView {
-  const raw = JSON.parse(text) as Record<string, unknown>
+  const raw = parseJsonLoose(text) as Record<string, unknown>
   const fit = raw.fit as Record<string, unknown> | undefined
   const best = fit?.best as Record<string, unknown> | undefined
   const out: FitJsonView = {
