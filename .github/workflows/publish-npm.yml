@@ -21,6 +21,9 @@ on:
 jobs:
   test-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # npm publish --provenance 需要 OIDC id-token
     steps:
       - uses: actions/checkout@v4
 
