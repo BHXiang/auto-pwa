@@ -1,8 +1,7 @@
 # auto-pwa npm bundle layer — installable via the profile bundles list.
 #
-# Install (web profile):
+# Install (web profile) — 一条命令，dsh plugin add 会自动 reconcile bundles 层栈：
 #   pnpm dsh plugin --profile web add auto-pwa
-#   # + add "auto-pwa" to the profile's dsh.profile.bundles list
 #
 # Bundle patches are applied over the profile root config, so the Loader
 # resolves entry names from the PROFILE directory (the loader baseUrl), not
