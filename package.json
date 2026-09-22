@@ -1,6 +1,6 @@
 {
   "name": "auto-pwa",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "AI-driven partial wave analysis for DeepSeek Harness: physics-gated config editing, ctpwa fit execution, numeric evaluation, and goal-driven iterative convergence. Physics knowledge (PDG-2026) as pure functions; DSH integration as a thin pwa_* tool plugin.",
   "license": "MIT",
