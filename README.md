@@ -22,18 +22,24 @@ npm run typecheck
 npm run build
 ```
 
-### 方式 A：npm bundle 安装（推荐，profile 持久声明）
+### 方式 A：一键安装（推荐，npm 全局）
 
-包 manifest 声明 `dsh.bundle.patch`（`patch/auto-pwa.bundle.yml`），可发布到 npm（公开或私有 registry）后像任何 DSH 插件一样安装：
+包自带 `auto-pwa` 启动器（双态 delegating launcher，模式同 dsh-tui）：
 
 ```sh
-# 1. 一条命令完成：安装依赖，且因包声明了 dsh.bundle.patch，
-#    dsh plugin add 会自动把它 reconcile 进 profile 的 dsh.profile.bundles 层栈
-pnpm dsh plugin --profile web add auto-pwa
+# 1. 全局安装 dsh CLI + 本插件
+npm install -g @deepseek-ai/dsh auto-pwa
 
-# 2. 之后每次启动都生效，无需 --patch：
-pnpm dsh web
+# 2. 首次运行自动执行 dsh plugin --profile web add auto-pwa 并启动 Web GUI；
+#    之后每次运行 = dsh --profile web（委托 profile 内副本，版本随 --upgrade 前进）
+auto-pwa
+
+# 升级 / headless / 自定义 profile：
+auto-pwa --upgrade
+auto-pwa -p headless "完成此文件夹分波"     # 或 export DSH_PWA_PROFILE=headless
 ```
+
+等价的手动形式（无需启动器）：`pnpm dsh plugin --profile web add auto-pwa`——包 manifest 声明 `dsh.bundle.patch`（`patch/auto-pwa.bundle.yml`），`dsh plugin add` 会自动把它 reconcile 进 profile 的 `dsh.profile.bundles` 层栈，之后 `pnpm dsh web` 直接生效，无需 `--patch`。
 
 skill（`auto-pwa-analysis`）由插件启动时**自动注册**（`ctx.skills.register`），无需手动复制到 `~/.dsh/skills`。
 

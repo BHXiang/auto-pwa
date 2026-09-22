@@ -21,7 +21,11 @@
       "patch": "./patch/auto-pwa.bundle.yml"
     }
   },
+  "bin": {
+    "auto-pwa": "bin/auto-pwa.js"
+  },
   "files": [
+    "bin",
     "lib",
     "plugin",
     "scripts",
