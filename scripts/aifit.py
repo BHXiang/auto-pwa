@@ -93,6 +93,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--max-iter", type=int, default=int(os.environ.get("PWA_AIFIT_MAX_ITER", "10000")), help="单次 LBFGS 最大迭代")
     p.add_argument("--seed", type=int, default=42, help="随机种子基（第 i 次运行用 seed+i）")
     p.add_argument("--json", default="results/fit.json", help="JSON 输出路径")
+    p.add_argument("--warm", metavar="FIT_JSON", default=None,
+                   help="热启动：按参数名对齐，用这份 fit.json 的 best.params 作为**第一次**运行的初值"
+                        "（其余 run 仍按 seed 随机；新增/未匹配的参数保留 seed 初值，越界值夹回 bounds）")
     # ---- 优化器（与 ctpwa example/fit.py 同名参数/env，默认 reparam） ----
     p.add_argument("--optimizer", default=os.environ.get("FIT_OPTIMIZER", "reparam"),
                    choices=["reparam", "projected", "lbfgs"],
@@ -487,6 +490,98 @@ def build_best_json(opt: UnifiedPWAOptimizer, final_params: torch.Tensor, result
     return best
 
 
+def _param_label(opt: UnifiedPWAOptimizer, k: int) -> str:
+    """统一参数向量第 k 个分量的可读名（与 correlation.names 的写法一致）。"""
+    nc = opt.n_coupling_free
+    if k < nc:
+        return f"Re({opt.params_names[k]})"
+    if k < 2 * nc:
+        return f"Im({opt.params_names[k - nc]})"
+    return opt.params_names[k - nc]
+
+
+def warm_start_params(opt: UnifiedPWAOptimizer, warm_path: str, initial: torch.Tensor,
+                      warnings: list[str]) -> tuple[torch.Tensor, dict]:
+    """按**参数名**对齐，把上一次 fit.json 的最优参数灌成本次初值。
+
+    向量布局与 generate_initial_params 一致：[Re(c) | Im(c) | theta]；耦合 0 是固定
+    参考振幅（bounds 把它钉成 1+0i），不参与热启动。按名字对齐带来两个关键性质：
+
+    - **新增一个共振态再热启动**是自然可用的：新参数名在旧 fit.json 里找不到，保留
+      seed 初值，其余参数沿用上次结果（这正是迭代工作流想要的）；
+    - free_range 之后若被改窄，越界值会夹回当前 bounds 并如实报告，不静默使用。
+
+    读不出 / 一个名字都对不上时**直接报错退出**（不静默退回随机初值 —— 那会白跑一次
+    拟合，且用户以为自己在续跑）。
+    """
+    try:
+        with open(warm_path, encoding="utf-8") as fh:
+            prev = json.load(fh)
+    except Exception as e:
+        raise SystemExit(f"[aifit] --warm 读取失败 {warm_path}: {type(e).__name__}: {e}")
+    best = prev.get("best") if isinstance(prev, dict) else None
+    entries = best.get("params") if isinstance(best, dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise SystemExit(f"[aifit] --warm {warm_path}: 没有 best.params（这不是一份拟合结果？）")
+    by_name: dict[str, dict] = {
+        p["name"]: p for p in entries if isinstance(p, dict) and isinstance(p.get("name"), str)
+    }
+
+    nc = opt.n_coupling_free
+    out = initial.clone()
+    reused: list[str] = []
+    missing: list[str] = []
+    for i in range(1, nc):  # i == 0 是固定参考振幅
+        name = opt.params_names[i]
+        p = by_name.get(name)
+        if (p is None or p.get("kind") != "coupling"
+                or not isinstance(p.get("real"), (int, float))
+                or not isinstance(p.get("imag"), (int, float))):
+            missing.append(name)
+            continue
+        out[i] = float(p["real"])
+        out[nc + i] = float(p["imag"])
+        reused.append(name)
+    if opt.has_free_res:
+        for j in range(opt.n_res_free):
+            name = opt.params_names[nc + j]
+            p = by_name.get(name)
+            if p is None or p.get("kind") != "resonance" or not isinstance(p.get("value"), (int, float)):
+                missing.append(name)
+                continue
+            out[2 * nc + j] = float(p["value"])
+            reused.append(name)
+    if not reused:
+        raise SystemExit(
+            f"[aifit] --warm {warm_path}: 参数名与当前 config 无一对上"
+            f"（可能是另一份 config 的 fit.json 或名字已全改）—— 拒绝静默退回随机初值")
+
+    clamped: list[str] = []
+    lo, hi = opt.bounds(out)
+    for k in range(out.shape[0]):
+        v, lo_k, hi_k = float(out[k]), float(lo[k]), float(hi[k])
+        if v < lo_k:
+            out[k] = lo_k
+            clamped.append(f"{_param_label(opt, k)}: {v:.6g} < {lo_k:.6g}")
+        elif v > hi_k:
+            out[k] = hi_k
+            clamped.append(f"{_param_label(opt, k)}: {v:.6g} > {hi_k:.6g}")
+    for c in clamped:
+        warnings.append(f"热启动夹回 bounds: {c}")
+    print(
+        f"[aifit] 热启动 {warm_path}: 复用 {len(reused)} 个参数、未匹配 {len(missing)} 个"
+        f"{'（保留 seed 初值）' if missing else ''}"
+        f"{f'、夹回 bounds {len(clamped)} 个' if clamped else ''}",
+        flush=True,
+    )
+    return out, {
+        "source": warm_path,
+        "reused": reused,
+        "missing": missing,
+        "clamped": clamped,
+    }
+
+
 def _run_fit(args: argparse.Namespace) -> int:
     """完整拟合：example/fit.py 同源优化器（多起点 + polish + Hessian 诊断） -> fit.json。"""
     try:
@@ -540,9 +635,17 @@ def _run_fit(args: argparse.Namespace) -> int:
     results: list[dict] = []
     os.makedirs("results", exist_ok=True)  # nll_history/fit.json/weight_best.root 的落点
 
+    # 热启动只喂给第一次运行：其余 run 仍按 seed 随机，best-of-runs 语义不变。
+    warm_initial: torch.Tensor | None = None
+    warm_report: dict | None = None
+    if args.warm:
+        warm_initial, warm_report = warm_start_params(
+            opt, args.warm, opt.generate_initial_params(seed=args.seed), warnings)
+
     for i in range(args.runs):
         seed = args.seed if i == 0 else args.seed + i
-        initial = opt.generate_initial_params(seed=seed)
+        initial = warm_initial if (i == 0 and warm_initial is not None) \
+            else opt.generate_initial_params(seed=seed)
         try:
             result = opt.optimize_single_run(
                 initial, run_id=i, max_iter=args.max_iter,
@@ -643,6 +746,8 @@ def _run_fit(args: argparse.Namespace) -> int:
         },
         "error": None,
     }
+    if warm_report is not None:
+        out["fit"]["warm"] = warm_report
 
     # 保存权重文件（auto_pwa_evaluate 用）；失败只降级 warning。
     try:

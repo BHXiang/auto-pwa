@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { LocalFitRunner, detectGpuAvailability } from '../src/fit-runner.js'
 
 /**
@@ -83,5 +84,17 @@ describe('LocalFitRunner', () => {
     writeFileSync(fakeNo, `#!/bin/sh\necho False\n`, { mode: 0o755 })
     expect(detectGpuAvailability(fakeNo, '')).toMatch(/no CUDA device/)
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('aifit CLI surface', () => {
+  // 驱动能力必须能被 scriptArgs 触发：--warm 是"按名字对齐续跑"，provenance 侧
+  // （initFromScriptArgs）早就认识它，这里守住 CLI 真的暴露了这个开关。
+  const hasPython = spawnSync('python3', ['--version']).status === 0
+  it.skipIf(!hasPython)('advertises --warm in --help', () => {
+    const r = spawnSync('python3', ['scripts/aifit.py', '--help'], { encoding: 'utf8' })
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('--warm')
+    expect(r.stdout).toContain('按参数名对齐')
   })
 })

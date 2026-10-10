@@ -235,16 +235,16 @@ export function initFromScriptArgs(scriptArgs: string[] | undefined): Provenance
       return { source: 'random', ...(seed !== undefined && Number.isFinite(seed) ? { seed } : {}), note: '显式 --seed' }
     }
   }
-  // The note must not imply a flag the driver lacks: aifit's CLI is
-  // --runs/--max-iter/--seed/--optimizer/--no-polish/--vmax/--amp-*, with no
-  // --warm yet (the earlier wording sent a reader looking for a warm start that
-  // cannot be requested). This record still understands --warm/--init-from, so
-  // implementing it in the driver needs no change here.
+  // The note must match what the driver actually accepts. aifit's CLI is
+  // --runs/--max-iter/--seed/--optimizer/--no-polish/--vmax/--amp-*/--warm;
+  // --warm <fit.json> is a name-aligned warm start (first run only), and this
+  // record recognises --warm/--init-from/--resume-from spellings.
   return {
     source: 'random',
     note:
       '未指定 --seed：用驱动默认种子（aifit 默认 seed=42）。' +
-      'aifit 目前没有 --warm 热启动选项（provenance 已能记录 --warm/--init-from，等驱动实现）',
+      '要用上一次拟合续跑，传 scriptArgs: ["--runs","1","--warm","<上一次 fit.json>"]' +
+      '（按参数名对齐；新增参数保留 seed 初值）',
   }
 }
 

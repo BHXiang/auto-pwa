@@ -77,11 +77,12 @@ describe('initFromScriptArgs', () => {
     expect(initFromScriptArgs(undefined).source).toBe('random')
   })
 
-  it('default note does not imply a --warm flag the driver lacks', () => {
-    // aifit's CLI has no --warm, so the note must say so instead of sending a
-    // reader looking for a warm start (the old wording did exactly that).
+  it('default note points at the warm start the driver actually has', () => {
+    // aifit gained --warm <fit.json> (name-aligned, first run only); the note must
+    // match the driver instead of describing a flag that does not exist.
     const note = initFromScriptArgs(['--runs', '1']).note ?? ''
-    expect(note).toContain('没有 --warm')
+    expect(note).toContain('--warm')
+    expect(note).toContain('按参数名对齐')
     expect(note).toContain('seed=42')
   })
 })
