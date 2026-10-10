@@ -321,8 +321,19 @@ export interface DecayStep {
   /** Mother of this step (particle or intermediate name). */
   mother: string
   daughters: [string, string]
-  /** (2S+1, L) whitelist from the per-step `sl` opts; undefined = no filter. */
+  /**
+   * (2S+1, L) whitelist from the per-step `sl`/`ls` opts; undefined = no filter.
+   *
+   * ctpwa parses the two key names with DIFFERENT orders (Config.cu
+   * `parseSLFilter`): `sl: [S, L]` and the TFPWA alias `ls: [L, S]`, where S is
+   * the PHYSICAL total spin (half-integers allowed — a baryon step has S = 1/2).
+   * Both are stored here in ctpwa's internal (2S+1, L) notation, which is also
+   * what the tool wave tables print. Getting the order wrong only ever admits or
+   * drops waves silently, so the gate echoes the interpretation.
+   */
   sl?: [number, number][]
+  /** Which key supplied {@link sl} — `ls` is the L-first alias. */
+  slKey?: 'sl' | 'ls'
   /** Per-step parity-breaking flag (`p_break`; weak decays). */
   pBreak?: boolean
   /** Per-step barrier-factor switch (`has_bf`); may be per daughter. */

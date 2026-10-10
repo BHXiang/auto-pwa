@@ -554,8 +554,8 @@ function parseDaughterModes(
 }
 
 /** Per-step opts -> DecayStep fields (ctpwa Config.cu parsing, sl flat or nested). */
-function stepOpts(opts: Map<unknown, unknown>): Pick<DecayStep, 'sl' | 'pBreak' | 'hasBf' | 'bfD'> {
-  const out: Pick<DecayStep, 'sl' | 'pBreak' | 'hasBf' | 'bfD'> = {}
+function stepOpts(opts: Map<unknown, unknown>): Pick<DecayStep, 'sl' | 'slKey' | 'pBreak' | 'hasBf' | 'bfD'> {
+  const out: Pick<DecayStep, 'sl' | 'slKey' | 'pBreak' | 'hasBf' | 'bfD'> = {}
   // Wave whitelist, mirroring ctpwa ConfigParser::parseSLFilter exactly:
   //   sl: [S, L] / [[S, L], ...]   (S first)
   //   ls: [L, S] / [[L, S], ...]   (L first, TFPWA ls_list order)
@@ -585,7 +585,12 @@ function stepOpts(opts: Map<unknown, unknown>): Pick<DecayStep, 'sl' | 'pBreak' 
       }
       if (asNum(list[0]) !== undefined) pushRow(list) // flat [S, L] / [L, S]
       else for (const r of list) pushRow(r) // nested
-      if (rows.length > 0) out.sl = rows
+      if (rows.length > 0) {
+        out.sl = rows
+        // 记住是哪个键给的：`ls` 是 (L, S) 的 TFPWA 记法，写错顺序只会静默放进/丢掉波，
+        // 所以门禁要能回显"你写的是哪个键、被解释成了什么"。
+        out.slKey = lsFirst ? 'ls' : 'sl'
+      }
     }
   }
   const pBreak = opts.get('p_break')

@@ -327,6 +327,43 @@ export function gateConfig(
     })
   }
 
+  // --- 3c. `sl` / `ls` wave-filter order ----------------------------------
+  // ctpwa parses the two key names with DIFFERENT orders (Config.cu
+  // parseSLFilter): `sl: [S, L]` vs the TFPWA alias `ls: [L, S]`, S being the
+  // PHYSICAL spin. A wrong order only ever admits or drops waves SILENTLY, so
+  // echo back what was written and what it was interpreted as (and flag the
+  // L-first alias, which is the easy one to get backwards).
+  {
+    const slWarnings: GateIssue[] = []
+    for (const [chainName, chain] of Object.entries(config.decayChains)) {
+      for (const step of chain.steps) {
+        if (step.sl === undefined) continue
+        const label = `${chainName}: ${step.mother} -> ${step.daughters.join(' + ')}`
+        const echo = step.sl
+          .map(([mult, l]) => `S=${(mult - 1) / 2}, L=${l}（内部 (2S+1, L)=(${mult}, ${l})）`)
+          .join('; ')
+        if (step.slKey === 'ls') {
+          slWarnings.push(
+            warn(
+              'sl-order',
+              `${label} 用了 \`ls\` 别名 —— 它的顺序是 **(L, S)**（L 在前，TFPWA 记法），` +
+                `而 \`sl\` 是 (S, L)（S 是物理自旋）。当前解释为: ${echo}。` +
+                `若本意是 (S, L)，请改用 \`sl\``,
+            ),
+          )
+        } else {
+          slWarnings.push(
+            warn(
+              'sl-echo',
+              `${label} 的 \`sl\` 白名单按 (S, L) 解释（S 为物理自旋）→ ${echo}`,
+            ),
+          )
+        }
+      }
+    }
+    push({ name: 'sl-order', ran: true }, { errors: [], warnings: slWarnings })
+  }
+
   // --- 4. per-resonance PDG / threshold / mass (WARNINGS only) ------------
   if (!resonancesExternal && db !== undefined) {
     const pdgErrors: GateIssue[] = [] // reserved: hard physics errors, currently none

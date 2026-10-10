@@ -40,6 +40,7 @@ describe('gateConfig (run-time gate)', () => {
       'cross-reference',
       'two-vertex-jpc',
       'identical-symmetry',
+      'sl-order',
       'pdg-threshold',
       'budget',
     ])
@@ -124,6 +125,33 @@ Resonances:
     cfg.constraints.trans = [{ names: ['R_Kpi_0', 'R_KK_0'], value: [1] }]
     const r = gateConfig(cfg, TWO_PION, defaultDb)
     expect(r.warnings.map((w) => w.code)).not.toContain('identical-cross-step')
+  })
+
+  // --- sl / ls 分波白名单的记号顺序（P2-6b）---------------------------------
+
+  it('echoes how an `sl` whitelist was interpreted (order is (S, L), S physical)', () => {
+    // ctpwa 的 parseSLFilter：sl: [S, L]，S 是物理自旋；内部存 (2S+1, L)。
+    // 写错顺序只会静默放进/丢掉波 —— 所以必须回显解释结果。
+    const r = gate(CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {sl: [0, 1]}]'))
+    const w = r.warnings.find((x) => x.code === 'sl-echo')!
+    expect(w.message).toContain('S=0, L=1')
+    expect(w.message).toContain('(1, 1)') // 内部 (2S+1, L)
+  })
+
+  it('flags the L-first `ls` alias (the easy one to get backwards)', () => {
+    const bad = CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {ls: [1, 1]}]')
+    const r = gate(bad)
+    const w = r.warnings.find((x) => x.code === 'sl-order')!
+    expect(w.message).toContain('(L, S)')
+    // ls: [L=1, S=1] → 内部 (2S+1, L) = (3, 1)
+    expect(w.message).toContain('(3, 1)')
+    expect(parseConfig(bad).decayChains.decay1.steps.find((s) => s.mother === 'R_KK')!.slKey).toBe('ls')
+  })
+
+  it('says nothing about sl when no step filters waves', () => {
+    const r = gate(CLEAN)
+    expect(r.warnings.map((x) => x.code)).not.toContain('sl-echo')
+    expect(r.warnings.map((x) => x.code)).not.toContain('sl-order')
   })
 
   it('HARD-errors a state above the production threshold', () => {
