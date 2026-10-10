@@ -70,6 +70,18 @@ describe('buildInitialConfig: pdgid-only particles', () => {
     expect(crossReferenceErrors(cfg).errors).toEqual([])
   })
 
+  it('accepts a tex ARRAY and writes it flat (never nested)', () => {
+    // config 的 tex 是多段标签数组（K₁(2100) 这类），spec 也必须能直接给数组：
+    // 以前 schema 只收字符串，而 writer 无条件再包一层 → 会写出 tex: [[...]]，
+    // 而 ctpwa 只把它当标签读、跑前门禁也不拦 —— 静默坏配置。
+    const spec = minimal()
+    spec.resonances![0]!.tex = ['\\phi', '(1020)']
+    const r = buildInitialConfig(spec, defaultDb)
+    expect(r.errors).toEqual([])
+    expect(r.config!.resonances['phi1020']!.tex).toEqual(['\\phi', '(1020)'])
+    expect(r.text).not.toMatch(/tex:\s*\n\s*- - /)
+  })
+
   it('keeps the [J,P] group order (trans amplitude-block indices depend on it)', () => {
     const spec = minimal()
     spec.chains[0]!.intermediates = [

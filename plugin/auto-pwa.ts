@@ -1381,7 +1381,13 @@ export function apply(ctx: Context) {
                 parameters: { type: 'array', required: true, items: { type: 'number' } },
                 free: { type: 'array', items: { type: 'integer' } },
                 freeRange: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
-                tex: { type: 'string' },
+                tex: {
+                  oneOf: [
+                    { type: 'string' as const },
+                    { type: 'array' as const, items: { type: 'string' as const } },
+                  ],
+                  description: 'LaTeX 标签：字符串，或与 config 一致的数组形式（多段标签如 ["K_{2}", "(1980)"]）；写回统一归一化成数组（不会嵌套）',
+                },
                 channels: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
                 reference: { type: 'string' },
               },

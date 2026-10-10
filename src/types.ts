@@ -602,7 +602,9 @@ export interface InitialResonanceSpec {
   parameters: number[]
   free?: number[]
   freeRange?: [number, number][]
-  tex?: string
+  /** LaTeX label(s): a plain string, or the multi-segment array form the config
+   * stores (e.g. ["K_{2}", "(1980)"]); the writer normalizes to an array. */
+  tex?: string | string[]
   channels?: number[][]
   /** Model-specific payload passed through verbatim to ctpwa (see
    * ResonanceSpec.options). */
