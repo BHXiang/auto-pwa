@@ -129,29 +129,31 @@ Resonances:
 
   // --- sl / ls 分波白名单的记号顺序（P2-6b）---------------------------------
 
-  it('echoes how an `sl` whitelist was interpreted (order is (S, L), S physical)', () => {
-    // ctpwa 的 parseSLFilter：sl: [S, L]，S 是物理自旋；内部存 (2S+1, L)。
-    // 写错顺序只会静默放进/丢掉波 —— 所以必须回显解释结果。
+  it('echoes how a `sl` whitelist was interpreted (S first, the opposite of `ls`)', () => {
+    // ctpwa 的 parseSLFilter：sl: [S, L]；ls: [L, S]（推荐写法）；内部统一 (2S+1, L)。
+    // 顺序写反只会静默放进/丢掉波 —— 所以必须回显解释结果。
     const r = gate(CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {sl: [0, 1]}]'))
     const w = r.warnings.find((x) => x.code === 'sl-echo')!
     expect(w.message).toContain('S=0, L=1')
     expect(w.message).toContain('(1, 1)') // 内部 (2S+1, L)
+    expect(w.message).toContain('相反')
   })
 
-  it('flags the L-first `ls` alias (the easy one to get backwards)', () => {
-    const bad = CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {ls: [1, 1]}]')
-    const r = gate(bad)
-    const w = r.warnings.find((x) => x.code === 'sl-order')!
+  it('echoes the L-first `ls` form as the standard spelling', () => {
+    const r = gate(CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {ls: [1, 1]}]'))
+    const w = r.warnings.find((x) => x.code === 'sl-echo')!
     expect(w.message).toContain('(L, S)')
+    expect(w.message).toContain('标准写法')
     // ls: [L=1, S=1] → 内部 (2S+1, L) = (3, 1)
+    expect(w.message).toContain('L=1, S=1')
     expect(w.message).toContain('(3, 1)')
+    const bad = CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {ls: [1, 1]}]')
     expect(parseConfig(bad).decayChains.decay1.steps.find((s) => s.mother === 'R_KK')!.slKey).toBe('ls')
   })
 
   it('says nothing about sl when no step filters waves', () => {
     const r = gate(CLEAN)
     expect(r.warnings.map((x) => x.code)).not.toContain('sl-echo')
-    expect(r.warnings.map((x) => x.code)).not.toContain('sl-order')
   })
 
   it('HARD-errors a state above the production threshold', () => {

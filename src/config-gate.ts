@@ -339,26 +339,25 @@ export function gateConfig(
       for (const step of chain.steps) {
         if (step.sl === undefined) continue
         const label = `${chainName}: ${step.mother} -> ${step.daughters.join(' + ')}`
+        // `ls: [L, S]`（L 在前）与 ctpwa 打印的 LS(L,S)、以及使用习惯一致，是**标准写法**；
+        // `sl: [S, L]` 顺序相反，同样可用。两者都回显解释结果 —— 真正的风险是"顺序写反了
+        // 却没人说"，而不是用了哪个键。
         const echo = step.sl
-          .map(([mult, l]) => `S=${(mult - 1) / 2}, L=${l}（内部 (2S+1, L)=(${mult}, ${l})）`)
+          .map(([mult, l]) => {
+            const s = (mult - 1) / 2
+            return step.slKey === 'ls'
+              ? `L=${l}, S=${s}（内部 (2S+1, L)=(${mult}, ${l})）`
+              : `S=${s}, L=${l}（内部 (2S+1, L)=(${mult}, ${l})）`
+          })
           .join('; ')
-        if (step.slKey === 'ls') {
-          slWarnings.push(
-            warn(
-              'sl-order',
-              `${label} 用了 \`ls\` 别名 —— 它的顺序是 **(L, S)**（L 在前，TFPWA 记法），` +
-                `而 \`sl\` 是 (S, L)（S 是物理自旋）。当前解释为: ${echo}。` +
-                `若本意是 (S, L)，请改用 \`sl\``,
-            ),
-          )
-        } else {
-          slWarnings.push(
-            warn(
-              'sl-echo',
-              `${label} 的 \`sl\` 白名单按 (S, L) 解释（S 为物理自旋）→ ${echo}`,
-            ),
-          )
-        }
+        slWarnings.push(
+          warn(
+            'sl-echo',
+            step.slKey === 'ls'
+              ? `${label} 的 \`ls\` 白名单按 **(L, S)** 解释（L 在前，标准写法，与 ctpwa 打印的 LS(L,S) 一致）→ ${echo}`
+              : `${label} 的 \`sl\` 白名单按 (S, L) 解释（S 在前，与 \`ls\` 顺序**相反**）→ ${echo}`,
+          ),
+        )
       }
     }
     push({ name: 'sl-order', ran: true }, { errors: [], warnings: slWarnings })
