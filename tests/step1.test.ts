@@ -520,3 +520,76 @@ Resonances:
     expect(r.ok).toBe(true)
   })
 })
+
+describe('update: true redefines an already-defined resonance', () => {
+  const cfg = () => parseConfig(CONFIG_TEXT)
+
+  it('replaces parameters and keeps an explicit resonance-level J/P', () => {
+    const ap = applyResonanceAddition(cfg(), {
+      name: 'phi1680',
+      chain: 'R_KK',
+      jpGroup: { j: 1, p: -1 },
+      model: 'BWR',
+      parameters: [1.7, 0.2],
+      update: true,
+    })
+    expect(ap.errors).toEqual([])
+    const spec = ap.config.resonances.phi1680!
+    expect(spec.parameters).toEqual([1.7, 0.2])
+    // 定义里手写的显式 J/P（CONFIG_TEXT 有）不能因为"工具从不写 J/P"而被抹掉
+    expect(spec.j).toBe(1)
+    expect(spec.p).toBe(-1)
+    expect(ap.changed.join(' ')).toContain('redefined')
+    // 写回文本里也是新参数
+    expect(dumpConfig(ap.config)).toContain('1.7')
+  })
+
+  it('reports keys the redefinition drops instead of losing them silently', () => {
+    const c = cfg()
+    // 给定义加上 free 与一个陈旧的 options；update 时不再提供 → 必须报出来
+    const resRaw = c.raw.get('Resonances') as Map<unknown, unknown>
+    const spec = resRaw.get('phi1680') as Map<unknown, unknown>
+    spec.set('free', [0])
+    spec.set('options', { legacy: true })
+    const ap = applyResonanceAddition(c, {
+      name: 'phi1680',
+      chain: 'R_KK',
+      jpGroup: { j: 1, p: -1 },
+      model: 'BWR',
+      parameters: [1.7, 0.2],
+      update: true,
+    })
+    expect(ap.errors).toEqual([])
+    expect(ap.changed.join(' ')).toContain('丢弃')
+    expect(ap.config.resonances.phi1680!.free).toBeUndefined()
+    expect(ap.config.resonances.phi1680!.options).toBeUndefined()
+  })
+
+  it('still refuses differing parameters without update (attach only)', () => {
+    const ap = applyResonanceAddition(cfg(), {
+      name: 'phi1680',
+      chain: 'R_KK',
+      jpGroup: { j: 1, p: -1 },
+      model: 'BWR',
+      parameters: [1.7, 0.2],
+    })
+    expect(ap.errors.map((e) => e.code)).toContain('param-conflict')
+    // 提示必须给出出路（此前是死循环提示）
+    expect(ap.errors[0]!.message).toContain('update: true')
+  })
+
+  it('the gate allows the redefinition and says what it will replace', () => {
+    const r = validateResonanceAddition(defaultDb, cfg(), {
+      name: 'phi1680',
+      chain: 'R_KK',
+      jpGroup: { j: 1, p: -1 },
+      model: 'BWR',
+      parameters: [1.7, 0.2],
+      update: true,
+    })
+    expect(r.errors).toEqual([])
+    expect(r.ok).toBe(true)
+    const w = r.warnings.find((x) => x.code === 'already-defined')!
+    expect(w.message).toContain('REDEFINES')
+  })
+})

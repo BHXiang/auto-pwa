@@ -390,17 +390,27 @@ export function validateResonanceAddition(
         ),
       )
     } else if (
-      existing.parameters.length !== proposal.parameters.length ||
-      existing.parameters.some((v, i) => Math.abs(v - proposal.parameters[i]) > 1e-6)
+      proposal.update !== true &&
+      (existing.parameters.length !== proposal.parameters.length ||
+        existing.parameters.some((v, i) => Math.abs(v - proposal.parameters[i]) > 1e-6))
     ) {
       errors.push(
         err(
           'param-conflict',
           `"${proposal.name}" is already defined with parameters ${JSON.stringify(existing.parameters)}. ` +
             `To attach it unchanged, pass exactly those parameters — proposal.parameters is REQUIRED, ` +
-            `so "omit them" is not possible (that earlier hint was a dead end). ` +
-            `To CHANGE a defined resonance's parameters/tex, edit its Resonances block in config.yml directly: ` +
-            `attaching only links the chain and never overwrites the definition`,
+            `so "omit them" is not possible. To CHANGE the definition, pass update: true ` +
+            `(the proposal then replaces parameters/free/free_range/tex/options/reference)`,
+        ),
+      )
+    } else if (proposal.update === true) {
+      warnings.push(
+        warn(
+          'already-defined',
+          `"${proposal.name}" is already defined — update: true REDEFINES it as ` +
+            `${proposal.model} ${JSON.stringify(proposal.parameters)} and attaches it to ` +
+            `${proposal.chain} [${jpLabel(proposal.jpGroup)}]. Anything the proposal does not ` +
+            `give is dropped (an explicit resonance-level J/P is kept)`,
         ),
       )
     } else {
@@ -409,7 +419,8 @@ export function validateResonanceAddition(
           'already-defined',
           `"${proposal.name}" is already defined in the config — this edit will ATTACH it to ` +
             `${proposal.chain} [${jpLabel(proposal.jpGroup)}] without redefining it. ` +
-            `The proposal's parameters/tex/free/freeRange/options are IGNORED: the existing definition wins`,
+            `The proposal's parameters/tex/free/freeRange/options are IGNORED: the existing definition wins ` +
+            `(pass update: true to redefine instead)`,
         ),
       )
     }

@@ -301,6 +301,7 @@ const proposalParam = {
     jpGroup: { ...jpParam, required: true, description: '要加入（或新建）的 [J,P] 组' },
     model: { type: 'string' as const, required: true, description: '线形模型。已知：BWR/BW（有传播子，需 PDG 依据）、ONE（相空间项，无需 PDG）、Flatte（需 channels）、GS（Gounaris-Sakurai）、Interp（需 options.file/method）、Custom（需 options，DSL）。其它字符串不被插件拦（只 warning），由 ctpwa --validate-only 在跑前定论' },
     parameters: { type: 'array' as const, required: true, items: { type: 'number' as const }, description: '[质量, 宽度] GeV；ONE 给 0 或 1 个 [质量] 占位（Bf 的 q0 用固定参考，占位值不进入振幅；可写 []）；Interp/Custom 可写 []' },
+    update: { type: 'boolean' as const, description: 'true = 覆盖**已定义**共振态的定义：parameters/free/free_range/tex/options/reference 以 proposal 为准，未给出的一律丢弃（显式 J/P 保留）。默认 false = 只挂链、不动定义；此时参数与既有定义不同会报 param-conflict' },
     free: { type: 'array' as const, items: { type: 'integer' as const }, description: 'float 的参数索引：0=质量, 1=宽度, -1=全部' },
     freeRange: { type: 'array' as const, items: { type: 'array' as const, items: { type: 'number' as const } }, description: '每个 free 参数一个 [lo, hi] GeV 区间，须包含初始值' },
     tex: {

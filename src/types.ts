@@ -408,6 +408,17 @@ export interface ResonanceProposal {
   jpGroup: JP
   model: ResonanceModel
   parameters: number[]
+  /**
+   * Redefine an ALREADY-DEFINED resonance instead of only attaching it.
+   *
+   * Without this flag, attaching a resonance whose parameters differ is a
+   * `param-conflict` (the existing definition wins and the proposal's
+   * parameters are ignored); with it the definition is REPLACED by the proposal
+   * (parameters/free/free_range/tex/options/channels/reference — anything the
+   * proposal omits is dropped, so pass the full intended definition). An
+   * explicit resonance-level J/P is preserved: the writer never owns it.
+   */
+  update?: boolean
   free?: number[]
   freeRange?: [number, number][]
   /** LaTeX label(s) — a plain string, or the multi-segment array form the config

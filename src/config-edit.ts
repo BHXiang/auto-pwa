@@ -722,8 +722,19 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
       errors.push({ code: 'jpc-conflict', message: `"${proposal.name}" is defined as ${jpLabel(exJp)}; attach under that J^P` })
       return { config, changed, errors }
     }
-    if (ex.parameters.length !== proposal.parameters.length || ex.parameters.some((v, i) => Math.abs(v - proposal.parameters[i]) > 1e-6)) {
-      errors.push({ code: 'param-conflict', message: `"${proposal.name}" is defined with ${JSON.stringify(ex.parameters)}` })
+    // Differing parameters are a conflict only for a plain ATTACH: with
+    // update: true the proposal replaces the definition (see the apply block).
+    if (
+      proposal.update !== true &&
+      (ex.parameters.length !== proposal.parameters.length ||
+        ex.parameters.some((v, i) => Math.abs(v - proposal.parameters[i]) > 1e-6))
+    ) {
+      errors.push({
+        code: 'param-conflict',
+        message:
+          `"${proposal.name}" is defined with ${JSON.stringify(ex.parameters)} — ` +
+          `pass exactly those parameters to attach it, or set update: true to redefine it`,
+      })
       return { config, changed, errors }
     }
   }
@@ -798,7 +809,11 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
   }
 
   // --- apply: Resonances section ------------------------------------------
-  if (!alreadyDefined) {
+  // `update: true` re-enters this block for an already-defined resonance: the
+  // proposal REPLACES the definition instead of being ignored (which is what
+  // used to happen — the parameters were dropped with no way to change them).
+  const redefining = alreadyDefined && proposal.update === true
+  if (!alreadyDefined || redefining) {
     const resRaw = asMap(config.raw.get('Resonances')) ?? asMap(config.raw.get('resonances'))
     if (!resRaw) {
       errors.push({ code: 'invalid-config', message: 'config has no Resonances section' })
@@ -829,12 +844,27 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
     // The config stores tex as an ARRAY (multi-segment labels like K_{2},(1980)),
     // while a proposal may pass either form — normalize here, never nest.
     spec.tex = Array.isArray(proposal.tex) ? proposal.tex : [proposal.tex ?? `\\mathrm{${proposal.name}}`]
+    let dropped: string[] = []
+    if (redefining) {
+      // Keys the proposal surface never owns survive a redefinition: an explicit
+      // resonance-level J/P is written by hand (the [J,P] group governs by
+      // default), so silently deleting it would change the physics.
+      const before = asMap(resRaw.get(proposal.name))
+      for (const key of ['J', 'P']) {
+        if (before?.has(key)) spec[key] = before.get(key)
+      }
+      dropped = [...(before?.keys() ?? [])].filter(
+        (k): k is string => typeof k === 'string' && !(k in spec) && k !== 'J' && k !== 'P',
+      )
+    }
     resRaw.set(proposal.name, spec)
     changed.push(
       `Resonances.${proposal.name} = ${proposal.model} ${JSON.stringify(proposal.parameters)}` +
         `${proposal.free ? ` free=${JSON.stringify(proposal.free)}` : ''}` +
         `${proposal.options !== undefined ? ` options=${JSON.stringify(proposal.options)}` : ''}` +
-        `${proposal.reference ? ` reference="${proposal.reference}"` : ''}`,
+        `${proposal.reference ? ` reference="${proposal.reference}"` : ''}` +
+        `${redefining ? '（redefined）' : ''}` +
+        `${dropped.length > 0 ? ` — 丢弃了未在 proposal 中给出的键: ${dropped.join(', ')}` : ''}`,
     )
   } else {
     changed.push(`Resonances.${proposal.name}（已定义，仅挂链）`)
