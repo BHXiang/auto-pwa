@@ -205,11 +205,13 @@ export function parseConfig(text: string): PwaConfig {
 /** Re-derive the plain-object views from the raw Map document. */
 export function rebuildViews(
   raw: YamlMap,
-): Pick<PwaConfig, 'particles' | 'decayChains' | 'resonances' | 'kinematics' | 'constraints'> {
+): Pick<PwaConfig, 'particles' | 'decayChains' | 'resonances' | 'kinematics' | 'constraints' | 'stepIssues'> {
   const particles: Record<string, Particle> = {}
   const resonances: Record<string, ResonanceSpec> = {}
   const decayChains: PwaConfig['decayChains'] = {}
   const kinematics: Record<string, ChainKinematics> = {}
+  /** Defects the chain reader could not represent (see PwaConfig.stepIssues). */
+  const stepIssues: ValidationIssue[] = []
 
   // --- Particles ----------------------------------------------------------
   // Single parser: parseParticles also reads the optional `pdgid`/`c`
@@ -295,7 +297,7 @@ export function rebuildViews(
       }
       decayChains[chainName] = {
         intermediates,
-        steps: parseChainSteps(chain),
+        steps: parseChainSteps(chain, stepIssues),
       }
 
       // --- kinematics: production steps A -> R + B ------------------------
@@ -335,7 +337,7 @@ export function rebuildViews(
     }
   }
 
-  return { particles, decayChains, resonances, kinematics, constraints: parseConstraints(raw) }
+  return { particles, decayChains, resonances, kinematics, constraints: parseConstraints(raw), stepIssues }
 }
 
 /** Collect (intermediate name, group list) entries from a chain: from the
@@ -426,7 +428,7 @@ function parseGroupList(groupsRaw: unknown): JPGroup[] {
  *     - a list of modes [[d1, d2(, {opts})], ...]
  *   (spin-chain group keys `R: [{J,P}: [...]]` are NOT steps.)
  */
-function parseChainSteps(chain: YamlMap): DecayStep[] {
+function parseChainSteps(chain: YamlMap, issues: ValidationIssue[]): DecayStep[] {
   const steps: DecayStep[] = []
 
   // Format B: explicit `decay:` list.
@@ -437,7 +439,7 @@ function parseChainSteps(chain: YamlMap): DecayStep[] {
       if (!step) continue
       for (const [mother, daughtersRaw] of step) {
         if (typeof mother !== 'string') continue
-        for (const { d1, d2, opts } of parseDaughterModes(daughtersRaw)) {
+        for (const { d1, d2, opts } of parseDaughterModes(daughtersRaw, mother, issues)) {
           steps.push({ mother, daughters: [d1, d2], ...stepOpts(opts) })
         }
       }
@@ -453,25 +455,64 @@ function parseChainSteps(chain: YamlMap): DecayStep[] {
     const list0 = asArr(modesRaw)
     if (!list0 || list0.length === 0) continue
     if (isSpinChainGroup(list0[0])) continue // spin-chain group key (not a step)
-    for (const { d1, d2, opts } of parseDaughterModes(modesRaw)) {
+    for (const { d1, d2, opts } of parseDaughterModes(modesRaw, mother, issues)) {
       steps.push({ mother, daughters: [d1, d2], ...stepOpts(opts) })
     }
   }
   return steps
 }
 
-/** One parsed daughter list: [d1, d2(, {opts})] or a list of such modes. */
-function parseDaughterModes(raw: unknown): { d1: string; d2: string; opts: Map<unknown, unknown> }[] {
+/**
+ * One parsed daughter list: `[d1, d2(, {opts})]` or a list of such modes.
+ *
+ * ctpwa's amplitude is two-body PER VERTEX (`Amp2BD`), so a third entry can only
+ * be the per-step opts map — never another daughter. This used to read `[a, b, c]`
+ * as `a -> b` (treating the stray `c` as an empty opts map), silently dropping
+ * `c` and fitting a WRONG amplitude with no error anywhere; the same went for a
+ * mode it could not parse at all. Such modes are now reported through `issues`
+ * (which `validateConfig` turns into blocking errors) instead of being dropped.
+ */
+function parseDaughterModes(
+  raw: unknown,
+  mother: string,
+  issues: ValidationIssue[],
+): { d1: string; d2: string; opts: Map<unknown, unknown> }[] {
   const list = asArr(raw)
   if (!list) return []
+  const show = (row: unknown[]): string =>
+    row.map((x) => asStr(x) ?? (asMap(x) !== undefined ? '{opts}' : JSON.stringify(x) ?? '?')).join(', ')
   const parseMode = (mode: unknown): { d1: string; d2: string; opts: Map<unknown, unknown> } | undefined => {
     const row = asArr(mode)
-    if (!row || row.length < 2) return undefined
+    if (!row) return undefined
+    const opts = row.length > 2 ? asMap(row[2]) : undefined
+    if (row.length > 3 || (row.length === 3 && opts === undefined)) {
+      issues.push({
+        code: 'step-not-two-body',
+        message:
+          `"${mother} -> [${show(row)}]" 不是二体步：ctpwa 的振幅逐顶点二体（Amp2BD），` +
+          `三体及以上中间态必须拆成二体级联（例如 η→3π 写成 η→ρπ 等子共振近似，或改成两级链）。` +
+          `该步已被忽略 —— 继续拟合会得到错误的振幅`,
+      })
+      return undefined
+    }
+    if (row.length < 2) {
+      issues.push({
+        code: 'step-malformed',
+        message:
+          `"${mother}" 的衰变模式 [${show(row)}] 元素不足（需要 [d1, d2] 或 [d1, d2, {opts}]）—— 该步已被忽略`,
+      })
+      return undefined
+    }
     const d1 = asStr(row[0])
     const d2 = asStr(row[1])
-    if (d1 === undefined || d2 === undefined) return undefined
-    const opts = asMap(row[2]) ?? new Map()
-    return { d1, d2, opts }
+    if (d1 === undefined || d2 === undefined) {
+      issues.push({
+        code: 'step-malformed',
+        message: `"${mother}" 的衰变模式 [${show(row)}] 末态名不是字符串 —— 该步已被忽略`,
+      })
+      return undefined
+    }
+    return { d1, d2, opts: opts ?? new Map() }
   }
   const out: { d1: string; d2: string; opts: Map<unknown, unknown> }[] = []
   if (asStr(list[0]) !== undefined) {
@@ -1131,6 +1172,11 @@ export function validateConfig(
   const errors: ValidationIssue[] = []
   const warnings: ValidationIssue[] = []
   const { constraints } = config
+
+  // Parse-time defects first: a step the reader could not represent (a
+  // three-body step, a malformed mode) means the model is NOT what the file
+  // says, so nothing downstream — least of all a fit — may run on it.
+  errors.push(...(config.stepIssues ?? []))
 
   for (const group of constraints.identical ?? []) {
     if (group.length < 2) {

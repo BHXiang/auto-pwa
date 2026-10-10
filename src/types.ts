@@ -373,6 +373,16 @@ export interface PwaConfig {
   kinematics: Record<string, ChainKinematics>
   /** Parsed Constraints section. */
   constraints: PwaConstraints
+  /**
+   * Defects found while READING the chains — pieces of the file the parser
+   * cannot represent, so the model would differ from what the file says.
+   *
+   * The reader stays total (a broken config must still be inspectable with
+   * config_view), and `validateConfig` promotes these to blocking errors: a
+   * step with three daughters used to be read as its first two, silently
+   * dropping the rest and fitting a WRONG amplitude.
+   */
+  stepIssues?: ValidationIssue[]
 }
 
 // ---------------------------------------------------------------------------

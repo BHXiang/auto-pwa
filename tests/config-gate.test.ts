@@ -46,6 +46,35 @@ describe('gateConfig (run-time gate)', () => {
     expect(renderGate(r)).toMatch(/通过/)
   })
 
+  it('HARD-errors a three-body step instead of silently dropping the third daughter', () => {
+    // ctpwa's amplitude is two-body PER VERTEX (Amp2BD). Reading `[Kp, Km, eta]`
+    // as `Kp Km` silently dropped `eta` and fitted a wrong amplitude — the
+    // four/five-body case (ω→3π, η→3π, a1→3π intermediates) hit exactly this.
+    const bad = CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, eta]')
+    const r = gate(bad)
+    expect(r.ok).toBe(false)
+    expect(r.errors.map((e) => e.code)).toContain('step-not-two-body')
+    // 关键：这一步不能被当成二体读进来
+    const cfg = parseConfig(bad)
+    expect(cfg.decayChains.decay1.steps.some((s) => s.mother === 'R_KK')).toBe(false)
+    expect(cfg.stepIssues?.map((i) => i.code)).toEqual(['step-not-two-body'])
+  })
+
+  it('still accepts a two-body step with its optional {opts} map', () => {
+    const ok = CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {sl: [0, 1]}]')
+    const r = gate(ok)
+    expect(r.errors.map((e) => e.code)).not.toContain('step-not-two-body')
+    const step = parseConfig(ok).decayChains.decay1.steps.find((s) => s.mother === 'R_KK')!
+    expect(step.daughters).toEqual(['Kp', 'Km'])
+    expect(step.sl).toEqual([[1, 1]]) // sl 是 (S, L) → 内部 (2S+1, L)
+  })
+
+  it('HARD-errors a malformed mode instead of dropping the step silently', () => {
+    const r = gate(CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp]'))
+    expect(r.ok).toBe(false)
+    expect(r.errors.map((e) => e.code)).toContain('step-malformed')
+  })
+
   it('HARD-errors a state above the production threshold', () => {
     const r = gate(CLEAN.replace('parameters: [1.0195, 0.0045]', 'parameters: [2.9, 0.0045]'))
     expect(r.ok).toBe(false)
