@@ -360,6 +360,15 @@ export interface ChainSpec {
   intermediates: Record<string, IntermediateSpec>
   /** Decay steps in order (production first, then intermediate decays). */
   steps: DecayStep[]
+  /**
+   * The chain carried a `symmetrize` key.
+   *
+   * ctpwa only ever SKIPS that key (Config.cu 822/860/1320) — it performs no
+   * symmetrization — so this flag exists purely so the gate can warn that the
+   * key does nothing. Identical daughters are handled by
+   * `Constraints.identical` (vertex-level) plus explicit exchanged chains.
+   */
+  symmetrize?: boolean
 }
 
 /** Parsed config.yml, as produced by config-edit parseConfig. */

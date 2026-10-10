@@ -32,6 +32,7 @@ import { validateConfig, crossReferenceErrors } from './config-edit.js'
 import { analyzeIntermediateJPC } from './intermediate-jpc.js'
 import { lookupResonance, normalizeName } from './lookup.js'
 import { explicitJp } from './jpc.js'
+import { classifyPairPhysics } from './particle-info.js'
 import { PARTICLE_MODELS } from './resonance-validate.js'
 import type { PwaConfig, ResonanceDb, ValidationIssue } from './types.js'
 
@@ -254,6 +255,71 @@ export function gateConfig(
   } else {
     checks.push({
       name: 'two-vertex-jpc',
+      ran: false,
+      errors: 0,
+      warnings: 0,
+      note: resonancesExternal ? 'Resonances 为外部 include：交给 ctpwa --validate-only' : 'db 不可用或已跳过',
+    })
+  }
+
+  // --- 3b. identical-particle symmetrization (4/5-body shapes) ------------
+  if (options.skipPhysics !== true && !resonancesExternal && db !== undefined) {
+    const symWarnings: GateIssue[] = []
+    // ctpwa only ever SKIPS a chain's `symmetrize` key (Config.cu 822/860/1320):
+    // it performs no symmetrization at all. Writing it therefore looks like it
+    // does something and silently does nothing.
+    for (const [chainName, chain] of Object.entries(config.decayChains)) {
+      if (chain.symmetrize === true) {
+        symWarnings.push(
+          warn(
+            'symmetrize-ignored',
+            `${chainName} 里的 \`symmetrize\` 被 ctpwa 忽略（引擎只跳过该键，不做任何对称化）—— ` +
+              `全同粒子请用 Constraints.identical（顶点级），交换拓扑要写成独立链`,
+          ),
+        )
+      }
+    }
+    // Identical daughters spread over DIFFERENT steps: the vertex-level rule
+    // compares only one step's two daughters, and there is no automatic
+    // cross-step symmetrization (that is why 4/5-body analyses write the
+    // exchanged topology as its own chain, tied through Constraints.trans).
+    // Stay quiet when the config already ties chains that way — otherwise this
+    // fires on exactly the configs that handle it correctly.
+    const tiesChains = (config.constraints.trans ?? []).some((t) => (t.names ?? []).length > 1)
+    if (!tiesChains) {
+      const refOf = (name: string): { name?: string; pdgid?: number; c?: 1 | -1 } => {
+        const p = config.particles[name]
+        return p !== undefined ? { ...p, name } : { name }
+      }
+      for (const [chainName, chain] of Object.entries(config.decayChains)) {
+        const mothers = new Set(chain.steps.map((s) => s.mother))
+        const finalState = chain.steps.flatMap((s) => s.daughters.filter((d) => !mothers.has(d)))
+        const seen = new Set<string>()
+        for (let i = 0; i < finalState.length; i++) {
+          for (let j = i + 1; j < finalState.length; j++) {
+            const a = finalState[i]!
+            const b = finalState[j]!
+            if (chain.steps.some((s) => s.daughters.includes(a) && s.daughters.includes(b))) continue
+            if (!classifyPairPhysics(db, refOf(a), refOf(b)).identical) continue
+            const key = `${a}|${b}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            symWarnings.push(
+              warn(
+                'identical-cross-step',
+                `${chainName}: ${a} 与 ${b} 是同种粒子但分处不同衰变步 — ctpwa 的全同选择定则只作用于` +
+                  `"同一步的两个 daughter"，跨步没有自动对称化（\`symmetrize\` 也被忽略）。` +
+                  `请把交换拓扑写成独立链并用 Constraints.trans 绑定耦合（本提示只在未检测到 trans 约束时出现）`,
+              ),
+            )
+          }
+        }
+      }
+    }
+    push({ name: 'identical-symmetry', ran: true }, { errors: [], warnings: symWarnings })
+  } else {
+    checks.push({
+      name: 'identical-symmetry',
       ran: false,
       errors: 0,
       warnings: 0,

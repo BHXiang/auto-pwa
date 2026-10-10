@@ -298,6 +298,8 @@ export function rebuildViews(
       decayChains[chainName] = {
         intermediates,
         steps: parseChainSteps(chain, stepIssues),
+        // Carried through so the gate can report that ctpwa ignores this key.
+        ...(chain.has('symmetrize') ? { symmetrize: true as const } : {}),
       }
 
       // --- kinematics: production steps A -> R + B ------------------------

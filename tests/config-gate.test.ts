@@ -35,7 +35,14 @@ describe('gateConfig (run-time gate)', () => {
     const r = gate(CLEAN)
     expect(r.ok).toBe(true)
     expect(r.errors).toEqual([])
-    expect(r.checks.map((c) => c.name)).toEqual(['structure', 'cross-reference', 'two-vertex-jpc', 'pdg-threshold', 'budget'])
+    expect(r.checks.map((c) => c.name)).toEqual([
+      'structure',
+      'cross-reference',
+      'two-vertex-jpc',
+      'identical-symmetry',
+      'pdg-threshold',
+      'budget',
+    ])
     expect(r.checks.every((c) => c.ran)).toBe(true)
     expect(r.stats.resonances).toBe(1)
     expect(r.stats.groups).toBe(1)
@@ -73,6 +80,50 @@ describe('gateConfig (run-time gate)', () => {
     const r = gate(CLEAN.replace('R_KK: [Kp, Km]', 'R_KK: [Kp]'))
     expect(r.ok).toBe(false)
     expect(r.errors.map((e) => e.code)).toContain('step-malformed')
+  })
+
+  // --- 全同粒子对称化（4/5 体才有跨步同种粒子的形态）---------------------
+
+  /** π₁ 是旁观者、π₂ 在中间态衰变里 → 两颗 π⁰ 分处不同衰变步。 */
+  const TWO_PION = `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969}
+  pi01: {J: 0, P: -1, mass: 0.135, pdgid: 111}
+  pi02: {J: 0, P: -1, mass: 0.135, pdgid: 111}
+  Kp: {J: 0, P: -1, mass: 0.4937, pdgid: 321}
+  Km: {J: 0, P: -1, mass: 0.4937, pdgid: -321}
+
+DecayChains:
+  decay1:
+    Jpsi:
+      - [pi01, R_Kpi]
+    R_Kpi: [Kp, pi02]
+    intermediates:
+      R_Kpi:
+        - [J: 0, P: 1]: [f0_980]
+
+Resonances:
+  f0_980: {J: 0, P: 1, model: BWR, parameters: [0.99, 0.06]}
+`
+
+  it('warns that a chain-level `symmetrize` key is ignored by ctpwa', () => {
+    // ctpwa 只在 "跳过这个键" 的地方提到 symmetrize（Config.cu 822/860/1320），
+    // 它不做任何对称化 —— 写了它的人会以为它起作用。
+    const r = gate(CLEAN.replace('  decay1:', '  decay1:\n    symmetrize: true'))
+    expect(r.warnings.map((w) => w.code)).toContain('symmetrize-ignored')
+  })
+
+  it('warns about identical daughters spread over different steps', () => {
+    const r = gate(TWO_PION)
+    expect(r.warnings.map((w) => w.code)).toContain('identical-cross-step')
+    expect(r.warnings.find((w) => w.code === 'identical-cross-step')!.message).toContain('pi01')
+  })
+
+  it('stays quiet about that when Constraints.trans already ties the topologies', () => {
+    // 标准做法：把交换拓扑写成独立链，并用 trans 绑定耦合 —— 这时不该再提示。
+    const cfg = parseConfig(TWO_PION)
+    cfg.constraints.trans = [{ names: ['R_Kpi_0', 'R_KK_0'], value: [1] }]
+    const r = gateConfig(cfg, TWO_PION, defaultDb)
+    expect(r.warnings.map((w) => w.code)).not.toContain('identical-cross-step')
   })
 
   it('HARD-errors a state above the production threshold', () => {
