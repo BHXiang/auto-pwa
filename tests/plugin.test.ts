@@ -403,16 +403,43 @@ Resonances:
     })
   })
 
-  it('auto_pwa_jpc_check omits production for intermediates that have no production vertex', async () => {
+  it('auto_pwa_jpc_check registers production through a nested cascade (A -> R1 + R2)', async () => {
+    // R_KKpipi -> R_KK + R_pipi is the FOUR-body shape: BOTH daughters are
+    // intermediates. It used to be skipped ("2-body production only"), which
+    // left those intermediates with no production row at all — hence no
+    // threshold margin and no C check for a topology that is the norm in 4/5-body
+    // analyses.
     await withConfigText(RADIATIVE_CONFIG, async (configPath) => {
       const out = await execute('auto_pwa_jpc_check', { configPath } as never)
       assertNoUndefined(out)
-      const body = (out as { intermediates: { name: string; production?: unknown }[] }).intermediates
+      const body = (out as { intermediates: { name: string; production?: { mother?: string; daughter?: string } }[] })
+        .intermediates
       const top = body.find((i) => i.name === 'R_KKpipi')!
       expect(top.production).toBeDefined()
       const nested = body.find((i) => i.name === 'R_KK')!
-      expect(nested.production).toBeUndefined()
-      expect(Object.keys(nested)).not.toContain('production')
+      expect(nested.production, '嵌套级联的产生行不该再缺失').toBeDefined()
+      expect(nested.production!.mother).toBe('R_KKpipi')
+      expect(nested.production!.daughter).toBe('R_pipi')
+      // 另一侧同样登记，且互为姊妹
+      const sibling = body.find((i) => i.name === 'R_pipi')!
+      expect(sibling.production!.daughter).toBe('R_KK')
+    })
+  })
+
+  it('auto_pwa_jpc_check still omits production for an intermediate that is never produced', async () => {
+    // Declared under `intermediates:` and decaying, but no step produces it →
+    // there is genuinely no production vertex, so the key must stay absent.
+    const orphaned = RADIATIVE_CONFIG.replace('      - [R_KK, R_pipi]\n', '')
+    await withConfigText(orphaned, async (configPath) => {
+      const out = (await execute('auto_pwa_jpc_check', { configPath } as never)) as {
+        intermediates: { name: string; production?: unknown }[]
+      }
+      assertNoUndefined(out)
+      for (const name of ['R_KK', 'R_pipi']) {
+        const nested = out.intermediates.find((i) => i.name === name)!
+        expect(nested.production, `${name} 没有被任何步产生`).toBeUndefined()
+        expect(Object.keys(nested)).not.toContain('production')
+      }
     })
   })
 

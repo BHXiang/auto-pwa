@@ -134,7 +134,13 @@ export function analyzeIntermediateJPC(
   intName: string,
   options: AnalyzeOptions = {},
 ): IntermediateJpcAnalysis | undefined {
-  const chainEntry = Object.entries(config.decayChains ?? {}).find(([, c]) => c.intermediates[intName] !== undefined)
+  // Prefer a chain where the intermediate actually DECAYS: its wave table comes
+  // from that chain's steps, and a chain that merely declares it would report an
+  // empty wave table (while the production row below may come from a different
+  // chain — kinematics keeps the tightest threshold across all of them). Falls
+  // back to the first declaring chain when no chain decays it.
+  const declaring = Object.entries(config.decayChains ?? {}).filter(([, c]) => c.intermediates[intName] !== undefined)
+  const chainEntry = declaring.find(([, c]) => c.steps.some((s) => s.mother === intName)) ?? declaring[0]
   if (chainEntry === undefined) return undefined
   const [chain, chainCfg] = chainEntry
   const maxL = options.maxL ?? config.constraints?.maxL ?? 4
@@ -172,10 +178,20 @@ export function analyzeIntermediateJPC(
       const missing: string[] = []
       if (motherC === undefined) missing.push(`${kin.motherName} (no C)`)
       if (daughterC === undefined) missing.push(`${kin.daughterName} (no C)`)
+      // A -> R1 + R2: the "sibling" is an INTERMEDIATE, so its C is not fixed by
+      // the config — it depends on which resonance inside that group contributes
+      // (a group may hold states of different C). Say so instead of leaving a
+      // bare "no C", which reads like the vertex was checked and passed.
+      const siblingIsIntermediate = chainCfg.intermediates[kin.daughterName ?? ''] !== undefined
       cStatus = {
         status: 'not-applicable',
         required: null,
-        reason: `${missing.join(' and ')} — not a C eigenstate, so C conservation does not constrain this vertex`,
+        reason:
+          `${missing.join(' and ')} — not a C eigenstate, so C conservation does not constrain this vertex` +
+          (siblingIsIntermediate
+            ? `（${kin.daughterName} 是中间态而非 Particles 里的粒子：它的 C 取决于该组内哪个共振态贡献，` +
+              `所以此处不做 C 判据 —— 这不等于 C 守恒已通过）`
+            : ''),
       }
     }
   }

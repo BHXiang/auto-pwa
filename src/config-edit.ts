@@ -301,36 +301,60 @@ export function rebuildViews(
       }
 
       // --- kinematics: production steps A -> R + B ------------------------
+      /**
+       * J/P/mass of an intermediate, resolved from its first group and that
+       * group's first resonance spec — the same convention the cascade-mother
+       * lookup below uses (chic1: parameters [3.51]). Parameter-less models
+       * (Interp/Custom) carry no mass and resolve to undefined.
+       */
+      const intermediateParticle = (name: string): Particle | undefined => {
+        const groups = intermediates[name]?.groups
+        const first = groups?.[0]
+        const resName = first?.names?.[0]
+        const spec = resName !== undefined ? resonances[resName] : undefined
+        const mass = spec?.parameters[0]
+        if (first === undefined || mass === undefined) return undefined
+        return { j: first.jp.j, p: first.jp.p, mass }
+      }
+
       for (const step of decayChains[chainName].steps) {
         const intermediatesNames = new Set(Object.keys(intermediates))
-        let motherParticle = particles[step.mother]
-        if (!motherParticle) {
-          // Cascade topologies: the mother is itself an intermediate
-          // (e.g. psip -> gamma + R_chic1, then R_chic1 -> eta + R_KK).
-          // Resolve its J^P from the group and its mass from the group's
-          // first resonance's config spec (chic1: parameters [3.51]).
-          const intGroups = intermediates[step.mother]?.groups
-          const resName = intGroups?.[0]?.names?.[0]
-          const spec = resName !== undefined ? resonances[resName] : undefined
-          if (intGroups !== undefined && spec !== undefined) {
-            motherParticle = { j: intGroups[0]!.jp.j, p: intGroups[0]!.jp.p, mass: spec.parameters[0] }
-          }
-        }
+        let motherParticle = particles[step.mother] ?? intermediateParticle(step.mother)
         if (!motherParticle) continue
         const res = step.daughters.filter((d) => intermediatesNames.has(d))
         const siblings = step.daughters.filter((d) => !intermediatesNames.has(d))
-        if (res.length !== 1 || siblings.length !== 1) continue // 2-body production only
-        const sibling = particles[siblings[0]]
-        if (!sibling) continue
-        const threshold = motherParticle.mass - sibling.mass
-        const existing = kinematics[res[0]]
-        if (!existing || threshold < existing.threshold) {
-          kinematics[res[0]] = {
-            mother: motherParticle,
-            daughter: sibling,
-            threshold,
-            motherName: step.mother,
-            daughterName: siblings[0],
+        // ctpwa's production vertex is two-body. Two shapes exist:
+        //   A -> R + B    : the sibling is a plain particle;
+        //   A -> R1 + R2  : BOTH daughters are intermediates — the usual
+        //                   four-body topology (e.g. J/psi -> R1 + R2).
+        // The second shape used to be skipped (`res.length !== 1`), which left
+        // `kinematics` incomplete and, through it, silently disabled the
+        // two-vertex C check for those intermediates (intermediate-jpc reads
+        // its production row from here). Each side's threshold uses the OTHER
+        // side's mass, resolved from that side's group.
+        const against: { self: string; name: string; particle: Particle }[] = []
+        if (res.length === 1 && siblings.length === 1) {
+          const sibling = particles[siblings[0]!]
+          if (sibling !== undefined) against.push({ self: res[0]!, name: siblings[0]!, particle: sibling })
+        } else if (res.length === 2 && siblings.length === 0) {
+          const [a, b] = res as [string, string]
+          const pa = intermediateParticle(a)
+          const pb = intermediateParticle(b)
+          if (pa !== undefined && pb !== undefined) {
+            against.push({ self: a, name: b, particle: pb }, { self: b, name: a, particle: pa })
+          }
+        }
+        for (const { self, name, particle } of against) {
+          const threshold = motherParticle.mass - particle.mass
+          const existing = kinematics[self]
+          if (!existing || threshold < existing.threshold) {
+            kinematics[self] = {
+              mother: motherParticle,
+              daughter: particle,
+              threshold,
+              motherName: step.mother,
+              daughterName: name,
+            }
           }
         }
       }
