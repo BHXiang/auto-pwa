@@ -1,0 +1,113 @@
+import { describe, expect, it } from 'vitest'
+import { applyResonanceAddition, dumpConfig, parseConfig } from '../src/config-edit.js'
+
+/**
+ * P0-1：写回不能毁掉 config 的注释。
+ *
+ * 编辑工具改的是普通 Map（`config.raw`），而 `dumpConfig` 把这个 Map 的改动
+ * **同步回解析出的 YAML AST** 再渲染（注释、flow 集合、键风格都留住），并在渲染后
+ * 重新解析比对 —— 只有证明等价才走这条路，否则回退到有损 dump。
+ *
+ * **已知库限制（不是本插件的 bug）**：紧凑的集合键 `- [J: 1, P: -1]: [...]` 写不回原样。
+ * yaml v2 的写出器对集合键一律使用显式 `? `（`stringifyPair`: `isCollection(key) →
+ * explicitKey`），隐式集合键它根本不生成（`simpleKeys` 模式下直接抛错）。所幸内层
+ * flow 样式保住了，输出从旧的**块状** `? - J: 1 / - P: -1` 变成**单行**
+ * `? [{J: 1}, {P: -1}]`，且语义完全一致（下面的 round-trip 断言守着）。
+ */
+const ANNOTATED = `# config.yml — hand-written, heavily commented
+Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969}
+  phi: {J: 1, P: -1, mass: 1.0195}      # phi(1020) as a candidate
+  Kp: {J: 0, P: -1, mass: 0.4937}
+  Km: {J: 0, P: -1, mass: 0.4937}
+
+DecayChains:
+  decay1:
+    decay:
+      - Jpsi: [phi, R_KK]
+      - R_KK: [Kp, Km]
+    R_KK:
+      # 备选模型（注释掉的候选）
+      # - [J: 2, P: 1]: [K2_1430, K2_1980]
+      - [J: 1, P: -1]: [phi1020]
+      - [J: 0, P: 1]: []          # 空组：占位
+
+Resonances:
+  phi1020:
+    J: 1
+    P: -1
+    model: BWR
+    parameters: [1.0195, 0.0045]
+    tex: ['\\phi(1020)']
+`
+
+describe('config 写回保注释（P0-1）', () => {
+  it('添加共振态后，注释与未改动部分的风格全部保留', () => {
+    const cfg = parseConfig(ANNOTATED)
+    const ap = applyResonanceAddition(cfg, {
+      name: 'phi1680',
+      chain: 'R_KK',
+      jpGroup: { j: 1, p: -1 },
+      model: 'BWR',
+      parameters: [1.68, 0.15],
+    })
+    expect(ap.errors).toEqual([])
+    const text = dumpConfig(ap.config)
+
+    // 文件头与各处注释都还在（此前一次编辑就全丢）
+    expect(text).toContain('# config.yml — hand-written, heavily commented')
+    expect(text).toContain('# phi(1020) as a candidate')
+    expect(text).toContain('# 备选模型（注释掉的候选）')
+    expect(text).toContain('# - [J: 2, P: 1]: [K2_1430, K2_1980]')
+    expect(text).toContain('# 空组：占位')
+
+    // 未改动的 flow 集合保持 flow（旧行为会把它们摊成块状）
+    expect(text).toContain('Jpsi: {J: 1, P: -1, mass: 3.0969}')
+    expect(text).toContain('parameters: [1.0195, 0.0045]')
+    expect(text).toContain('- Jpsi: [phi, R_KK]')
+
+    // 集合键：库限制下不再出现旧的**块状**复合键
+    expect(text).not.toContain('? - J: 1')
+    expect(text).toContain('? [{J: 1}, {P: -1}]')
+
+    // 语义必须仍然正确（含新增的名字）
+    const back = parseConfig(text)
+    expect(back.decayChains.decay1.intermediates.R_KK.groups[0]!.names).toContain('phi1680')
+    expect(back.resonances.phi1680?.parameters).toEqual([1.68, 0.15])
+    expect(back.particles['phi']!.mass).toBeCloseTo(1.0195, 6)
+  })
+
+  it('无改动地写回时，所有注释与 flow 风格逐项保留', () => {
+    const cfg = parseConfig(ANNOTATED)
+    const text = dumpConfig(cfg)
+    // yaml 会把行内注释前的连续空白规范化成一个空格（库行为），比较时一并归一。
+    const norm = (s: string): string => s.replace(/\s+#/g, ' #')
+    const rendered = norm(text)
+    // 逐行核对：注释行与含 flow 的行必须保留（集合键那两行除外，见文件头注释）。
+    for (const line of ANNOTATED.split('\n')) {
+      const t = line.trim()
+      if (t === '' || t.startsWith('- [J:')) continue
+      expect(rendered, `丢了这一行: ${line}`).toContain(norm(line))
+    }
+    expect(parseConfig(text).resonances.phi1020?.tex).toEqual(['\\phi(1020)'])
+  })
+
+  it('round-trip 幂等：再解析再写回不丢注释', () => {
+    const cfg = parseConfig(ANNOTATED)
+    const twice = dumpConfig(parseConfig(dumpConfig(cfg)))
+    expect(twice).toContain('# 备选模型（注释掉的候选）')
+    expect(twice).toContain('# phi(1020) as a candidate')
+    expect(twice).toContain('? [{J: 1}, {P: -1}]')
+  })
+
+  it('渲染结果必定与改动后的模型一致（不一致就回退有损 dump）', () => {
+    const cfg = parseConfig(ANNOTATED)
+    // 整体替换一个子树，逼 reconciler 走"新建节点"分支。
+    cfg.raw.set('Particles', new Map([['OnlyOne', new Map([['J', 1], ['P', -1], ['mass', 1.234]])]]))
+    const text = dumpConfig(cfg)
+    const back = parseConfig(text)
+    expect(back.particles).toEqual({ OnlyOne: { j: 1, p: -1, mass: 1.234 } })
+    expect((back.particles as Record<string, unknown>)['Km']).toBeUndefined()
+    expect((back.particles as Record<string, unknown>)['Jpsi']).toBeUndefined()
+  })
+})

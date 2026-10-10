@@ -12,7 +12,7 @@
  * carry the physics labels). Data/Constraints/Plot sections are preserved
  * verbatim in structure.
  */
-import { parseDocument, stringify } from 'yaml'
+import { isMap, isScalar, isSeq, parseDocument, stringify, type Document } from 'yaml'
 import { normalizeName } from './lookup.js'
 import { explicitJp, jpLabel } from './jpc.js'
 import { parameterStructureError } from './resonance-validate.js'
@@ -61,6 +61,134 @@ const asStr = (v: unknown): string | undefined => (typeof v === 'string' ? v : u
 const asNum = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
 
 /**
+ * Documents kept next to their plain-Map view, so a write-back can render from
+ * the AST instead of re-serializing the Map.
+ *
+ * `parseConfig` hands the editing tools a plain `Map` tree (`raw`) which they
+ * mutate in place; `stringify(raw)` is what dropped every comment and rewrote
+ * compact `- [J: 1, P: -1]: [...]` groups into `? - J: 1` explicit keys. Holding
+ * the parsed `Document` here lets `dumpConfig` reconcile that Document with the
+ * mutated Map — untouched YAML keeps its comments, key style and flow
+ * collections.
+ */
+const PARSED_DOCS = new WeakMap<object, Document>()
+
+/** Normalize Map/array/scalar trees for structural comparison. */
+function plainValue(value: unknown): unknown {
+  if (value instanceof Map) {
+    const out: Record<string, unknown> = {}
+    for (const [key, val] of value) out[String(plainValue(key))] = plainValue(val)
+    return out
+  }
+  if (Array.isArray(value)) return value.map(plainValue)
+  return value
+}
+
+/**
+ * Structural equality of two config values.
+ *
+ * YAML nodes serialize through `toJSON`, so this compares parsed AST nodes and
+ * plain Maps/arrays/scalars with one rule — which is what lets the reconciler
+ * match a Map key that is itself an array of maps (the `[J, P]` group keys).
+ */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  try {
+    return JSON.stringify(plainValue(a)) === JSON.stringify(plainValue(b))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Whether a plain value maps onto a YAML scalar (not a collection). */
+function isScalarValue(value: unknown): boolean {
+  return value === null || value === undefined || ['string', 'number', 'boolean'].includes(typeof value)
+}
+
+/**
+ * Canonical text of a MAP KEY, so the two representations of one key compare
+ * equal.
+ *
+ * A ctpwa `[J, P]` group key parses two ways: the AST keeps the flow seq
+ * `[J: 1, P: -1]`, while `toJS({mapAsMap:true})` (and `encodeJpKey`) produce the
+ * single Map `{J: 1, P: -1}`. Without flattening the seq-of-single-entry-maps
+ * form, every group key mismatches, gets re-created, and takes its comments and
+ * `[J: 1, P: -1]` style with it.
+ *
+ * Kept separate from {@link sameValue} (which compares VALUES): merging
+ * single-entry maps would be wrong for an arbitrary `options` payload.
+ */
+function keyForm(value: unknown): string {
+  const canon = (v: unknown): unknown => {
+    if (isScalar(v)) return v.value
+    if (isMap(v)) {
+      const out: Record<string, unknown> = {}
+      for (const item of (v as unknown as { items: { key?: unknown; value?: unknown }[] }).items) {
+        out[String(canon(item.key))] = canon(item.value)
+      }
+      return out
+    }
+    if (isSeq(v)) return (v as unknown as { items: unknown[] }).items.map(canon)
+    if (v instanceof Map) {
+      const out: Record<string, unknown> = {}
+      for (const [k, val] of v) out[String(canon(k))] = canon(val)
+      return out
+    }
+    if (Array.isArray(v)) return v.map(canon)
+    return v
+  }
+  const flat = (x: unknown): unknown => {
+    if (
+      Array.isArray(x) &&
+      x.length > 0 &&
+      x.every((e) => e !== null && typeof e === 'object' && !Array.isArray(e) && Object.keys(e as object).length === 1)
+    ) {
+      return Object.assign({}, ...(x as object[]))
+    }
+    return x
+  }
+  return JSON.stringify(flat(canon(value)))
+}
+
+/**
+ * Reconcile one AST node with the mutated plain value, in place.
+ *
+ * Existing map pairs are matched by structurally equal key, so their comments,
+ * key style and value formatting survive; new entries are appended and removed
+ * ones disappear. Scalar nodes are updated in place (keeping quote style) when
+ * the value stays scalar.
+ */
+function syncNode(node: unknown, value: unknown, doc: Document): unknown {
+  if (isMap(node) && value instanceof Map) {
+    const map = node as unknown as { items: { key?: unknown; value?: unknown }[] }
+    const remaining = [...map.items]
+    const pairs: { key?: unknown; value?: unknown }[] = []
+    for (const [key, val] of value) {
+      const at = remaining.findIndex((pair) => keyForm(pair.key) === keyForm(key))
+      const pair =
+        at >= 0
+          ? remaining.splice(at, 1)[0]!
+          : (doc.createPair(key, val) as unknown as { key?: unknown; value?: unknown })
+      pair.value = syncNode(pair.value, val, doc)
+      pairs.push(pair)
+    }
+    map.items = pairs
+    return node
+  }
+  if (isSeq(node) && Array.isArray(value)) {
+    const seq = node as unknown as { items: unknown[] }
+    seq.items = value.map((item, i) => syncNode(seq.items[i], item, doc) ?? doc.createNode(item))
+    return node
+  }
+  if (isScalar(node) && isScalarValue(value)) {
+    ;(node as { value: unknown }).value = value
+    return node
+  }
+  return doc.createNode(value)
+}
+
+/**
  * Parse config.yml text into a PwaConfig. Throws on YAML syntax errors.
  * @param text - full config.yml content
  */
@@ -70,6 +198,7 @@ export function parseConfig(text: string): PwaConfig {
     throw new Error(`config.yml YAML error: ${doc.errors.map((e) => e.message).join('; ')}`)
   }
   const raw = doc.toJS({ mapAsMap: true }) as YamlMap
+  PARSED_DOCS.set(raw, doc)
   return { raw, ...rebuildViews(raw) }
 }
 
@@ -859,9 +988,32 @@ function dupName(config: { resonances: Record<string, unknown> }, name: string):
   return Object.keys(config.resonances).find((n) => normalizeName(n) === normalizeName(name)) ?? name
 }
 
-/** Render the config back to YAML text (parseable by ctpwa/yaml-cpp). */
+/** First line of every rendered config — kept stable for downstream tooling. */
+const CONFIG_HEADER = '# config.yml — regenerated by dsh-pwa (auto_pwa_config_edit)'
+
+/**
+ * Render the config back to YAML text (parseable by ctpwa/yaml-cpp).
+ *
+ * Prefers the parsed Document (see {@link PARSED_DOCS}) so comments and compact
+ * flow collections survive an edit — but only when the result is PROVABLY
+ * faithful: the rendered text is re-parsed and compared against `config.raw`,
+ * and any mismatch (an AST update that missed a mutation) falls back to the
+ * lossy `stringify` dump. A missed reconciliation must never write a config
+ * that differs from the model the tools just validated.
+ */
 export function dumpConfig(config: PwaConfig): string {
-  return `# config.yml — regenerated by dsh-pwa (auto_pwa_config_edit)\n${stringify(config.raw, { lineWidth: 0 })}`
+  const doc = PARSED_DOCS.get(config.raw)
+  if (doc !== undefined) {
+    try {
+      syncNode(doc.contents, config.raw, doc)
+      const rendered = `${CONFIG_HEADER}\n${doc.toString({ lineWidth: 0, flowCollectionPadding: false })}`
+      const back = parseDocument(rendered).toJS({ mapAsMap: true })
+      if (sameValue(back, config.raw)) return rendered
+    } catch {
+      // Fall through: the lossy dump is always faithful to `raw`.
+    }
+  }
+  return `${CONFIG_HEADER}\n${stringify(config.raw, { lineWidth: 0 })}`
 }
 
 // ---------------------------------------------------------------------------
