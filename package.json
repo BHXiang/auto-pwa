@@ -4,6 +4,10 @@
   "type": "module",
   "description": "AI-driven partial wave analysis for DeepSeek Harness: physics-gated config editing, ctpwa fit execution, numeric evaluation, and goal-driven iterative convergence. Physics knowledge (PDG-2026) as pure functions; DSH integration as a thin pwa_* tool plugin.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BHXiang/auto-pwa.git"
+  },
   "keywords": [
     "pwa",
     "partial-wave-analysis",
