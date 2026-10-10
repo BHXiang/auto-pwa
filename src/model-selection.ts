@@ -62,3 +62,29 @@ export function compareModels(
   const favoured = aicDelta !== null && aicDelta < 0 && (bicDelta === null || bicDelta < 0)
   return { deltaNll, deltaK, aicDelta, bicDelta, n, favoured }
 }
+
+/** The fields {@link simplerFavoured} ranks on (a subset of a compare row). */
+export interface SimplerCandidacy {
+  verdict: string
+  favoured: boolean
+  deltaK: number | null
+  aicDelta: number | null
+  bicDelta: number | null
+}
+
+/**
+ * Pick the candidate worth switching to when NO trial is a significant ΔNLL
+ * improvement: it must have FEWER parameters (`Δk < 0`) and the complexity
+ * penalty must favour it (`favoured`, i.e. ΔAIC < 0 and ΔBIC < 0 when known).
+ * Ties break on the most negative ΔBIC (falling back to ΔAIC without an event
+ * count).
+ *
+ * A verdict that only looks at |ΔNLL| recommends "keep the current model" while
+ * the ΔAIC/ΔBIC line printed right above it points at the simpler trial — the
+ * numbers and the recommendation contradicted each other.
+ */
+export function simplerFavoured<T extends SimplerCandidacy>(candidates: readonly T[]): T | undefined {
+  return candidates
+    .filter((r) => r.verdict === 'not-significant' && r.favoured && (r.deltaK ?? 0) < 0)
+    .sort((a, b) => (a.bicDelta ?? a.aicDelta ?? 0) - (b.bicDelta ?? b.aicDelta ?? 0))[0]
+}

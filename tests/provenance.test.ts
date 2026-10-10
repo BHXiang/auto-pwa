@@ -76,6 +76,14 @@ describe('initFromScriptArgs', () => {
     expect(initFromScriptArgs(['--runs', '1']).source).toBe('random')
     expect(initFromScriptArgs(undefined).source).toBe('random')
   })
+
+  it('default note does not imply a --warm flag the driver lacks', () => {
+    // aifit's CLI has no --warm, so the note must say so instead of sending a
+    // reader looking for a warm start (the old wording did exactly that).
+    const note = initFromScriptArgs(['--runs', '1']).note ?? ''
+    expect(note).toContain('没有 --warm')
+    expect(note).toContain('seed=42')
+  })
 })
 
 describe('provenance record (B1)', () => {

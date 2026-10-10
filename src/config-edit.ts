@@ -630,7 +630,9 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
     if (proposal.reference !== undefined && proposal.reference.trim() !== '') {
       spec.reference = proposal.reference.trim()
     }
-    spec.tex = [proposal.tex ?? `\\mathrm{${proposal.name}}`]
+    // The config stores tex as an ARRAY (multi-segment labels like K_{2},(1980)),
+    // while a proposal may pass either form — normalize here, never nest.
+    spec.tex = Array.isArray(proposal.tex) ? proposal.tex : [proposal.tex ?? `\\mathrm{${proposal.name}}`]
     resRaw.set(proposal.name, spec)
     changed.push(
       `Resonances.${proposal.name} = ${proposal.model} ${JSON.stringify(proposal.parameters)}` +

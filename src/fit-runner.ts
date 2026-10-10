@@ -98,6 +98,28 @@ export function detectGpuAvailability(python: string, ldLibraryPath: string): st
     'restart the harness with `conda activate ctpwa` or set PWA_CTPWA_PYTHON and PWA_LD_LIBRARY_PATH (see auto-pwa-env.sh).'
 }
 
+/**
+ * Read the last `bytes` of a log file, or `''` when it cannot be read.
+ *
+ * A ctpwa job is registered as a FINAL-OUTPUT job, so the job registry holds no
+ * bytes until settlement — this file is the only running-progress signal (the
+ * spawn pipes stdout/stderr straight into it). Parsed here once so the service
+ * layer's status() and the runner's own statusOf agree.
+ */
+export function readLogTail(logPath: string, bytes: number = LOG_TAIL_BYTES): string {
+  try {
+    const fd = openSync(logPath, 'r')
+    const size = fstatSync(fd).size
+    const start = Math.max(0, size - bytes)
+    const buf = Buffer.alloc(size - start)
+    readSync(fd, buf, 0, buf.length, start)
+    closeSync(fd)
+    return buf.toString('utf8')
+  } catch {
+    return ''
+  }
+}
+
 export class LocalFitRunner {
   private jobs = new Map<string, FitJob>()
   private seq = 0
@@ -245,18 +267,7 @@ export class LocalFitRunner {
 
   private statusOf(job: FitJob): FitStatus {
     // Cheap tail read: last bytes of the log file.
-    let logTail = ''
-    try {
-      const fd = openSync(job.logPath, 'r')
-      const size = fstatSync(fd).size
-      const start = Math.max(0, size - LOG_TAIL_BYTES)
-      const buf = Buffer.alloc(size - start)
-      readSync(fd, buf, 0, buf.length, start)
-      closeSync(fd)
-      logTail = buf.toString('utf8')
-    } catch {
-      logTail = ''
-    }
+    const logTail = readLogTail(job.logPath)
     return {
       jobId: job.jobId,
       iterDir: job.iterDir,

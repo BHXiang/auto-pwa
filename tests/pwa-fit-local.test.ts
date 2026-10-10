@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PwaFitLocalService, FIT_OUTPUT_LIMIT_BYTES } from '../plugin/pwa-fit-local.js'
 import type { JobHooks, JobIdentity, JobKind, JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type { FitOwner } from '../plugin/pwa-fit.js'
@@ -239,5 +242,26 @@ describe('PwaFitLocalService (ctx.jobs provider)', () => {
     const registry = new FakeJobRegistry()
     const service = new PwaFitLocalService(ctx(registry), { runner: new FakeRunner() })
     expect(() => service.status('ctpwa-99')).toThrow(/unknown job/)
+  })
+
+  it('reports progress for a RUNNING job from the fit.log tail', () => {
+    // A ctpwa job is a final-output job: the registry holds no bytes before
+    // settlement, so without the log tail a running job showed an empty
+    // 日志尾部 — no way to tell "run 3/10" from "hung".
+    const dir = mkdtempSync(join(tmpdir(), 'pwa-fit-local-'))
+    try {
+      writeFileSync(
+        join(dir, 'fit.log'),
+        'Initialization complete.\n[aifit] run 3/10 NLL=-1187.82 PD=False iters=2705 t=48.2s\n',
+      )
+      const registry = new FakeJobRegistry()
+      const service = new PwaFitLocalService(ctx(registry), { runner: new FakeRunner() })
+      const jobId = service.submit({ iterDir: dir })
+      const view = service.status(jobId)
+      expect(view.state).toBe('running')
+      expect(view.logTail).toContain('[aifit] run 3/10')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

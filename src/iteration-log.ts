@@ -264,7 +264,11 @@ export function absolutizeDataPaths(
   let found = 0
   let rewritten = 0
   let unresolved = 0
-  for (const key of ['data', 'phsp', 'phsp_truth', 'bkg', 'bkg_weights']) {
+  // Keys whose element 1 IS a path. `*_weights` (bkg_weights / data_weights …)
+  // hold numbers, not paths: counting them made every iter_start warn
+  // "1/4 个样本的路径无法读取" (and inflated `found`, which could mask a real
+  // malformed sample path).
+  for (const key of ['data', 'phsp', 'phsp_truth', 'bkg']) {
     const sample = dataNode.get(key)
     if (sample === undefined) continue
     found += 1

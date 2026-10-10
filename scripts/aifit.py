@@ -550,6 +550,15 @@ def _run_fit(args: argparse.Namespace) -> int:
                 tolerance_change=opts["tol_change"], history_size=opts["history_size"],
             )
             results.append(result)
+            # 运行期进度：stdout 走管道是块缓冲，且 ctpwa job 是 final-output job
+            # （结算前注册表里没有字节），所以必须逐 run 显式 flush 一行，否则
+            # fit_status 在拟合跑完前只能看到 ctpwa 的启动块。
+            print(
+                f"[aifit] run {i + 1}/{args.runs} NLL={result['final_nll']:.6f} "
+                f"PD={result['is_positive_definite']} iters={result['iterations']} "
+                f"t={result['time']:.1f}s",
+                flush=True,
+            )
             runs_json.append({
                 "runId": i,
                 "nll": float(result["final_nll"]),

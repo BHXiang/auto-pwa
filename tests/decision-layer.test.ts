@@ -7,7 +7,7 @@ import { suggestCandidates, type EvaluateData } from '../src/suggest.js'
 import { diagnoseFit } from '../src/diagnose.js'
 import { convergenceVerdict, initLoopState, loadLoopState, writeFinalReport, DEFAULT_OBJECTIVE } from '../src/loop-state.js'
 import { IterationLog } from '../src/iteration-log.js'
-import { freeParamCount, compareModels } from '../src/model-selection.js'
+import { freeParamCount, compareModels, simplerFavoured } from '../src/model-selection.js'
 import { verifyPrediction } from '../src/loop-state.js'
 import { defaultDb } from '../src/db.js'
 import { parseConfig, validateConfig } from '../src/config-edit.js'
@@ -427,6 +427,36 @@ describe('model selection (AIC/BIC)', () => {
     // Big improvement: favoured.
     const mc3 = compareModels({ nll: 100, k: 10 }, { nll: 85, k: 12 }, 100_000)
     expect(mc3.favoured).toBe(true)
+  })
+
+  it('simplerFavoured picks the leaner trial the complexity penalty prefers', () => {
+    // Reproduces the lomass case: Δk = -6, ΔNLL ≈ +0.57 (not significant),
+    // AICΔ/BICΔ strongly negative -> the recommendation must not be "keep the
+    // current model" while those numbers point at the simpler trial.
+    const lean = compareModels({ nll: -558.03, k: 32 }, { nll: -557.46, k: 26 }, 4000)
+    expect(lean.favoured).toBe(true)
+    const row = (trialDir: string, verdict: string, mc: typeof lean) => ({ trialDir, verdict, ...mc })
+    const picked = simplerFavoured([
+      row('iter-001', 'not-significant', lean),
+      row('iter-002', 'significant-worsening', compareModels({ nll: -558, k: 32 }, { nll: -500, k: 40 }, 4000)),
+    ])
+    expect(picked?.trialDir).toBe('iter-001')
+
+    // A heavier trial is never picked, and a significant improvement is handled
+    // by the caller's own branch (not here).
+    const heavier = compareModels({ nll: -558, k: 32 }, { nll: -559, k: 40 }, 4000)
+    expect(simplerFavoured([row('iter-003', 'not-significant', heavier)])).toBeUndefined()
+    const significant = compareModels({ nll: -558, k: 32 }, { nll: -575, k: 26 }, 4000)
+    expect(simplerFavoured([row('iter-004', 'significant-improvement', significant)])).toBeUndefined()
+
+    // Ties break on the most negative ΔBIC.
+    const weaker = compareModels({ nll: -558, k: 32 }, { nll: -556, k: 26 }, 4000)
+    const stronger = compareModels({ nll: -558, k: 32 }, { nll: -557.9, k: 24 }, 4000)
+    const best = simplerFavoured([
+      row('iter-005', 'not-significant', weaker),
+      row('iter-006', 'not-significant', stronger),
+    ])
+    expect(best?.trialDir).toBe('iter-006')
   })
 })
 

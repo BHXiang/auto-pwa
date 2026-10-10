@@ -17,7 +17,8 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
-import type { FitStatus } from '../src/fit-runner.js'
+import { join } from 'node:path'
+import { readLogTail, type FitStatus } from '../src/fit-runner.js'
 import { pickFitRunner, type FitTransport } from '../src/fit-transport.js'
 import { FitService, type FitOwner, type FitRequest, type FitStatusView } from './pwa-fit.js'
 
@@ -222,9 +223,24 @@ export class PwaFitLocalService extends FitService {
     if (snap.detail !== undefined) out.error = snap.detail
     const exitCode = exitCodeOf(snap.detail)
     if (exitCode !== undefined) out.exitCode = exitCode
-    if (snap.status !== 'running' && snap.status !== 'stopping') {
-      // Final-output jobs: read() is idempotent after settlement. Flatten the
-      // result by shape — current DSH returns chunks, not `text` (readJobText).
+    if (snap.status === 'running' || snap.status === 'stopping') {
+      // A ctpwa job is a FINAL-OUTPUT job: the registry carries no bytes before
+      // settlement, so jobs.read() cannot report progress mid-run. The spawn
+      // pipes stdout/stderr into `<iterDir>/fit.log` (LocalFitRunner's default
+      // name — nothing configures logFile), and aifit prints one line per run,
+      // so tailing that file is the only running-progress signal. A batch job
+      // keeps one dir per trial, so tail every dir but keep the total bounded.
+      const dirs =
+        this.batchIterDirs.get(jobId) ??
+        (this.iterDirs.get(jobId) !== undefined ? [this.iterDirs.get(jobId)!] : [])
+      const joined = dirs
+        .map((dir) => readLogTail(join(dir, 'fit.log')))
+        .filter((tail) => tail !== '')
+        .join('\n')
+      out.logTail = joined.length > 4096 ? joined.slice(-4096) : joined
+    } else {
+      // Settled: read() is idempotent after settlement. Flatten the result by
+      // shape — current DSH returns chunks, not `text` (readJobText).
       try {
         const result = ident === undefined ? this.jobs.read(jobId) : this.jobs.read(jobId, ident)
         out.logTail = readJobText(result)

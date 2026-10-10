@@ -54,7 +54,7 @@ import { defaultFitRunnerConfig, withConfigArg } from '../src/fit-runner.js'
 import { summarizeFitDir, parseFitJson } from '../src/fit-summary.js'
 import { suggestCandidates } from '../src/suggest.js'
 import { diagnoseFit } from '../src/diagnose.js'
-import { freeParamCount, compareModels } from '../src/model-selection.js'
+import { freeParamCount, compareModels, simplerFavoured } from '../src/model-selection.js'
 import { resolveEnv, bundledAifitPath } from '../src/config.js'
 import { IterationLog, startIteration, iterationsRootOf, listIterations, createTrialDir } from '../src/iteration-log.js'
 import {
@@ -303,7 +303,13 @@ const proposalParam = {
     parameters: { type: 'array' as const, required: true, items: { type: 'number' as const }, description: '[质量, 宽度] GeV；ONE 给 0 或 1 个 [质量] 占位（Bf 的 q0 用固定参考，占位值不进入振幅；可写 []）；Interp/Custom 可写 []' },
     free: { type: 'array' as const, items: { type: 'integer' as const }, description: 'float 的参数索引：0=质量, 1=宽度, -1=全部' },
     freeRange: { type: 'array' as const, items: { type: 'array' as const, items: { type: 'number' as const } }, description: '每个 free 参数一个 [lo, hi] GeV 区间，须包含初始值' },
-    tex: { type: 'string' as const, description: 'LaTeX 标签' },
+    tex: {
+      oneOf: [
+        { type: 'string' as const },
+        { type: 'array' as const, items: { type: 'string' as const } },
+      ],
+      description: 'LaTeX 标签：可传字符串，也可传与 config 一致的数组形式（多段标签如 ["K_{2}", "(1980)"]）；写回时统一归一化成数组',
+    },
     channels: { type: 'array' as const, items: { type: 'array' as const, items: { type: 'number' as const } }, description: 'Flatte 专用：道阈值/耦合元数据' },
     options: { type: 'object' as const, additionalProperties: true, description: '特殊公式逃生舱：原样透传给 ctpwa 的模型载荷（Interp: {file, method}；Custom: {expr,...}）。插件只检查它是 mapping，语义由 ctpwa --validate-only 定论' },
     reference: { type: 'string' as const, description: '出处（可选）：参数遵循该实验/论文而非 PDG 平均值（如 DOI 或 "BESIII 2024"）。提供时跳过 PDG 平均一致性检查（质量/J^P 与 PDG 的偏离改为警告），物理可达性（阈值/J^P/C）仍强制。会写入 config.yml 的 reference 字段并随迭代继承' },
@@ -3889,8 +3895,10 @@ export function apply(ctx: Context) {
           }
           if (s.files) lines.push(`  results/: ${s.files.join(', ')}`)
         }
-        const tail = value.logTail.trim().split('\n').slice(-6).map((l) => `  | ${l}`).join('\n')
-        if (tail) lines.push(`  日志尾部:\n${tail}`)
+        // An empty tail must not render as a fake "  | " line: ''.trim().split()
+        // is [''], which is truthy and printed a bare bar for every running job.
+        const tailLines = value.logTail.trim() === '' ? [] : value.logTail.trim().split('\n').slice(-6)
+        if (tailLines.length > 0) lines.push(`  日志尾部:\n${tailLines.map((l) => `  | ${l}`).join('\n')}`)
         return text(lines.join('\n'))
       },
     },
@@ -4355,11 +4363,29 @@ export function apply(ctx: Context) {
           recommendation = `${best.trialDir.split(/[\\/]/).pop() ?? best.trialDir} 显著改进（ΔNLL ${best.deltaNll?.toFixed(2)}${best.aicDelta !== null ? `, AICΔ=${best.aicDelta.toFixed(1)}` : ''}），建议晋级为正式迭代`
         }
       } else {
-        recommendation = results.some((r) => r.verdict === 'not-significant')
-          ? '所有候选均未达到显著阈值 —— 保持当前模型或换一批候选'
-          : results.some((r) => r.verdict === 'significant-worsening')
-            ? '有候选显著变差 —— 不要采纳'
-            : '没有可比较的结果（检查 trial 是否完成）'
+        // ΔNLL alone is not the verdict. A candidate with FEWER parameters that
+        // the complexity penalty favours (ΔAIC/ΔBIC, already computed by
+        // model-selection) is worth taking even when ΔNLL is not significant —
+        // the line above prints those numbers, so recommending "keep the current
+        // model" while they point at the simpler trial contradicted itself.
+        const simpler = simplerFavoured(results)
+        if (simpler !== undefined) {
+          const label = simpler.trialDir.split(/[\\/]/).pop() ?? simpler.trialDir
+          const d = simpler.deltaNll !== null ? `${simpler.deltaNll > 0 ? '+' : ''}${simpler.deltaNll.toFixed(2)}` : '—'
+          // Kass–Raftery: |ΔBIC| > 6 is strong evidence.
+          const strong = simpler.bicDelta !== null && simpler.bicDelta < -6
+          recommendation =
+            `${label} ΔNLL 不显著（${d}）但复杂度惩罚偏向它（Δk=${simpler.deltaK ?? 0}` +
+            `${simpler.aicDelta !== null ? `, AICΔ=${simpler.aicDelta.toFixed(1)}` : ''}` +
+            `${simpler.bicDelta !== null ? `, BICΔ=${simpler.bicDelta.toFixed(1)}` : ''}）` +
+            `${strong ? '（|BICΔ|>6：强证据）' : ''} → 建议换成更简模型`
+        } else {
+          recommendation = results.some((r) => r.verdict === 'not-significant')
+            ? '所有候选均未达到显著阈值，且复杂度惩罚也不偏向任何候选 —— 保持当前模型或换一批候选'
+            : results.some((r) => r.verdict === 'significant-worsening')
+              ? '有候选显著变差 —— 不要采纳'
+              : '没有可比较的结果（检查 trial 是否完成）'
+        }
       }
       return { ok: true, baseNll, results, recommendation, threshold }
     },

@@ -122,6 +122,26 @@ Data:
     rmSync(root, { recursive: true, force: true })
   })
 
+  it('does not count *_weights as samples (they carry numbers, not paths)', () => {
+    // Every iter_start used to warn "1/4 个样本的路径无法读取" because
+    // `bkg_weights: [0.8]` was counted as a sample and then failed the
+    // path-element check — pure noise that could also mask a real bad path.
+    const root = tempIterations()
+    const base = join(root, 'solve1')
+    const { mkdirSync } = require('node:fs') as typeof import('node:fs')
+    mkdirSync(base)
+    const cfg = join(base, 'config.yml')
+    writeFileSync(cfg, `Data:
+  order: [Kp, Km, eta]
+  data: [dat, "./data.dat"]
+  bkg: [dat, "./bkg.dat"]
+  bkg_weights: [0.8]
+`)
+    const stat = absolutizeDataPaths(cfg, base)
+    expect(stat).toEqual({ found: 2, rewritten: 2, unresolved: 0 })
+    rmSync(root, { recursive: true, force: true })
+  })
+
   it('leaves an all-absolute config byte-identical', () => {
     const root = tempIterations()
     const base = join(root, 'solve1')

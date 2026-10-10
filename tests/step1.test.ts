@@ -360,6 +360,27 @@ describe('applyResonanceAddition + cross-reference', () => {
   })
 })
 
+describe('tex normalization', () => {
+  it('accepts the config array form and writes it flat (never nested)', () => {
+    // The config stores tex as an array (multi-segment labels). A proposal may
+    // pass a string OR an array; writing the array without normalizing produced
+    // `tex: [[...]]`, which ctpwa only ever reads as labels and the pre-fit gate
+    // does not reject — a silently wrong config.
+    const c = parseConfig(CONFIG_TEXT)
+    const ap = applyResonanceAddition(c, {
+      name: 'X1980tex',
+      chain: 'R_KK',
+      jpGroup: { j: 2, p: 1 },
+      model: 'BWR',
+      parameters: [1.98, 0.2],
+      tex: ['K_{2}', '(1980)'],
+    })
+    expect(ap.errors).toEqual([])
+    expect(ap.config.resonances.X1980tex?.tex).toEqual(['K_{2}', '(1980)'])
+    expect(dumpConfig(ap.config)).not.toMatch(/tex:\s*\n\s*- - /)
+  })
+})
+
 describe('suggestFree', () => {
   it('keeps ONE fixed', () => {
     const s = suggestFree(undefined, { model: 'ONE', parameters: [1.5] })
