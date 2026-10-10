@@ -396,8 +396,11 @@ export function validateResonanceAddition(
       errors.push(
         err(
           'param-conflict',
-          `"${proposal.name}" is already defined with parameters ${JSON.stringify(existing.parameters)}; ` +
-            `to attach it, pass the same parameters (or omit them)`,
+          `"${proposal.name}" is already defined with parameters ${JSON.stringify(existing.parameters)}. ` +
+            `To attach it unchanged, pass exactly those parameters — proposal.parameters is REQUIRED, ` +
+            `so "omit them" is not possible (that earlier hint was a dead end). ` +
+            `To CHANGE a defined resonance's parameters/tex, edit its Resonances block in config.yml directly: ` +
+            `attaching only links the chain and never overwrites the definition`,
         ),
       )
     } else {
@@ -405,7 +408,8 @@ export function validateResonanceAddition(
         warn(
           'already-defined',
           `"${proposal.name}" is already defined in the config — this edit will ATTACH it to ` +
-            `${proposal.chain} [${jpLabel(proposal.jpGroup)}] without redefining it`,
+            `${proposal.chain} [${jpLabel(proposal.jpGroup)}] without redefining it. ` +
+            `The proposal's parameters/tex/free/freeRange/options are IGNORED: the existing definition wins`,
         ),
       )
     }

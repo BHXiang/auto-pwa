@@ -97,10 +97,39 @@ export interface JobSnapshot {
   reported: boolean
 }
 
-/** Output and post-read state returned by JobRegistry.read. */
+/** One output chunk (current DSH): output arrives as ordered slices. */
+export interface JobChunk {
+  /** Absolute offset of the chunk's first byte; offsets never move once assigned. */
+  readonly at: number
+  /** Chunk text exactly as appended (possibly tail-trimmed by retention). */
+  readonly text: string
+  /** Stream label, when the producer supplied one. */
+  readonly channel?: string
+  /** Bytes immediately before this chunk were lost, at the producer or to retention. */
+  readonly gapBefore?: true
+}
+
+/**
+ * Output returned by JobRegistry.read. Two generations, discriminated by shape:
+ *   - released DSH: `{ text, snapshot }` — the whole output in one string;
+ *   - current DSH (dev checkout and 0.2.0-rc.2): `{ chunks, lossy, result?, job }`
+ *     — NO `text` field, so reading `.text` yields undefined.
+ * Nothing here is nullable by contract: callers must flatten with a shape check
+ * (pwa-fit-local's readJobText) instead of assuming `text`.
+ */
 export interface JobRead {
-  text: string
-  snapshot: JobSnapshot
+  /** Released DSH: the whole output as one string. */
+  text?: string
+  /** Current DSH: output as ordered chunks. */
+  chunks?: readonly JobChunk[]
+  /** Current DSH: some bytes were dropped (producer gap or retention). */
+  lossy?: boolean
+  /** Current DSH: the job's structured result, delivered once after settlement. */
+  result?: unknown
+  /** Released DSH: snapshot returned alongside the text. */
+  snapshot?: JobSnapshot
+  /** Current DSH: the job's view at read time. */
+  job?: JobSnapshot
 }
 
 /** Completion callback with the exact owner supplied at start. */

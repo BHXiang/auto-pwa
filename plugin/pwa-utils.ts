@@ -9,6 +9,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import { copyFileSync, existsSync } from 'node:fs'
 
 // ---------------------------------------------------------------------------
 // token-meter：按 session 累计用量
@@ -109,6 +110,26 @@ export interface SpillResult {
 }
 
 /**
+ * 每个会 spill 的工具返回的封装 schema（工具把它作为 `spilled` 字段声明）。
+ *
+ * `maybeSpill` 交回的是 `{ spilled, locator, bytes, retrievalHint, summary }`，
+ * 而工具 schema 里曾内联只声明 `{ locator, bytes, retrievalHint }` —— 于是
+ * **任何大到触发 spill 的输出都会校验失败**（`spilled`/`summary` 未声明），
+ * wave_view 更是连 `spilled` 都没声明。共享一份就不会再漂移。
+ */
+export const spillOutputSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    spilled: { type: 'boolean' as const, description: 'true = 完整输出已存入 spill 存储（按 locator 取回）' },
+    locator: { type: 'string' as const },
+    bytes: { type: 'integer' as const },
+    retrievalHint: { type: 'string' as const },
+    summary: { oneOf: [{ type: 'object' as const, additionalProperties: true }, { type: 'null' as const }] },
+  },
+} as const
+
+/**
  * 序列化输出超过阈值且 spillStore 可用时，把完整文本存入 spill 存储并
  * 返回 locator + 精简摘要；否则原样返回 fallback（never throws）。
  */
@@ -154,6 +175,30 @@ export async function maybeSpill(
     // Spill is best-effort: keep the inline result on any storage failure.
     return fallback
   }
+}
+
+// ---------------------------------------------------------------------------
+// config 写回：原文快照（写回会丢掉注释，所以"原文"必须留住）
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot a file's pre-edit original next to it, once.
+ *
+ * Every config write-back re-serializes the whole document
+ * (`dumpConfig` → `stringify`), which drops comments by design; the only way
+ * back to the annotated original is this backup. It used to be rewritten on
+ * every edit (`copyFileSync(path, path.bak)`), so by the second edit the
+ * pristine file was gone and the backup held an already-stripped version.
+ * Freezing the first snapshot keeps `<path>.bak` = the original, and callers
+ * still get the path back to report.
+ *
+ * @param path - the file being rewritten.
+ * @returns the backup path (`<path>.bak`).
+ */
+export function snapshotOnce(path: string): string {
+  const backup = `${path}.bak`
+  if (!existsSync(backup)) copyFileSync(path, backup)
+  return backup
 }
 
 // ---------------------------------------------------------------------------

@@ -39,6 +39,31 @@ export const inject = ['jobs']
 /** 拟合 job 的模型可见输出字节帽（完成通知 + job_output）。 */
 export const FIT_OUTPUT_LIMIT_BYTES = 32 * 1024
 
+/**
+ * Flatten a `ctx.jobs.read()` result into text across DSH generations.
+ *
+ * The released registry returned `{ text, snapshot }`; the current one (dev
+ * checkout and 0.2.0-rc.2) returns `{ chunks: JobChunk[], lossy, result?, job }`
+ * and has NO `text` field. Reading `.text` there yields `undefined`, which the
+ * tool-output validator rejects for every settled job ("value is not lossless
+ * JSON"). Discriminate on the shape — the same discipline agentIdentity applies
+ * to identity — and always return a string so `logTail` stays JSON-safe.
+ */
+function readJobText(result: unknown): string {
+  if (result === null || typeof result !== 'object') return ''
+  const record = result as { text?: unknown; chunks?: unknown }
+  if (Array.isArray(record.chunks)) {
+    let text = ''
+    for (const chunk of record.chunks) {
+      if (chunk === null || typeof chunk !== 'object') continue
+      const piece = (chunk as { text?: unknown }).text
+      if (typeof piece === 'string') text += piece
+    }
+    return text
+  }
+  return typeof record.text === 'string' ? record.text : ''
+}
+
 /** The runner surface the provider needs (LocalFitRunner/SbatchFitRunner satisfy it; tests inject fakes). */
 export interface FitSpawner {
   submit(iterDir: string, options?: { timeoutMs?: number; scriptArgs?: string[] }): FitStatus
@@ -198,9 +223,11 @@ export class PwaFitLocalService extends FitService {
     const exitCode = exitCodeOf(snap.detail)
     if (exitCode !== undefined) out.exitCode = exitCode
     if (snap.status !== 'running' && snap.status !== 'stopping') {
-      // Final-output jobs: read() is idempotent after settlement.
+      // Final-output jobs: read() is idempotent after settlement. Flatten the
+      // result by shape — current DSH returns chunks, not `text` (readJobText).
       try {
-        out.logTail = ident === undefined ? this.jobs.read(jobId).text : this.jobs.read(jobId, ident).text
+        const result = ident === undefined ? this.jobs.read(jobId) : this.jobs.read(jobId, ident)
+        out.logTail = readJobText(result)
       } catch {
         // The record may have been reaped with its owner; keep the snapshot.
       }

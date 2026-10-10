@@ -82,7 +82,7 @@ import type {
   ResonanceRemoval,
 } from '../src/types.js'
 import { buildInitialConfig } from '../src/config-init.js'
-import { createUsageTracker, maybeSpill, type TokenTotals, type TokenUsageLike } from './pwa-utils.js'
+import { createUsageTracker, maybeSpill, snapshotOnce, spillOutputSchema, type TokenTotals, type TokenUsageLike } from './pwa-utils.js'
 import {
   analysisRootOf,
   blobMd5,
@@ -253,6 +253,44 @@ const jpParam = {
   },
   description: '自旋宇称 (J, P)',
 } as const
+
+/**
+ * One nullable number. A 2D moment bin can have no data, and the DSH schema
+ * subset rejects `type` ARRAYS ("type arrays are not supported"), so nullable
+ * has to be expressed as a two-branch oneOf.
+ */
+const nullableNumberParam = { oneOf: [{ type: 'number' as const }, { type: 'null' as const }] } as const
+
+/** One 1D Legendre moment (scalar): M_L for data and fit, plus the signed delta. */
+const momentParam = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    data: { type: 'number' as const },
+    fit: { type: 'number' as const },
+    delta: { type: 'number' as const },
+  },
+} as const
+
+/**
+ * One 2D (mass × cosθ) moment: `data`/`fit` are per-mass-bin SERIES aligned with
+ * `massBins`, and there is no `delta` — the diagnostic is max|data−fit| over
+ * bins. Kept in a separate field from the scalar moments because mixing the two
+ * shapes in one schema is what made every evaluate call fail validation.
+ */
+const moment2dParam = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    data: { type: 'array' as const, items: nullableNumberParam },
+    fit: { type: 'array' as const, items: nullableNumberParam },
+  },
+} as const
+
+/** Legendre orders the evaluate script emits (1D). */
+const momentProperties = { '2': momentParam, '4': momentParam, '6': momentParam } as const
+/** The same orders, in their mass-binned (2D) shape. */
+const moment2dProperties = { '2': moment2dParam, '4': moment2dParam, '6': moment2dParam } as const
 
 const proposalParam = {
   type: 'object' as const,
@@ -1023,15 +1061,7 @@ export function apply(ctx: Context) {
               },
             },
           },
-          spilled: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              locator: { type: 'string' },
-              bytes: { type: 'integer' },
-              retrievalHint: { type: 'string' },
-            },
-          },
+          spilled: spillOutputSchema,
           error: { type: 'string' },
         },
       },
@@ -1402,11 +1432,7 @@ export function apply(ctx: Context) {
           reviewSummary: { type: 'string', required: true },
           configText: { type: 'string' },
           requiresHumanReview: { type: 'boolean', required: true },
-          spilled: {
-            type: 'object',
-            additionalProperties: false,
-            properties: { locator: { type: 'string' }, bytes: { type: 'integer' }, retrievalHint: { type: 'string' } },
-          },
+          spilled: spillOutputSchema,
         },
       },
       render: (_args, value: {
@@ -1520,15 +1546,7 @@ export function apply(ctx: Context) {
               },
             },
           },
-          spilled: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              locator: { type: 'string' },
-              bytes: { type: 'integer' },
-              retrievalHint: { type: 'string' },
-            },
-          },
+          spilled: spillOutputSchema,
         },
       },
       render: (_args, value: {
@@ -2076,9 +2094,8 @@ export function apply(ctx: Context) {
         }
       }
       const rendered = dumpConfig(applied.config)
-      // Atomic write: backup, tmp file, rename.
-      const backupPath = `${configPath}.bak`
-      copyFileSync(configPath, backupPath)
+      // Atomic write: freeze the pre-first-edit original, tmp file, rename.
+      const backupPath = snapshotOnce(configPath)
       const tmpPath = join(dirname(configPath), `.config.yml.tmp-${Date.now().toString(36)}`)
       writeFileSync(tmpPath, rendered)
       renameSync(tmpPath, configPath)
@@ -2189,8 +2206,7 @@ export function apply(ctx: Context) {
           resonanceCount: before,
         }
       }
-      const backupPath = `${configPath}.bak`
-      copyFileSync(configPath, backupPath)
+      const backupPath = snapshotOnce(configPath)
       const tmpPath = join(dirname(configPath), `.config.yml.tmp-${Date.now().toString(36)}`)
       writeFileSync(tmpPath, dumpConfig(cfg))
       renameSync(tmpPath, configPath)
@@ -2416,7 +2432,7 @@ export function apply(ctx: Context) {
           errors.push(...finalV.errors, ...finalXref.errors)
           return out
         }
-        copyFileSync(target, `${target}.bak`)
+        snapshotOnce(target)
         const tmp = `${target}.tmp-${Date.now().toString(36)}`
         writeFileSync(tmp, dumpConfig(newCfg))
         renameSync(tmp, target)
@@ -3005,7 +3021,7 @@ export function apply(ctx: Context) {
           warnings: [...applied.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
         }
       }
-      copyFileSync(target, `${target}.bak`)
+      snapshotOnce(target)
       const tmp = `${target}.tmp-${Date.now().toString(36)}`
       writeFileSync(tmp, dumpConfig(newCfg))
       renameSync(tmp, target)
@@ -3112,30 +3128,35 @@ export function apply(ctx: Context) {
                 moments: {
                   type: 'object',
                   additionalProperties: false,
-                  description: '勒让德矩（角分布）：{L: {data, fit, delta}}——数据-拟合矩差指示缺失/多余的 J（自旋 0 介子对需 J>=L/2 才有 M_L）',
+                  properties: momentProperties,
+                  description: '1D 勒让德矩（角分布）：{L: {data, fit, delta}}——数据-拟合矩差指示缺失/多余的 J（自旋 0 介子对需 J>=L/2 才有 M_L）',
                 },
-                massBins: { type: 'array', items: { type: 'number' }, description: '2D 矩图的质量 bin 中心' },
+                moments2d: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: moment2dProperties,
+                  description: '2D（质量×cosθ）勒让德矩：每个 L 是逐质量 bin 的数组、无 delta，与 massBins 对齐；诊断看 max|data−fit| 落在哪个 L、哪个质量 bin',
+                },
+                massBins: { type: 'array', items: nullableNumberParam, description: '2D 矩图的质量 bin 中心（无数据的 bin 为 null）' },
               },
             },
           },
           pngFiles: { type: 'array', items: { type: 'string' } },
           error: { type: 'string' },
-          spilled: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              locator: { type: 'string' },
-              bytes: { type: 'integer' },
-              retrievalHint: { type: 'string' },
-            },
-          },
+          spilled: spillOutputSchema,
         },
       },
       render: (_args, value: {
         ok: boolean
         error?: string
         worst: { name: string; chi2_ndf?: number; max_abs_pull: number; bins_over_5sigma: number }[]
-        distributions?: { name: string; has_background?: boolean; moments?: Record<string, { data?: number; fit?: number; delta?: number }> }[]
+        distributions?: {
+          name: string
+          has_background?: boolean
+          moments?: Record<string, { data?: number; fit?: number; delta?: number }>
+          moments2d?: Record<string, { data: (number | null)[]; fit: (number | null)[] }>
+          massBins?: (number | null)[]
+        }[]
         evaluateJsonPath: string
         pngFiles?: string[]
         spilled?: { locator: string; retrievalHint: string }
@@ -3166,6 +3187,31 @@ export function apply(ctx: Context) {
             lines.push(
               `  矩 M_${worst.L}（${d.name}）: 数据=${v?.data} 拟合=${v?.fit} Δ=${dlt > 0 ? '+' : ''}${dlt} ` +
                 `${dlt > 0 ? '—— 数据矩高于拟合：缺该 J 波' : '—— 拟合矩高于数据：该 J 波可能多余'}`,
+            )
+          }
+        }
+        // 2D (mass × cosθ) moments: no delta, so the diagnostic is the worst mass
+        // bin's |data − fit| for each L — that is where the angular structure is
+        // not described well, and which L/bin to look at.
+        for (const d of (value.distributions ?? []).filter((x) => x.moments2d !== undefined)) {
+          const bins = d.massBins ?? []
+          let worst: { L: number; bin: number; delta: number; data: number; fit: number } | undefined
+          for (const [L, s] of Object.entries(d.moments2d!)) {
+            const n = Math.min(s.data?.length ?? 0, s.fit?.length ?? 0)
+            for (let i = 0; i < n; i++) {
+              const a = s.data?.[i]
+              const b = s.fit?.[i]
+              if (typeof a !== 'number' || typeof b !== 'number') continue
+              const delta = Math.abs(a - b)
+              if (worst === undefined || delta > worst.delta) worst = { L: Number(L), bin: i, delta, data: a, fit: b }
+            }
+          }
+          if (worst !== undefined) {
+            const center = bins[worst.bin]
+            lines.push(
+              `  2D 矩 M_${worst.L}（${d.name}）: max|数据−拟合|=${worst.delta.toPrecision(3)} @ 质量 bin ${worst.bin}` +
+                `${typeof center === 'number' ? `（${center.toFixed(3)} GeV）` : ''} ` +
+                `数据=${worst.data.toPrecision(3)} 拟合=${worst.fit.toPrecision(3)} —— 该 L 的角结构在这个质量区没被描述好`,
             )
           }
         }
@@ -3215,7 +3261,8 @@ export function apply(ctx: Context) {
         worst_bin?: { center?: number; pull?: number }
         meta?: { kind?: string; intermediate?: string; particles?: string[]; display?: string[] }
         moments?: Record<string, { data?: number; fit?: number; delta?: number }>
-        massBins?: number[]
+        moments2d?: Record<string, { data: (number | null)[]; fit: (number | null)[] }>
+        massBins?: (number | null)[]
       }[] = []
       for (const [name, d] of Object.entries(ev.distributions ?? {})) {
         if (d === null || typeof d !== 'object') continue
@@ -3226,11 +3273,23 @@ export function apply(ctx: Context) {
         }
         if (typeof rec.has_background === 'boolean') item.has_background = rec.has_background
         if (rec.moments !== null && typeof rec.moments === 'object' && !Array.isArray(rec.moments)) {
+          // Two shapes arrive under `moments`, and they must NOT share one field:
+          //   - 1D angular moments : scalar {data, fit, delta};
+          //   - 2D (mass × cosθ)   : per-bin series {data: [], fit: []}, no delta.
+          // Feeding the arrays into the scalar schema is exactly what made every
+          // evaluate call fail output validation (and silently zeroed the deltas).
           const m = rec.moments as Record<string, unknown>
           const moments: Record<string, { data?: number; fit?: number; delta?: number }> = {}
+          const moments2d: Record<string, { data: (number | null)[]; fit: (number | null)[] }> = {}
+          const series = (x: unknown): (number | null)[] =>
+            Array.isArray(x) ? x.map((e) => (typeof e === 'number' && Number.isFinite(e) ? e : null)) : []
           for (const [L, v] of Object.entries(m)) {
             if (v === null || typeof v !== 'object') continue
             const r = v as Record<string, unknown>
+            if (Array.isArray(r.data) || Array.isArray(r.fit)) {
+              moments2d[L] = { data: series(r.data), fit: series(r.fit) }
+              continue
+            }
             const entry: { data?: number; fit?: number; delta?: number } = {}
             if (typeof r.data === 'number') entry.data = r.data
             if (typeof r.fit === 'number') entry.fit = r.fit
@@ -3238,8 +3297,9 @@ export function apply(ctx: Context) {
             moments[L] = entry
           }
           if (Object.keys(moments).length > 0) item.moments = moments
+          if (Object.keys(moments2d).length > 0) item.moments2d = moments2d
         }
-        if (Array.isArray(rec.massBins)) item.massBins = rec.massBins.filter((x): x is number => typeof x === 'number')
+        if (Array.isArray(rec.massBins)) item.massBins = rec.massBins.map((x) => (typeof x === 'number' && Number.isFinite(x) ? x : null))
         if (rec.meta !== null && typeof rec.meta === 'object') {
           const m = rec.meta as Record<string, unknown>
           const meta: Record<string, unknown> = {}
@@ -3382,7 +3442,7 @@ export function apply(ctx: Context) {
               },
             },
           },
-          spilled: { type: 'object', additionalProperties: false, properties: { locator: { type: 'string' }, bytes: { type: 'integer' }, retrievalHint: { type: 'string' } } },
+          spilled: spillOutputSchema,
           error: { type: 'string' },
         },
       },
@@ -3487,6 +3547,9 @@ export function apply(ctx: Context) {
             description: 'eventWeights=true 时：按质量轴的各波强度与选中波对干涉分布',
           },
           error: { type: 'string' },
+          // wave_view spreads the spill envelope into its result too, but its
+          // schema never declared `spilled` — any large output failed validation.
+          spilled: spillOutputSchema,
         },
       },
       render: (_args, value: {
@@ -3495,6 +3558,7 @@ export function apply(ctx: Context) {
         histograms?: Record<string, { integral?: number; bins?: number; range?: number[] }>
         waveDecomp?: { massAxis?: { name?: string; centers?: number[] }; waves?: Record<string, number[]>; pairs?: Record<string, number[]> }
         error?: string
+        spilled?: { locator: string; retrievalHint: string }
       }) => {
         if (!value.ok) return text(`wave_view 失败: ${value.error ?? '未知'}`)
         const lines = [`组合波谱: ${value.waves.join(' + ')}`]
@@ -3877,7 +3941,15 @@ export function apply(ctx: Context) {
                 name: p.name,
                 kind: p.kind,
                 ...(p.kind === 'resonance'
-                  ? { value: p.value ?? null, error: p.error ?? null, lower: p.lower, upper: p.upper, atBoundary: p.atBoundary }
+                  ? {
+                      value: p.value ?? null,
+                      error: p.error ?? null,
+                      // Same lossless-output invariant as the interference block
+                      // above: omit absent keys instead of writing undefined.
+                      ...(p.lower !== undefined ? { lower: p.lower } : {}),
+                      ...(p.upper !== undefined ? { upper: p.upper } : {}),
+                      ...(p.atBoundary !== undefined ? { atBoundary: p.atBoundary } : {}),
+                    }
                   : { real: p.real ?? null, imag: p.imag ?? null }),
               }))
             if (params.length > 0) out.summary.params = params
@@ -3887,11 +3959,18 @@ export function apply(ctx: Context) {
             if (fitJson?.fit?.warnings !== undefined) out.summary.warnings = fitJson.fit.warnings
             const inter = fitJson?.fit?.interference
             if (inter !== undefined) {
+              // Absent optional keys must be OMITTED, never carried as undefined:
+              // an own property whose value is undefined is dropped by
+              // JSON.stringify, so the result stops being lossless and the
+              // harness rejects the WHOLE tool output ("value is not lossless
+              // JSON"). fit.json's interference block is either
+              // {available,totalIntensity,matrix,fractions,topInterference}
+              // or {available,reason} — so one of these two is always absent.
               out.summary.interference = {
                 available: inter.available,
-                reason: inter.reason,
-                totalIntensity: inter.totalIntensity,
                 topInterference: (inter.topInterference ?? []).map((t) => ({ pair: [...t.pair], value: t.value })),
+                ...(inter.reason !== undefined ? { reason: inter.reason } : {}),
+                ...(inter.totalIntensity !== undefined ? { totalIntensity: inter.totalIntensity } : {}),
               }
             }
           }
@@ -4071,7 +4150,7 @@ export function apply(ctx: Context) {
           })
           warnings.push(...trialWarnings)
           const target = `${trialDir}/config.yml`
-          copyFileSync(target, `${target}.bak`)
+          snapshotOnce(target)
           const tmp = `${target}.tmp-${Date.now().toString(36)}`
           writeFileSync(tmp, dumpConfig(cfg))
           renameSync(tmp, target)
@@ -4711,7 +4790,7 @@ export function apply(ctx: Context) {
             return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: [...finalV.errors, ...finalXref.errors], error: '写前总闸未通过' }
           }
           const target = `${started.iterDir}/config.yml`
-          copyFileSync(target, `${target}.bak`)
+          snapshotOnce(target)
           const tmp = `${target}.tmp-${Date.now().toString(36)}`
           writeFileSync(tmp, dumpConfig(newCfg))
           renameSync(tmp, target)

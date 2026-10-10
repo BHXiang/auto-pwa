@@ -14,6 +14,12 @@ class FakeJobRegistry {
   owners: (JobIdentity | undefined)[] = []
   /** Caller identity handed to get()/read()/kill(). */
   callers: (JobIdentity | undefined)[] = []
+  /**
+   * Output shape the registry speaks. Current DSH returns `{ chunks, lossy, job }`
+   * with NO `text`; only the released DSH returned `{ text, snapshot }`. Default
+   * to the current shape so the suite models the runtime the plugin actually runs on.
+   */
+  readShape: 'chunks' | 'text' = 'chunks'
   start(spec: { kind: JobKind; label: string; outputLimitBytes?: number; owner?: JobIdentity; run(): JobHooks }): string {
     this.owners.push(spec.owner)
     const hooks = spec.run()
@@ -51,11 +57,17 @@ class FakeJobRegistry {
     return job.snapshot()
   }
 
-  read(id: string, caller?: JobIdentity): { text: string; snapshot: JobSnapshot } {
+  read(id: string, caller?: JobIdentity): unknown {
     this.callers.push(caller)
     const job = this.jobs.get(id)
     if (!job) throw new Error(`unknown job ${id}`)
-    return { text: job.output(), snapshot: job.snapshot() }
+    if (this.readShape === 'text') return { text: job.output(), snapshot: job.snapshot() }
+    // Current DSH: the output arrives as ordered chunks, and there is no `text`.
+    const text = job.output()
+    const chunks = text === ''
+      ? []
+      : (text.match(/[\s\S]{1,4}/g) ?? []).map((piece, i) => ({ at: i * 4, text: piece }))
+    return { chunks, lossy: false, job: job.snapshot() }
   }
 
   kill(id: string, caller?: JobIdentity): 'requested' | 'already-finished' {
@@ -167,6 +179,43 @@ describe('PwaFitLocalService (ctx.jobs provider)', () => {
     expect(view.exitCode).toBe(0)
     expect(view.logTail).toContain('NLL best')
     expect(view.iterDir).toBe('/pwa/iter-002')
+  })
+
+  it('flattens the current-DSH chunked read (no `text` field) into logTail', async () => {
+    // The regression this guards: reading `.text` off the current shape yields
+    // undefined, so EVERY settled job failed output validation with "value is
+    // not lossless JSON" — auto_pwa_fit_status was unusable on current DSH.
+    const registry = new FakeJobRegistry() // chunked (current DSH) by default
+    const runner = new FakeRunner()
+    const service = new PwaFitLocalService(ctx(registry), { runner })
+    const jobId = service.submit({ iterDir: '/pwa/iter-chunked' })
+    runner.finish('fit-1', 'done', { exitCode: 0, logTail: 'chunked-fit-log-tail' })
+    await registry.jobs.get(jobId)!.hooks.done
+    const view = service.status(jobId)
+    expect(typeof view.logTail).toBe('string')
+    expect(view.logTail).toBe('chunked-fit-log-tail') // multi-chunk output must be joined in order
+  })
+
+  it('still reads the released-DSH { text, snapshot } shape', async () => {
+    const registry = new FakeJobRegistry()
+    registry.readShape = 'text'
+    const runner = new FakeRunner()
+    const service = new PwaFitLocalService(ctx(registry), { runner })
+    const jobId = service.submit({ iterDir: '/pwa/iter-legacy-shape' })
+    runner.finish('fit-1', 'done', { exitCode: 0, logTail: 'legacy-text-shape' })
+    await registry.jobs.get(jobId)!.hooks.done
+    expect(service.status(jobId).logTail).toBe('legacy-text-shape')
+  })
+
+  it('keeps logTail a string when the read result carries no readable shape', async () => {
+    const registry = new FakeJobRegistry()
+    const runner = new FakeRunner()
+    const service = new PwaFitLocalService(ctx(registry), { runner })
+    const jobId = service.submit({ iterDir: '/pwa/iter-opaque' })
+    runner.finish('fit-1', 'done', { exitCode: 0, logTail: 'ignored' })
+    await registry.jobs.get(jobId)!.hooks.done
+    registry.read = () => ({ lossy: false }) // neither text nor chunks
+    expect(service.status(jobId).logTail).toBe('')
   })
 
   it('maps failure and cancellation', async () => {
