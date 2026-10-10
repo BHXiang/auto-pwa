@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -82,5 +82,36 @@ describe('auto-pwa launcher (bin/auto-pwa.js)', () => {
     const copy = makeProfileCopy('web')
     const r = runBin(copy, ['--dry-run', '--', '--resume', 'abc123'], { DSH_HOME: home })
     expect(r.out).toContain('dsh --profile web --resume abc123')
+  })
+
+  it('link: 挂载的 profile：-p <name> 不会被悄悄改成 web', () => {
+    // 复刻 `dsh plugin --profile dsh-tui add link:<源码目录>`：profiles/<name>/... 是指向
+    // 源码目录的软链，于是副本的 realpath 指回源码，**路径反推不出 profile 名**。
+    // 此时父进程必须用 DSH_PWA_DELEGATED_PROFILE 把 profile 传下去，否则副本会退回默认
+    // web（甚至自我委托）—— 目标 profile 就悄悄错了。
+    const src = join(home, 'src')
+    mkdirSync(join(src, 'bin'), { recursive: true })
+    cpSync(BIN, join(src, 'bin', 'auto-pwa.js'))
+    writeFileSync(join(src, 'package.json'), JSON.stringify({ name: 'auto-pwa', version: VERSION }))
+    const nm = join(home, 'profiles', 'dsh-tui', 'node_modules')
+    mkdirSync(nm, { recursive: true })
+    symlinkSync(src, join(nm, 'auto-pwa'), 'dir')
+
+    // 用一个假 dsh 记录它收到的参数（真实启动路径，端到端）。
+    const shimDir = join(home, 'shim')
+    mkdirSync(shimDir, { recursive: true })
+    const rec = join(home, 'dsh-argv.txt')
+    writeFileSync(join(shimDir, 'dsh'), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${rec}'\nexit 0\n`, { mode: 0o755 })
+
+    const r = runBin(BIN, ['-p', 'dsh-tui', '完成此文件夹分波'], {
+      DSH_HOME: home,
+      PATH: `${shimDir}:${process.env.PATH ?? ''}`,
+    })
+    expect(r.status).toBe(0)
+    const argv = readFileSync(rec, 'utf8')
+    expect(argv).toContain('--profile')
+    expect(argv).toContain('dsh-tui')
+    expect(argv).not.toContain('web')
+    expect(argv).toContain('完成此文件夹分波')
   })
 })

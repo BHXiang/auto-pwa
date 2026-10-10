@@ -105,8 +105,14 @@ try {
   /* keep ownDir */
 }
 const roleMatch = /[/\\]profiles[/\\]([^/\\]+)[/\\]node_modules[/\\]auto-pwa$/.exec(realOwn)
-const runningInsideProfile = roleMatch !== null
-if (runningInsideProfile) profile = roleMatch[1]
+// 被 launcher 委托时父进程**已经算好** profile，用 marker 传下来。link: 开发挂载的
+// realpath 会指回源码目录，路径反推必然失败并退回默认 profile —— 那会把
+// `-p headless`（或 $DSH_PWA_PROFILE）悄悄变成 web，启动到**错误**的 profile 上；
+// 而被委托的副本又会再次走进"全局启动器"分支，于是自我委托。
+const delegated = process.env.DSH_PWA_DELEGATED_PROFILE
+const runningInsideProfile = roleMatch !== null || (delegated !== undefined && delegated !== '')
+if (roleMatch !== null) profile = roleMatch[1]
+else if (delegated !== undefined && delegated !== '') profile = delegated
 
 // ---------- 进程工具 ----------
 const shellOpt = process.platform === 'win32' ? { shell: true } : {}
@@ -116,8 +122,8 @@ const which = (cmd) => {
   return r.error === undefined && r.status === 0
 }
 
-const run = (cmd, args) => {
-  const r = spawnSync(cmd, args, { stdio: 'inherit', ...shellOpt })
+const run = (cmd, args, env) => {
+  const r = spawnSync(cmd, args, { stdio: 'inherit', ...shellOpt, env: env ?? process.env })
   if (r.error) {
     console.error(`[auto-pwa] 启动失败: ${r.error.message}`)
     process.exit(1)
@@ -179,5 +185,6 @@ if (needInstall) {
   }
 }
 
-// 委托 profile 副本（完整逻辑永远来自它）
-run(process.execPath, [profileCopy, ...forwarded])
+// 委托 profile 副本（完整逻辑永远来自它）。带上 marker，让副本即使住在 link: 挂载里
+// （realpath 指回源码目录、路径反推不出 profile 名）也能知道自己就是这份 profile 的副本。
+run(process.execPath, [profileCopy, ...forwarded], { ...process.env, DSH_PWA_DELEGATED_PROFILE: profile })
