@@ -90,9 +90,20 @@ describe('LocalFitRunner', () => {
 describe('aifit CLI surface', () => {
   // 驱动能力必须能被 scriptArgs 触发：--warm 是"按名字对齐续跑"，provenance 侧
   // （initFromScriptArgs）早就认识它，这里守住 CLI 真的暴露了这个开关。
-  const hasPython = spawnSync('python3', ['--version']).status === 0
-  it.skipIf(!hasPython)('advertises --warm in --help', () => {
-    const r = spawnSync('python3', ['scripts/aifit.py', '--help'], { encoding: 'utf8' })
+  const AIFIT = join(process.cwd(), 'scripts/aifit.py')
+
+  it('declares --warm in the argparse definition (hermetic)', () => {
+    // 这条不依赖本机 python：aifit 是模块级 `import torch`，而 CI runner 上只有
+    // python3、没有 torch —— 让 --help 在 CI 上跑会直接崩（v0.3.3 首次发布即因此失败）。
+    const src = readFileSync(AIFIT, 'utf8')
+    expect(src).toMatch(/add_argument\(\s*["']--warm["']/)
+    expect(src).toContain('def warm_start_params')
+  })
+
+  // 端到端检查只在 python 环境真能 import torch/numpy 时跑。
+  const pythonUsable = spawnSync('python3', ['-c', 'import torch, numpy']).status === 0
+  it.skipIf(!pythonUsable)('advertises --warm in --help', () => {
+    const r = spawnSync('python3', [AIFIT, '--help'], { encoding: 'utf8' })
     expect(r.status).toBe(0)
     expect(r.stdout).toContain('--warm')
     expect(r.stdout).toContain('按参数名对齐')
