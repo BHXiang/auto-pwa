@@ -104,6 +104,20 @@ describe('SbatchFitRunner', () => {
     expect(reg[status.jobId]?.state).toBe('done')
   })
 
+  it('honors --config <variant.yml> for the existence check (variant experiments)', () => {
+    const r = new SbatchFitRunner(runnerCfg())
+    const dir = makeIterDir('iter-var')
+    // A variant config next to config.yml: the launcher must accept it and put
+    // it on the driver command line.
+    writeFileSync(join(dir, 'variant_broad.yml'), 'name: variant\n')
+    const status = r.submit(dir, { scriptArgs: ['--config', 'variant_broad.yml', '--runs', '1'] })
+    expect(status.state).toBe('running')
+    const script = readFileSync(join(dir, 'fit.slurm'), 'utf8')
+    expect(script).toContain('python fit.py --config variant_broad.yml --runs 1')
+    // A missing --config target fails fast with the resolved path.
+    expect(() => r.submit(dir, { scriptArgs: ['--config', 'nope.yml'] })).toThrow(/nope\.yml/)
+  })
+
   it('reports failed with the sacct exit code', async () => {
     const r = new SbatchFitRunner(runnerCfg())
     const dir = makeIterDir('iter-001')

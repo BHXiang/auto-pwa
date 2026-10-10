@@ -4,7 +4,8 @@
  *     供 auto_pwa_note 每轮记账（token-meter 的轻量落地：轮间差值写进日记）；
  *   - maybeSpill：大输出进 ctx.spillStore（模型按需 read/grep 取回），
  *     不可用时静默回退内联——spill 是尽力而为，从不丢结果；
- *   - configWriteGuard：config.yml 直接写门禁（单调 deny 兜底硬规则）。
+ *   - configWriteGuard：init_config.yml 直接写门禁（单调 deny 兜底硬规则；
+ *     config.yml 已放开，改由跑前门禁 + provenance 记录保证正确性）。
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -113,7 +114,7 @@ export interface SpillResult {
  */
 export async function maybeSpill(
   ctx: Context,
-  exec: { agent?: { sessionId?: string }; rootCallId?: string },
+  exec: { agent?: { id?: string; sessionId?: string }; rootCallId?: string } | undefined,
   toolName: string,
   content: string,
   fallback: unknown,
@@ -131,17 +132,20 @@ export async function maybeSpill(
   ) as
     | { saveText: (save: unknown) => Promise<{ locator: string; bytes: number; retrievalHint: string }> }
     | undefined
-  if (
-    content.length <= SPILL_THRESHOLD_BYTES ||
-    spillStore === undefined ||
-    exec.agent?.sessionId === undefined
-  ) {
+  // Keep the cheap checks first: callers may pass no execution context at all.
+  if (content.length <= SPILL_THRESHOLD_BYTES || spillStore === undefined) {
     return fallback
   }
+  // The DSH Agent exposes `id` (the SessionId), not `sessionId` — reading the
+  // wrong field silently disabled spilling (every large output stayed inline).
+  const sessionId = exec?.agent?.id ?? exec?.agent?.sessionId
+  if (sessionId === undefined) return fallback
   try {
     const ref = await spillStore.saveText({
-      owner: { sessionId: exec.agent.sessionId },
-      source: { toolName, callId: exec.rootCallId ?? 'unknown', label: 'result' },
+      // SpillStore's own contract IS `{ sessionId }` (dsh-spill SpillOwner) —
+      // unlike jobs, which take the Agent in the current generation.
+      owner: { sessionId },
+      source: { toolName, callId: exec?.rootCallId ?? 'unknown', label: 'result' },
       suggestedName: `${toolName}.txt`,
       content,
     })
@@ -153,32 +157,42 @@ export async function maybeSpill(
 }
 
 // ---------------------------------------------------------------------------
-// guard：config.yml 直接写门禁（单调 deny 兜底）
+// guard：init_config.yml 写门禁（单调 deny 兜底）
+//
+// 历史与取舍：这里原本连 config.yml 一起拦（"必须走 auto_pwa_edit_config"）。
+// 实测证明那是最糟的关卡——它只按 basename 匹配，既盖不住变体 yml / 外部
+// `Resonances: <file>` include，又把所有正常系统检验（切数据、换模型、删态
+// 对照）堵死。现在 config.yml 可以自由编辑（结构化工具仍是快车道，但不再
+// 是唯一入口），正确性由"跑前门禁"（auto_pwa_validate_config / run_fit 的
+// gateConfig + ctpwa --validate-only）和"拟合记录"（results/provenance.json）
+// 保证。init_config.yml 仍然只允许 auto_pwa_init_config 生成：它是从零建
+// config 的一次性产物，不经过物理门禁就没有意义。
 // ---------------------------------------------------------------------------
 
-/** 命中 config.yml/config.yaml 的路径（basename 判定，任意目录）。 */
-export const CONFIG_FILE_RE = /(^|[\\/])config\.ya?ml$/i
+/** 命中 init_config.yml（basename 判定，任意目录）。 */
+export const INIT_CONFIG_RE = /(^|[\\/])init_config\.ya?ml$/i
 
 export const GUARD_WRITE_REASON =
-  'config.yml 只能由 auto_pwa_edit_config 修改（先物理校验 → 结构化改 → 原子写）；pwa-guard 拦下了直接写。'
+  'init_config.yml 只能由 auto_pwa_init_config 生成（物理校验 → 渲染 → 原子写）；pwa-guard 拦下了直接写。' +
+  '注意 config.yml 不受此限制——可直接编辑，但提交拟合前会过跑前门禁。'
 export const GUARD_BASH_REASON =
-  'pwa-guard 拦下：bash 里直接写 config.yml 会绕过物理门禁，必须走 auto_pwa_edit_config。'
+  'pwa-guard 拦下：bash 里直接写 init_config.yml 会绕过物理门禁，必须走 auto_pwa_init_config。'
 
 /**
- * 单调 deny 守卫：write/edit 直接写 config.yml、或 bash 对 config.yml 的
- * 显式写操作（重定向/tee/sed -i）一律拒绝；其余放行（guard 只能 deny，
+ * 单调 deny 守卫：只拦 init_config.yml —— write/edit 直接写、或 bash 的显式写
+ * （重定向/tee/sed -i）。config.yml 与任意变体 yml 一律放行（guard 只能 deny，
  * 不能 force-allow）。返回 undefined 表示放行。
  */
 export function configWriteGuard(exec: ToolExecution): string | undefined {
   const args = (exec.arguments ?? {}) as Record<string, unknown>
   if ((exec.name === 'write' || exec.name === 'edit') && typeof args.file_path === 'string') {
-    if (CONFIG_FILE_RE.test(args.file_path)) return GUARD_WRITE_REASON
+    if (INIT_CONFIG_RE.test(args.file_path)) return GUARD_WRITE_REASON
   }
   if (exec.name === 'bash' && typeof args.command === 'string') {
     const cmd = args.command
-    // Explicit write operators targeting a config.yml path: `>`/`>>`
-    // redirection, `tee`, and in-place `sed -i`.
-    if (/(?:>>?|tee)\s*[^;&|\n]{0,160}config\.ya?ml|sed\s+-i\s*[^;&|\n]{0,160}config\.ya?ml/i.test(cmd)) {
+    // Explicit write operators targeting init_config.yml only:
+    // `>`/`>>` redirection, `tee`, and in-place `sed -i`.
+    if (/(?:>>?|tee)\s*[^;&|\n]{0,160}init_config\.ya?ml|sed\s+-i\s*[^;&|\n]{0,160}init_config\.ya?ml/i.test(cmd)) {
       return GUARD_BASH_REASON
     }
   }

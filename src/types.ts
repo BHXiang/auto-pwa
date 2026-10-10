@@ -122,6 +122,49 @@ export interface ResonanceDb {
   schemaVersion: string
   source: string
   resonances: ResonanceEntry[]
+  /**
+   * mcid-keyed particle table (the PDG Monte-Carlo ID = the community
+   * "PDGID": K+ = 321, K- = -321, pi0 = 111, Lambda = 3122, K(S)0 = 310).
+   * Added in schema 0.5.0; older files omit it (lookups then return undefined
+   * and the tooling falls back to the name-based conjugate table).
+   */
+  particles?: Record<string, PdgParticleInfo>
+}
+
+/**
+ * One entry of the PDGID particle table. This is what makes identical /
+ * conjugate / self-conjugate decidable from data:
+ *   - identical   : same mcid
+ *   - conjugate   : `conjugate` (antiparticle mcid; unset for K(S)0/K(L)0)
+ *   - self-conj.  : `selfConjugate` (PDG cc_type === 'S')
+ *
+ * `c` is present ONLY for self-conjugate states — the PDG table also carries
+ * spurious C values on charged multiplet members (rho(770)+ -> '-'), so
+ * `selfConjugate` is the gate and `c` only carries the value.
+ */
+export interface PdgParticleInfo {
+  /** PDG particle name, e.g. "K+", "pi0", "f_2(1270)0". */
+  name: string
+  /** PDG charge-conjugation type: 'P' particle, 'A' antiparticle, 'S' self-conjugate. */
+  ccType: string
+  /** cc_type === 'S': the particle is its own antiparticle. */
+  selfConjugate: boolean
+  /** Electric charge (PDG unit). */
+  charge?: number
+  /** Mass in GeV (PDG summary value; absent for states the PDG gives no mass). */
+  mass?: number
+  /** Total angular momentum (0.5 grid). */
+  j?: number
+  /** Parity. */
+  p?: 1 | -1
+  /** Charge conjugation C — self-conjugate states only, when PDG gives a definite value. */
+  c?: 1 | -1
+  /** G parity — self-conjugate states only, when definite. */
+  g?: 1 | -1
+  /** Isospin as the PDG string, e.g. "1/2", "1". */
+  i?: string
+  /** Antiparticle mcid (unset for self-conjugate states and for K(S)0/K(L)0). */
+  conjugate?: number
 }
 
 /** Query filters for auto_pwa_lookup; fields combine with AND. */
@@ -144,6 +187,15 @@ export interface Particle {
   p: 1 | -1
   /** GeV. */
   mass: number
+  /**
+   * PDGID (signed Monte-Carlo ID, e.g. K+ = 321, K- = -321, pi0 = 111),
+   * written as `pdgid:` in the config's `Particles` block. Optional: when
+   * present it drives identical/conjugate/self-conjugate/C from data instead
+   * of the name heuristics; when absent the historical name-based behaviour
+   * is preserved. The ctpwa engine ignores an unknown `pdgid` key
+   * (ConfigParser::parseParticles reads only J/P/mass/tex/polarization).
+   */
+  pdgid?: number
   /** C (self-conjugate states only; filled from the PDG table where known). */
   c?: 1 | -1
   /** Antiparticle name if this particle has a distinct one (conjugate-pair table). */
@@ -194,8 +246,19 @@ export interface DecayCheckResult {
 // Mirrors the format consumed by ctpwa (see ctpwa's src/Config.cu).
 // ---------------------------------------------------------------------------
 
-/** Resonance lineshape models supported by ctpwa (Resonance.cu type table). */
-export type ResonanceModel = 'BWR' | 'BW' | 'ONE' | 'Flatte'
+/** Resonance lineshape models whose parameter structure the plugin knows.
+ *
+ * BWR/BW/ONE/Flatte/GS carry a propagator or phase-space term with a fixed
+ * parameter arity; Interp/Custom are table- and DSL-driven models whose
+ * payload lives in `options` (see ResonanceSpec.options) and whose semantics
+ * are owned by ctpwa, not by this plugin. */
+export type KnownResonanceModel = 'BWR' | 'BW' | 'ONE' | 'Flatte' | 'GS' | 'Interp' | 'Custom'
+
+/** Resonance lineshape model. The open `(string & {})` arm keeps future
+ * ctpwa models writable: an unknown model is a WARNING (ctpwa --validate-only
+ * decides whether it exists), never a hard error — otherwise a new engine
+ * model could not be tried without a plugin release. */
+export type ResonanceModel = KnownResonanceModel | (string & {})
 
 /** One entry of the config `Resonances:` section. */
 export interface ResonanceSpec {
@@ -217,6 +280,11 @@ export interface ResonanceSpec {
   tex?: string | string[]
   /** Flatte only: channel thresholds/couplings metadata. */
   channels?: number[][]
+  /** Model-specific payload passed through verbatim to ctpwa (escape hatch):
+   * e.g. Interp `{file: "table.dat", method: linear}`, Custom `{expr: "..."}`.
+   * The plugin checks only that the key is a mapping; the engine owns the
+   * semantics, and the run gate delegates to `ctpwa --validate-only`. */
+  options?: Record<string, unknown>
   /** Provenance: parameters follow this experiment/paper instead of the PDG
    * average (e.g. a DOI, "BESIII 2024", or a free-text citation). When set,
    * the write gate skips the PDG-average agreement checks. */
@@ -326,6 +394,9 @@ export interface ResonanceProposal {
   tex?: string
   /** Flatte only. */
   channels?: number[][]
+  /** Model-specific payload passed through verbatim to ctpwa (see
+   * ResonanceSpec.options): Interp tables, Custom DSL expressions, … */
+  options?: Record<string, unknown>
   /** Provenance (see ResonanceSpec.reference): parameters follow this
    * experiment/paper instead of the PDG average. */
   reference?: string
@@ -389,4 +460,133 @@ export interface ConfigEditResult {
   changed: string[]
   /** Structural errors; when non-empty the config was NOT modified. */
   errors: ValidationIssue[]
+}
+
+// ---------------------------------------------------------------------------
+// Initial config authoring (auto_pwa_init_config) — build a config.yml from
+// scratch out of a structured spec, then hand it to a human for review.
+// ---------------------------------------------------------------------------
+
+/** One particle of the initial `Particles` block. */
+export interface InitialParticleSpec {
+  /** Analysis name (the config key, e.g. "Kp", "pi01"). Must be unique. */
+  name: string
+  /**
+   * PDGID (signed Monte-Carlo id, e.g. K+ = 321, pi0 = 111). Strongly
+   * recommended: it drives identical/conjugate/self-conjugate/C checks.
+   * When omitted, j/p/mass must be given.
+   */
+  pdgid?: number
+  /** Total angular momentum; defaults to the PDG value when pdgid is given. */
+  j?: number
+  /** Parity; defaults to the PDG value when pdgid is given. */
+  p?: 1 | -1
+  /** GeV; defaults to the PDG value when pdgid is given. */
+  mass?: number
+  /** Explicit C, for states where the config wants to override the PDG value. */
+  c?: 1 | -1
+  /** LaTeX label (optional). */
+  tex?: string
+}
+
+/** One two-body decay step (mother -> d1 + d2) of an initial chain. */
+export interface InitialDecayStepSpec {
+  /** Mother: a Particles name (production) or an intermediate name (cascade). */
+  mother: string
+  daughters: [string, string]
+  /** (2S+1, L) whitelist, ctpwa internal notation. */
+  sl?: [number, number][]
+  /** Weak-decay parity breaking (ctpwa p_break). */
+  pBreak?: boolean
+  /** Barrier-factor switch / range (ctpwa has_bf / bf_d). */
+  hasBf?: boolean | [boolean, boolean]
+  bfD?: number | [number, number]
+}
+
+/** One intermediate (e.g. R_KK) with its allowed [J,P] groups. */
+export interface InitialIntermediateSpec {
+  name: string
+  /**
+   * The intermediate's [J,P] groups IN ORDER — the order fixes the amplitude
+   * block index used by `Constraints.trans`, so it must not be reordered.
+   * Resonances are attached separately via `InitialConfigSpec.resonances`
+   * (every one of them passes the physics gate).
+   */
+  groups: JP[]
+}
+
+/** One decay chain of the initial config. */
+export interface InitialChainSpec {
+  /** Chain name, e.g. "decay1". */
+  name: string
+  /** All two-body steps: production (mother in Particles) + cascades. */
+  steps: InitialDecayStepSpec[]
+  /** Intermediates and their [J,P] groups (group order = amplitude index). */
+  intermediates: InitialIntermediateSpec[]
+}
+
+/** `Data` block: order + one file spec per sample. `[dat, path]` or `[ROOT, path, TTree, ...branches]`. */
+export interface InitialDataSpec {
+  order: string[]
+  /** REQUIRED: the data sample. */
+  data: unknown[]
+  /** REQUIRED for a normalised fit: phase-space MC. */
+  phsp?: unknown[]
+  /** Optional: no-efficiency MC truth (enables fit fractions). */
+  phspTruth?: unknown[]
+  /** Optional: background sample. */
+  bkg?: unknown[]
+  /** Optional: per-event background weights. */
+  bkgWeights?: unknown[]
+}
+
+/** One `Plot` entry (ctpwa expr/expression format). */
+export interface InitialPlotSpec {
+  name?: string
+  expression: string | string[]
+  bins?: number[]
+  ranges?: [number, number][]
+  display?: string[]
+}
+
+/** One resonance to attach to an intermediate [J,P] group. */
+export interface InitialResonanceSpec {
+  name: string
+  /** Intermediate name this resonance is attached to (e.g. "R_KK"). */
+  chain: string
+  jpGroup: JP
+  model: ResonanceModel
+  parameters: number[]
+  free?: number[]
+  freeRange?: [number, number][]
+  tex?: string
+  channels?: number[][]
+  /** Model-specific payload passed through verbatim to ctpwa (see
+   * ResonanceSpec.options). */
+  options?: Record<string, unknown>
+  reference?: string
+}
+
+/** A full from-scratch config proposal (structured — never free-form YAML). */
+export interface InitialConfigSpec {
+  particles: InitialParticleSpec[]
+  chains: InitialChainSpec[]
+  resonances?: InitialResonanceSpec[]
+  /** Constraints written verbatim (identical/trans/maxL/bf_d/...). */
+  constraints?: PwaConstraints
+  data: InitialDataSpec
+  plot?: InitialPlotSpec[]
+  /** Optional root key `precision: auto|hybrid|float|double`. */
+  precision?: string
+}
+
+/** Result of building an initial config: text + parsed views + diagnostics. */
+export interface InitialConfigResult {
+  /** Rendered YAML (`dumpConfig`), undefined when errors is non-empty. */
+  text?: string
+  /** Parsed views of the rendered text (round-trip verified). */
+  config?: PwaConfig
+  changed: string[]
+  errors: ValidationIssue[]
+  warnings: ValidationIssue[]
 }

@@ -8,6 +8,49 @@ import { apply as applyGuard } from '../plugin/pwa-guard.js'
 import { parseConfig } from '../src/config-edit.js'
 import { IterationLog } from '../src/iteration-log.js'
 import { defaultFitRunnerConfig } from '../src/fit-runner.js'
+import type { FitOwner } from '../plugin/pwa-fit.js'
+
+/** Minimal gate-clean config (single chain, phi(1020) in R_KK [1-]) used by the
+ * harness-wiring tests: passes structure, cross-reference, two-vertex J^PC and
+ * threshold, so only the run-time gate's outcome is under test. */
+const GATE_CONFIG = `Particles:
+  Jpsi:
+    J: 1
+    P: -1
+    mass: 3.0969
+  eta:
+    J: 0
+    P: -1
+    mass: 0.5478
+  Kp:
+    J: 0
+    P: -1
+    mass: 0.4937
+  Km:
+    J: 0
+    P: -1
+    mass: 0.4937
+
+Data:
+  order: [Kp, Km, eta]
+  data: [dat, "/pwa/data.dat"]
+
+DecayChains:
+  decay1:
+    Jpsi:
+      - [eta, R_KK]
+    R_KK: [Kp, Km]
+    intermediates:
+      R_KK:
+        - [J: 1, P: -1]: [phi1020]
+
+Resonances:
+  phi1020:
+    J: 1
+    P: -1
+    model: BWR
+    parameters: [1.0195, 0.0045]
+`
 
 /** Minimal ctx mock: collects tool definitions instead of registering them. */
 function collectDefinitions() {
@@ -104,7 +147,9 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_lookup',
       'auto_pwa_decay_check',
       'auto_pwa_jpc_check',
+      'auto_pwa_init_config',
       'auto_pwa_config_view',
+      'auto_pwa_validate_config',
       'auto_pwa_suggest',
       'auto_pwa_validate_add',
       'auto_pwa_edit_config',
@@ -112,6 +157,7 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_round',
       'auto_pwa_iter_start',
       'auto_pwa_note',
+      'auto_pwa_git_log',
       'auto_pwa_history',
       'auto_pwa_iterate',
       'auto_pwa_evaluate',
@@ -213,10 +259,16 @@ Resonances:
     return fn(configPath).finally(() => rmSync(dir, { recursive: true, force: true }))
   }
 
-  const execute = async (name: string, args: never, exec?: { agent?: { sessionId?: string }; rootCallId?: string }) => {
+  const execute = async (name: string, args: never, exec?: { agent?: { id?: string; sessionId?: string }; rootCallId?: string }) => {
     const def = collectDefinitions().find((d) => d.name === name)!
     expect(def.execute).toBeDefined()
-    return def.execute!(args, exec as never)
+    const out = await def.execute!(args, exec as never)
+    // Same gate the harness applies to every tool result: a value that violates
+    // its own declared schema (extra keys under additionalProperties:false, an
+    // undefined hole, a wrong type) turns the call into an error at runtime.
+    assertSchema(out, def.output?.schema)
+    assertNoUndefined(out)
+    return out
   }
 
   it('auto_pwa_jpc_check: R_KK intersection = {1--, 3--} at config maxL=3, f2 blocked by C', async () => {
@@ -315,6 +367,41 @@ Resonances:
     writeFileSync(configPath, text)
     return fn(configPath).finally(() => rmSync(dir, { recursive: true, force: true }))
   }
+
+  it('auto_pwa_jpc_check candidate list carries on-shell margins, decay flags and a threshold filter', async () => {
+    await withConfig(async (configPath) => {
+      const out = (await execute('auto_pwa_jpc_check', { configPath } as never)) as {
+        intermediates: {
+          name: string
+          allowed: { jpc: string; candidates: { id: string; mass: number; thresholdMargin: number | null; decaysTo: boolean }[] }[]
+          filteredAboveThreshold?: number
+        }[]
+      }
+      const rkk = out.intermediates.find((i) => i.name === 'R_KK')!
+      const oneMinus = rkk.allowed.find((a) => a.jpc === '1--')!
+      const phi = oneMinus.candidates.find((c) => c.id === 'phi(1020)')!
+      // PDG lists phi -> K+ K-, and the config daughters are Kp/Km (same species).
+      expect(phi.decaysTo).toBe(true)
+      // on-shell margin m_threshold - m_phi = (m_Jpsi - m_eta) - m_phi
+      expect(phi.thresholdMargin).toBeCloseTo(3.0969 - 0.5478 - 1.0195, 3)
+      // psi(3770) (1--) is above the 2.549 GeV threshold -> filtered out
+      expect(oneMinus.candidates.some((c) => c.id === 'psi(3770)')).toBe(false)
+      expect(rkk.filteredAboveThreshold ?? 0).toBeGreaterThan(0)
+      // every candidate carries the new fields (lossless JSON, no undefined)
+      for (const a of rkk.allowed) {
+        for (const c of a.candidates) {
+          expect(typeof c.decaysTo).toBe('boolean')
+          expect(c.thresholdMargin === null || typeof c.thresholdMargin === 'number').toBe(true)
+        }
+      }
+      assertNoUndefined(out)
+      // The model-facing render must carry the new legend + margins.
+      const def = collectDefinitions().find((d) => d.name === 'auto_pwa_jpc_check')!
+      const rendered = (def.output as { render: (a: unknown, v: unknown) => { text: string }[] }).render({}, out)
+      expect(rendered[0]!.text).toContain('候选标记')
+      expect(rendered[0]!.text).toContain('phi(1020)')
+    })
+  })
 
   it('auto_pwa_jpc_check omits production for intermediates that have no production vertex', async () => {
     await withConfigText(RADIATIVE_CONFIG, async (configPath) => {
@@ -489,21 +576,122 @@ Resonances:
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('auto_pwa_validate_add: unknown model is a warning, not a block (special-formula escape hatch)', async () => {
+    await withConfig(async (configPath) => {
+      const out = (await execute('auto_pwa_validate_add', {
+        configPath,
+        proposal: {
+          name: 'phi1020',
+          chain: 'R_KK',
+          jpGroup: { j: 1, p: -1 },
+          model: 'SomeNewCtpwaModel',
+          parameters: [1.02, 0.005],
+        },
+      } as never)) as { ok: boolean; errors: { code: string }[]; warnings: { code: string }[] }
+      // Attaching an already-defined state is legal; the only new signal is the
+      // unknown-model warning (PDG/arity checks deferred to ctpwa).
+      expect(out.warnings.map((w) => w.code)).toContain('unknown-model')
+    })
+  })
+
+  it('auto_pwa_validate_add: Interp with an options payload passes the structure gate', async () => {
+    await withConfig(async (configPath) => {
+      const out = (await execute('auto_pwa_validate_add', {
+        configPath,
+        proposal: {
+          name: 'K1_interp_new',
+          chain: 'R_Keta',
+          jpGroup: { j: 1, p: -1 },
+          model: 'Interp',
+          parameters: [],
+          options: { file: '/tmp/interp_Keta.dat', method: 'linear' },
+        },
+      } as never)) as { ok: boolean; errors: { code: string }[]; warnings: { code: string }[] }
+      expect(out.errors).toEqual([])
+      expect(out.warnings.map((w) => w.code)).not.toContain('interp-needs-file')
+    })
+  })
+
+  it('auto_pwa_edit_config writes the options escape hatch into config.yml', async () => {
+    await withConfig(async (configPath) => {
+      const out = (await execute('auto_pwa_edit_config', {
+        configPath,
+        proposal: {
+          name: 'K1_1410_interp',
+          chain: 'R_Keta',
+          jpGroup: { j: 1, p: -1 },
+          model: 'Interp',
+          parameters: [],
+          options: { file: '/tmp/interp_Keta.dat', method: 'linear' },
+          tex: ['K_{1}', '(1410)'],
+          reference: 'BESIII 2024',
+        },
+      } as never)) as { ok: boolean; written: boolean; errors: { code: string; message: string }[] }
+      expect(out.errors).toEqual([])
+      expect(out.written).toBe(true)
+      const cfg = parseConfig(readFileSyncSync(configPath, 'utf8'))
+      expect(cfg.resonances.K1_1410_interp?.model).toBe('Interp')
+      expect(cfg.resonances.K1_1410_interp?.options).toEqual({ file: '/tmp/interp_Keta.dat', method: 'linear' })
+    })
+  })
+
+  it('auto_pwa_validate_config validates YAML text without any file or GPU', async () => {
+    const out = (await execute('auto_pwa_validate_config', { yamlText: CONFIG } as never)) as {
+      ok: boolean
+      gateReport: string
+      errors: { code: string }[]
+      checks: { name: string; ran: boolean }[]
+      ctpwa: { ran: boolean; error?: string }
+      stats: { resonances: number }
+    }
+    expect(out.ok).toBe(true)
+    expect(out.errors).toEqual([])
+    expect(out.stats.resonances).toBe(3)
+    expect(out.checks.map((c) => c.name)).toContain('two-vertex-jpc')
+    // No file path -> the authoritative ctpwa layer cannot run; it says so.
+    expect(out.ctpwa.ran).toBe(false)
+    expect(out.ctpwa.error).toMatch(/yamlText/)
+    expect(out.gateReport).toMatch(/通过/)
+  })
+
+  it('auto_pwa_validate_config rejects malformed YAML with an actionable error', async () => {
+    const out = (await execute('auto_pwa_validate_config', { yamlText: 'Particles: [oops\n' } as never)) as {
+      ok: boolean
+      errors: { code: string }[]
+    }
+    expect(out.ok).toBe(false)
+    expect(out.errors.map((e) => e.code)).toContain('yaml-parse')
+  })
+
+  it('auto_pwa_validate_config HARD-errors a C-violating wave in a written config', async () => {
+    const text = CONFIG.replace('- [J: 1, P: -1]: [phi1020]', '- [J: 2, P: 1]: [phi1020]')
+    const out = (await execute('auto_pwa_validate_config', { yamlText: text } as never)) as {
+      ok: boolean
+      errors: { code: string }[]
+    }
+    expect(out.ok).toBe(false)
+    expect(out.errors.map((e) => e.code)).toContain('c-violation')
+  })
 })
 
 /** ctx with a fake pwaFit service + guard recorder + session-event hook. */
 function harnessCtx() {
-  const definitions: { name: string; execute?: (args: never, exec: never) => Promise<unknown> }[] = []
+  const definitions: {
+    name: string
+    output?: { schema?: unknown }
+    execute?: (args: never, exec: never) => Promise<unknown>
+  }[] = []
   const guards: ((exec: { name: string; arguments: unknown }) => string | undefined)[] = []
   const eventHandlers: Record<string, (...args: unknown[]) => void> = {}
-  const submits: { request: { iterDir: string }; owner?: { sessionId: string } }[] = []
-  const statusCalls: { jobId: string; caller?: { sessionId: string } }[] = []
+  const submits: { request: { iterDir: string }; owner?: FitOwner }[] = []
+  const statusCalls: { jobId: string; caller?: FitOwner }[] = []
   const pwaFit = {
-    submit: (request: { iterDir: string }, owner?: { sessionId: string }) => {
+    submit: (request: { iterDir: string }, owner?: FitOwner) => {
       submits.push({ request, owner })
       return 'ctpwa-9'
     },
-    status: (jobId: string, caller?: { sessionId: string }) => {
+    status: (jobId: string, caller?: FitOwner) => {
       statusCalls.push({ jobId, caller })
       return { jobId, iterDir: '/pwa/iter-001', state: 'done' as const, exitCode: 0, logTail: 'log tail' }
     },
@@ -511,7 +699,7 @@ function harnessCtx() {
   }
   const ctx = {
     tools: {
-      register: (def: { name: string; execute?: (args: never, exec: never) => Promise<unknown> }) => definitions.push(def),
+      register: (def: { name: string; output?: { schema?: unknown }; execute?: (args: never, exec: never) => Promise<unknown> }) => definitions.push(def),
       guard: (g: (exec: { name: string; arguments: unknown }) => string | undefined) => {
         guards.push(g)
         return () => {}
@@ -529,28 +717,228 @@ function harnessCtx() {
 
 const run = async (h: ReturnType<typeof harnessCtx>, name: string, args: unknown, exec: unknown) => {
   const def = h.definitions.find((d) => d.name === name)!
-  return def.execute!(args as never, exec as never)
+  const out = await def.execute!(args as never, exec as never)
+  assertSchema(out, def.output?.schema)
+  assertNoUndefined(out)
+  return out
 }
 
 describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
-  it('registers the config.yml write guard', () => {
+  it('guards init_config.yml only (config.yml is validated at fit time, not write time)', () => {
     const h = harnessCtx()
     expect(h.guards).toHaveLength(1)
-    expect(h.guards[0]!({ name: 'write', arguments: { file_path: '/pwa/config.yml' } })).toMatch(/auto_pwa_edit_config/)
+    // config.yml writes are allowed now — the run gate + provenance replaced it.
+    expect(h.guards[0]!({ name: 'write', arguments: { file_path: '/pwa/config.yml' } })).toBeUndefined()
     expect(h.guards[0]!({ name: 'write', arguments: { file_path: '/pwa/note.md' } })).toBeUndefined()
+    expect(h.guards[0]!({ name: 'write', arguments: { file_path: '/pwa/init_config.yml' } })).toMatch(/auto_pwa_init_config/)
   })
 
-  it('auto_pwa_run_fit submits through ctx.pwaFit with the calling agent as owner', async () => {
+  it('auto_pwa_run_fit runs the pre-fit gate first and refuses a missing config', async () => {
     const h = harnessCtx()
-    const out = await run(h, 'auto_pwa_run_fit', { iterDir: '/pwa/iter-001' }, { agent: { sessionId: 'sess-1' } })
-    expect(h.submits).toEqual([{ request: { iterDir: '/pwa/iter-001', timeoutMin: undefined }, owner: { sessionId: 'sess-1' } }])
-    expect((out as { jobId: string }).jobId).toBe('ctpwa-9')
+    const out = (await run(h, 'auto_pwa_run_fit', { iterDir: '/pwa/iter-001' }, { agent: { id: 'sess-1' } })) as {
+      jobId: string
+      state: string
+      error?: string
+      gate?: { ok: boolean; report: string }
+    }
+    // /pwa/iter-001 does not exist in the test sandbox: the gate refuses and
+    // nothing is submitted (the old behavior submitted blindly).
+    expect(h.submits).toEqual([])
+    expect(out.state).toBe('failed')
+    expect(out.gate?.ok).toBe(false)
+    expect(out.error).toMatch(/跑前门禁拒绝/)
+  })
+
+  it('auto_pwa_run_fit submits through ctx.pwaFit with the calling agent as owner (gate passes)', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir }, { agent: { id: 'sess-1' } })) as {
+        jobId: string
+        gate?: { ok: boolean }
+      }
+      // The real DSH Agent exposes `id` (no `sessionId`). Forwarding the Agent
+      // is what makes the job OWNED — an unowned job never wakes the agent.
+      expect(h.submits).toEqual([{ request: { iterDir: dir, timeoutMin: undefined }, owner: { id: 'sess-1', agent: { id: 'sess-1' } } }])
+      expect(out.jobId).toBe('ctpwa-9')
+      expect(out.gate?.ok).toBe(true)
+      // `run` already validated the whole result against the declared schema:
+      // leaking the internal gate `severity` tag used to make every run_fit
+      // return fail output validation *after* the job had been submitted — the
+      // fit ran, but the agent never learned its jobId.
+      // B1: the provenance record was written next to the results.
+      const prov = JSON.parse(readFileSyncSync(join(dir, 'results', 'provenance.json'), 'utf8'))
+      expect(prov.configMd5).toBeTruthy()
+      expect(prov.resonances.map((r: { name: string }) => r.name)).toEqual(['phi1020'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit refuses a config that fails the physics gate (no submit)', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-bad-'))
+    try {
+      // [2+] of K+K- under J/psi -> eta + R_KK violates C conservation.
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG.replace('[J: 1, P: -1]: [phi1020]', '[J: 2, P: 1]: [phi1020]'))
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir }, { agent: { id: 'sess-1' } })) as {
+        state: string
+        error?: string
+        gate?: { ok: boolean; report: string }
+      }
+      expect(h.submits).toEqual([])
+      expect(out.state).toBe('failed')
+      expect(out.error).toMatch(/c-violation/)
+      expect(out.gate?.report).toMatch(/c-violation/)
+      // Nothing was recorded for a refused run.
+      expect(existsSync(join(dir, 'results', 'provenance.json'))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_note commits the round and auto_pwa_git_log shows it (B2)', async () => {
+    const h = harnessCtx()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-gitnote-'))
+    try {
+      const iterDir = join(root, 'iterations', 'iter-001')
+      mkdirSync(join(iterDir, 'results'), { recursive: true })
+      writeFileSync(join(iterDir, 'config.yml'), GATE_CONFIG)
+      writeFileSync(join(iterDir, 'results', 'fit.json'), '{"fit":{"best":{"nll":-18685.8}}}\n')
+      const out = (await run(
+        h,
+        'auto_pwa_note',
+        { iterDir, title: 'add phi1680', kind: 'added', nll: -18685.8, deltaNll: -12.3, hessianPositive: true, conclusion: 'ok' },
+        { agent: { id: 'sess-1' } },
+      )) as { ok: boolean; gitCommit?: string }
+      expect(out.ok).toBe(true)
+      expect(out.gitCommit).toMatch(/^[0-9a-f]{7,}$/)
+
+      // History carries the decision AND the result number in one line, and the
+      // tree is clean afterwards (the round is fully recorded).
+      const log = (await run(h, 'auto_pwa_git_log', { path: iterDir, action: 'log' }, {})) as {
+        ok: boolean
+        initialized: boolean
+        commit?: string
+        dirty?: boolean
+        entries: { short: string; subject: string }[]
+      }
+      expect(log.ok).toBe(true)
+      expect(log.initialized).toBe(true)
+      expect(log.dirty).toBe(false)
+      expect(log.entries[0]!.short).toBe(out.gitCommit)
+      expect(log.entries[0]!.subject).toContain('iter-001 result: add phi1680 NLL=-18685.80 dNLL=-12.30')
+
+      // A manual edit shows up as dirty (results no longer reproducible from HEAD).
+      writeFileSync(join(iterDir, 'config.yml'), `${GATE_CONFIG}# touched\n`)
+      const status = (await run(h, 'auto_pwa_git_log', { path: iterDir, action: 'status' }, {})) as { dirty: boolean }
+      expect(status.dirty).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_edit_config commits the config change, and pickaxe finds it', async () => {
+    const h = harnessCtx()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-gitsearch-'))
+    try {
+      const iterDir = join(root, 'iterations', 'iter-001')
+      mkdirSync(iterDir, { recursive: true })
+      const configPath = join(iterDir, 'config.yml')
+      writeFileSync(configPath, GATE_CONFIG)
+      const edit = (await run(
+        h,
+        'auto_pwa_edit_config',
+        {
+          configPath,
+          proposal: { name: 'omega1420', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.41, 0.35] },
+        },
+        {},
+      )) as { ok: boolean; changed: string[] }
+      expect(edit.ok).toBe(true)
+      expect(edit.changed.some((c) => c.startsWith('git '))).toBe(true)
+
+      const found = (await run(
+        h,
+        'auto_pwa_git_log',
+        { path: configPath, action: 'search', needle: 'omega1420', file: 'config.yml' },
+        {},
+      )) as { ok: boolean; text?: string }
+      expect(found.ok).toBe(true)
+      expect(found.text ?? '').toMatch(/config: add omega1420|omega1420/)
+
+      const shown = (await run(h, 'auto_pwa_git_log', { path: configPath, action: 'show', rev: 'HEAD', file: 'config.yml' }, {})) as {
+        ok: boolean
+        text?: string
+      }
+      expect(shown.ok).toBe(true)
+      expect(shown.text ?? '').toContain('omega1420')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('warns when the config being fitted is not in git HEAD (fake reproducibility)', async () => {
+    const h = harnessCtx()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-gituntracked-'))
+    try {
+      const iterDir = join(root, 'iterations', 'iter-001')
+      mkdirSync(join(iterDir, 'results'), { recursive: true })
+      writeFileSync(join(iterDir, 'config.yml'), GATE_CONFIG)
+      // Create the repo (through the note path), then hand-write an UNTRACKED
+      // variant: dirty stays false, yet the fitted config is nowhere in HEAD.
+      await run(h, 'auto_pwa_note', { iterDir, title: 'setup', kind: 'other', conclusion: 'x' }, { agent: { id: 's1' } })
+      writeFileSync(join(iterDir, 'variant.yml'), GATE_CONFIG)
+
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir, config: join(iterDir, 'variant.yml') }, { agent: { id: 's1' } })) as {
+        jobId: string
+        gate?: { ok: boolean; warnings: { code: string }[] }
+      }
+      expect(out.gate?.ok).toBe(true) // warning only — it never blocks a fit
+      expect(out.gate?.warnings.map((w) => w.code)).toContain('git-config-not-committed')
+      expect(h.submits).toHaveLength(1)
+      expect(h.submits[0]!.request.iterDir).toBe(iterDir)
+      const prov = JSON.parse(readFileSyncSync(join(iterDir, 'results', 'provenance.json'), 'utf8')) as {
+        gitVerified?: boolean
+        git?: { commit?: string; dirty?: boolean }
+      }
+      expect(prov.gitVerified).toBe(false)
+      expect(prov.git?.commit).toBeTruthy()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('accepts the canonical run_fit parameter names (configPath / timeoutMin)', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-canon-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const variant = join(dir, 'variant_broad.yml')
+      writeFileSync(variant, GATE_CONFIG)
+      const out = (await run(
+        h,
+        'auto_pwa_run_fit',
+        { iterDir: dir, configPath: variant, timeoutMin: 5 },
+        { agent: { id: 'sess-1' } },
+      )) as { jobId: string; gate?: { ok: boolean } }
+      expect(out.gate?.ok).toBe(true)
+      expect(out.jobId).toBe('ctpwa-9')
+      const req = h.submits[0]!.request as { iterDir: string; timeoutMin?: number; scriptArgs?: string[] }
+      expect(req.timeoutMin).toBe(5)
+      // The variant config is passed through to the driver (and gate/provenance
+      // recorded that same file, not <iterDir>/config.yml).
+      expect(req.scriptArgs).toEqual(['--config', variant])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('auto_pwa_fit_status reads through ctx.pwaFit (summary skipped without results/)', async () => {
     const h = harnessCtx()
-    const out = await run(h, 'auto_pwa_fit_status', { jobId: 'ctpwa-9' }, { agent: { sessionId: 'sess-1' } })
-    expect(h.statusCalls).toEqual([{ jobId: 'ctpwa-9', caller: { sessionId: 'sess-1' } }])
+    const out = await run(h, 'auto_pwa_fit_status', { jobId: 'ctpwa-9' }, { agent: { id: 'sess-1' } })
+    expect(h.statusCalls).toEqual([{ jobId: 'ctpwa-9', caller: { id: 'sess-1', agent: { id: 'sess-1' } } }])
     expect((out as { state: string }).state).toBe('done')
     expect((out as { logTail: string }).logTail).toBe('log tail')
     // No real results/ dir under the fake iterDir: empty summary, no NLL.
@@ -572,7 +960,7 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
         h,
         'auto_pwa_note',
         { iterDir, title: '加 phi(1680)', kind: 'added', conclusion: 'ok', includeTokens: true },
-        { agent: { sessionId: 'sess-1' } },
+        { agent: { id: 'sess-1' } },
       )
       expect((out as { ok: boolean }).ok).toBe(true)
       const summary = JSON.parse(readFileSyncSync(join(dir, 'iterations', 'SUMMARY.jsonl'), 'utf8').trim().split('\n')[0]!)
@@ -588,7 +976,7 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
     try {
       h.eventHandlers['session/event']!({ id: 'sess-1' }, { type: 'assistant/message', usage: { inputTokens: 42, outputTokens: 7 } })
       const iterDir = join(dir, 'iterations', 'iter-001')
-      await run(h, 'auto_pwa_note', { iterDir, title: 'x', kind: 'other', conclusion: 'c' }, { agent: { sessionId: 'sess-1' } })
+      await run(h, 'auto_pwa_note', { iterDir, title: 'x', kind: 'other', conclusion: 'c' }, { agent: { id: 'sess-1' } })
       const summary = JSON.parse(readFileSyncSync(join(dir, 'iterations', 'SUMMARY.jsonl'), 'utf8').trim().split('\n')[0]!)
       expect(summary.tokens).toBeUndefined()
     } finally {
@@ -675,7 +1063,7 @@ Resonances:
           shortRuns: 1,
           shortMaxIter: 300,
         },
-        { agent: { sessionId: 'sess-1' } },
+        { agent: { id: 'sess-1' } },
       )) as { ok: boolean; jobs: { candidate: string; iterDir: string; jobId: string }[]; skipped: { candidate: string; errors: { code: string }[] }[] }
       expect(out.ok).toBe(true)
       expect(out.jobs).toHaveLength(1)
@@ -687,7 +1075,7 @@ Resonances:
       // Short fit args flow through ctx.pwaFit into the job request.
       const req = h.submits[0]!.request as { iterDir: string; scriptArgs?: string[] }
       expect(req.scriptArgs).toEqual(['--runs', '1', '--max-iter', '300'])
-      expect(h.submits[0]!.owner).toEqual({ sessionId: 'sess-1' })
+      expect(h.submits[0]!.owner).toEqual({ id: 'sess-1', agent: { id: 'sess-1' } })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -705,7 +1093,7 @@ Resonances:
         h,
         'auto_pwa_try_candidates',
         { baseIterDir: iterDir, removals: [{ name: 'K2_1430' }], shortRuns: 1, shortMaxIter: 300 },
-        { agent: { sessionId: 'sess-1' } },
+        { agent: { id: 'sess-1' } },
       )) as { ok: boolean; jobs: { candidate: string; iterDir: string }[]; skipped: unknown[] }
       expect(out.ok).toBe(true)
       expect(out.skipped).toHaveLength(0)
@@ -742,7 +1130,7 @@ Resonances:
       })
 
       // 1. Start: evaluate the baseline (no ΔNLL yet -> propose).
-      const first = (await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter0 }, { agent: { sessionId: 'sess-1' } })) as {
+      const first = (await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter0 }, { agent: { id: 'sess-1' } })) as {
         ok: boolean
         phase: string
         converged: boolean
@@ -764,7 +1152,7 @@ Resonances:
           action: 'iterate',
           proposal: { name: 'omega1420', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.41, 0.29] },
         },
-        { agent: { sessionId: 'sess-1' } },
+        { agent: { id: 'sess-1' } },
       )) as { ok: boolean; action: string; iter: number; iterDir: string; jobId?: string; phase: string }
       expect(decided.ok).toBe(true)
       expect(decided.iter).toBe(1)
@@ -782,7 +1170,7 @@ Resonances:
       )
 
       // 4. Next: ΔNLL = -2 (below threshold), pulls OK -> converged.
-      const second = (await run(h, 'auto_pwa_loop_next', { iterationsRoot }, { agent: { sessionId: 'sess-1' } })) as {
+      const second = (await run(h, 'auto_pwa_loop_next', { iterationsRoot }, { agent: { id: 'sess-1' } })) as {
         ok: boolean
         phase: string
         converged: boolean
@@ -818,13 +1206,13 @@ Resonances:
         nll: 100,
         conclusion: 'baseline',
       })
-      await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter0 }, { agent: { sessionId: 'sess-1' } })
+      await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter0 }, { agent: { id: 'sess-1' } })
       // Prune K2_1430 (the [2+] group is emptied but kept) instead of adding.
       const decided = (await run(
         h,
         'auto_pwa_loop_decide',
         { iterationsRoot, action: 'iterate', removals: [{ name: 'K2_1430' }] },
-        { agent: { sessionId: 'sess-1' } },
+        { agent: { id: 'sess-1' } },
       )) as { ok: boolean; iter: number; iterDir: string; jobId?: string }
       expect(decided.ok).toBe(true)
       expect(decided.jobId).toBe('ctpwa-9')
@@ -861,7 +1249,7 @@ describe.skipIf(!HAS_UPROOT || !HAS_ROOT_FILE)('auto_pwa_root_view (real weight_
   it('list discovers per-wave histograms and angular distributions', async () => {
     const defs = collectDefinitions()
     const tool = defs.find((d) => d.name === 'auto_pwa_root_view')!
-    const out = (await tool.execute!({ rootPath: ROOT_FILE, mode: 'list' } as never, { agent: { sessionId: 'sess-1' } } as never)) as {
+    const out = (await tool.execute!({ rootPath: ROOT_FILE, mode: 'list' } as never, { agent: { id: 'sess-1' } } as never)) as {
       ok: boolean
       mode: string
       objects: { path: string; bins: number }[]
@@ -879,7 +1267,7 @@ describe.skipIf(!HAS_UPROOT || !HAS_ROOT_FILE)('auto_pwa_root_view (real weight_
     const tool = defs.find((d) => d.name === 'auto_pwa_root_view')!
     const out = (await tool.execute!(
       { rootPath: ROOT_FILE, mode: 'read', objects: ['mass0_Kp_Km/hdata', 'mass0_Kp_Km/h_chain1-R_KK-phi1020'] } as never,
-      { agent: { sessionId: 'sess-1' } } as never,
+      { agent: { id: 'sess-1' } } as never,
     )) as { ok: boolean; histograms: { path: string; bins: number; integral: number; values: number[]; errors: number[] }[] }
     expect(out.ok).toBe(true)
     expect(out.histograms).toHaveLength(2)
@@ -1079,5 +1467,115 @@ describe('auto-pwa skill self-registration', () => {
     expect((registered[0]!.invocation as { modelInvocable: boolean }).modelInvocable).toBe(true)
     // source is required by SkillSummary — its absence breaks skill loading.
     expect(registered[0]!.source).toBe('runtime')
+  })
+})
+
+describe('auto_pwa_init_config (from-scratch config authoring)', () => {
+  const SPEC = {
+    particles: [
+      { name: 'Jpsi', pdgid: 443 },
+      { name: 'eta', pdgid: 221 },
+      { name: 'Kp', pdgid: 321 },
+      { name: 'Km', pdgid: -321 },
+    ],
+    chains: [
+      {
+        name: 'decay1',
+        steps: [
+          { mother: 'Jpsi', daughters: ['eta', 'R_KK'] },
+          { mother: 'R_KK', daughters: ['Kp', 'Km'] },
+        ],
+        intermediates: [{ name: 'R_KK', groups: [{ j: 1, p: -1 }, { j: 0, p: 1 }] }],
+      },
+    ],
+    resonances: [
+      { name: 'phi1020', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.0195, 0.0045] },
+    ],
+    data: { order: ['Kp', 'Km', 'eta'], data: ['dat', './data.dat'], phsp: ['dat', './phsp.dat'] },
+  }
+
+  const tmp = (): string => mkdtempSync(join(tmpdir(), 'auto-pwa-init-'))
+  const tool = () => collectDefinitions().find((d) => d.name === 'auto_pwa_init_config')!
+
+  it('preview builds and validates without writing', async () => {
+    const dir = tmp()
+    try {
+      const out = (await tool().execute!({ dir, preview: true, spec: SPEC } as never, {} as never)) as {
+        ok: boolean
+        written: boolean
+        configText?: string
+        reviewSummary: string
+        requiresHumanReview: boolean
+      }
+      expect(out.ok).toBe(true)
+      expect(out.written).toBe(false)
+      expect(out.configText).toContain('R_KK')
+      expect(out.reviewSummary).toContain('phi1020')
+      expect(out.reviewSummary).toContain('pdgid=321')
+      expect(out.requiresHumanReview).toBe(true)
+      expect(existsSync(join(dir, 'init_config.yml'))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('writes init_config.yml (atomically, with a .bak on re-write) and the file parses', async () => {
+    const dir = tmp()
+    try {
+      const out = (await tool().execute!({ dir, spec: SPEC } as never, {} as never)) as {
+        ok: boolean
+        written: boolean
+        initConfigPath: string
+        errors: unknown[]
+      }
+      assertSchema(out, (tool().output as { schema: unknown }).schema)
+      expect(out.ok).toBe(true)
+      expect(out.written).toBe(true)
+      expect(out.errors).toEqual([])
+      const p = join(dir, 'init_config.yml')
+      expect(existsSync(p)).toBe(true)
+      const cfg = parseConfig(readFileSyncSync(p, 'utf8'))
+      expect(cfg.particles['Jpsi']!.mass).toBeCloseTo(3.0969, 6)
+      expect(cfg.resonances['phi1020']!.parameters).toEqual([1.0195, 0.0045])
+      expect(cfg.decayChains['decay1']!.intermediates['R_KK']!.groups[0]!.names).toEqual(['phi1020'])
+
+      // second write backs the previous file up
+      await tool().execute!({ dir, spec: SPEC } as never, {} as never)
+      expect(existsSync(`${p}.bak`)).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses to write when a physics gate fails', async () => {
+    const dir = tmp()
+    try {
+      const bad = structuredClone(SPEC)
+      bad.chains[0]!.intermediates[0]!.groups = [{ j: 1, p: -1 }, { j: 0, p: 1 }, { j: 2, p: 1 }]
+      bad.resonances = [
+        { name: 'f2_1270', chain: 'R_KK', jpGroup: { j: 2, p: 1 }, model: 'BWR', parameters: [1.275, 0.185] },
+      ]
+      const out = (await tool().execute!({ dir, spec: bad } as never, {} as never)) as {
+        ok: boolean
+        written: boolean
+        errors: { code: string }[]
+      }
+      assertSchema(out, (tool().output as { schema: unknown }).schema)
+      expect(out.ok).toBe(false)
+      expect(out.written).toBe(false)
+      expect(out.errors.map((e) => e.code)).toContain('c-violation')
+      expect(existsSync(join(dir, 'init_config.yml'))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a malformed spec without throwing', async () => {
+    const out = (await tool().execute!({ dir: '/tmp', spec: {} } as never, {} as never)) as {
+      ok: boolean
+      errors: { code: string }[]
+    }
+    expect(out.ok).toBe(false)
+    expect(out.errors.map((e) => e.code)).toContain('invalid-spec')
   })
 })

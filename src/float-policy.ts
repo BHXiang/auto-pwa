@@ -53,11 +53,23 @@ export function suggestFree(
   if (proposal.model === 'ONE') {
     return {
       rationale:
-        'ONE is a phase-space term: the mass parameter does not enter the amplitude (ctpwa ResModel.cu), so floating it has no effect. Keep it fixed.',
+        'ONE is a phase-space term: the barrier factor uses a fixed reference q0 (ctpwa ResModel.cuh oneRefQ0), so the mass placeholder never enters the amplitude — floating it has no effect. Keep it fixed, or omit parameters entirely.',
     }
   }
 
-  const mass = proposal.parameters[0]
+  // Table-/DSL-driven models (Interp/Custom) and unknown models carry no
+  // numeric parameters to float — the payload is `options`. Returning early
+  // keeps the PDG-centric logic below free of undefined arithmetic.
+  const first = proposal.parameters[0]
+  if (!Number.isFinite(first)) {
+    return {
+      rationale:
+        `${proposal.name ?? proposal.model}（model ${proposal.model}）没有可 float 的数值参数` +
+        `（Interp/Custom 的载荷在 options 里）——自由参数由 ctpwa 从选项推导，插件不做 float 建议。`,
+    }
+  }
+
+  const mass = first as number
   const width = proposal.parameters[1]
   // With a reference (provenance), windows center on the proposal's own
   // parameters — they follow the cited experiment, not the PDG average.

@@ -8,9 +8,16 @@ ctpwa 契约的"包装层"实现（PLAN-STEP2 §1.3，引擎零改动）：
   5. 短拟合模式：--runs 1 --max-iter 500（多候选并行的时间基础）
   （v2：用 getSLAmpsTensor 算成对干涉项，未实现）
 
+优化器：直接复用 scripts/pwa_optimizer.py（自 ctpwa example/fit.py vendored，MIT），
+默认走 example/fit.py 的 **reparam** 重参数化软墙路径，并做二阶 polish + 活跃集
+感知的参数误差。因此本驱动与 example/fit.py 数值同源，修复了旧内联优化器的
+"torch LBFGS + 就地 clamp + 梯度清零"边界伪收敛、耦合无界增长、被边界钉住的参数
+仍报伪误差等问题。`--optimizer projected|lbfgs` 可切到对照路径。
+
 用法（cwd = 迭代目录，analysis() 从 cwd 读 config.yml，同 fit.py）：
   <ctpwa env>/bin/python aifit.py [--config config.yml] [--validate-only] \\
-      [--runs N] [--max-iter M] [--seed S] [--json results/fit.json]
+      [--runs N] [--max-iter M] [--seed S] [--json results/fit.json] \\
+      [--optimizer reparam|projected|lbfgs] [--no-polish]
 
 输出（默认 results/）：
   fit.json                本文件（机器/AI 主通道，schema 见 README）
@@ -18,7 +25,10 @@ ctpwa 契约的"包装层"实现（PLAN-STEP2 §1.3，引擎零改动）：
   nll_history.txt         每 run 的 NLL 历史（人看）
   optimization_summary.txt 兼容摘要（旧工具回退通道）
 
-环境变量默认值（被 CLI 覆盖）：PWA_AIFIT_RUNS（默认 10）、PWA_AIFIT_MAX_ITER（默认 10000）。
+环境变量默认值（被 CLI 覆盖）：PWA_AIFIT_RUNS（默认 10）、PWA_AIFIT_MAX_ITER
+（默认 10000），以及 example/fit.py 同名的 FIT_* （FIT_OPTIMIZER / FIT_VMAX /
+FIT_AMP_MAX / FIT_AMP_LAMBDA / FIT_POLISH / FIT_LR / FIT_TOL_GRAD /
+FIT_TOL_CHANGE / FIT_HISTORY_SIZE）。
 
 退出码：0 ok | 1 config-error | 2 usage-error | 3 no-gpu | 4 fit-failed。
 """
@@ -36,13 +46,32 @@ import traceback
 import torch
 import numpy as np
 
+# fit.py 在本驱动里是符号链接（iter_start 把 fit.py -> 插件 scripts/aifit.py），
+# 所以必须用 realpath 才能定位同目录的 pwa_optimizer.py（符号链接所在目录里没有）。
+# 兜底：PWA_OPTIMIZER_DIR 或把 pwa_optimizer.py 一并放在 fit.py 旁边（复制而非
+# 软链 fit.py 的部署）。
+_here = os.path.dirname(os.path.realpath(__file__))
+for _cand in (_here, os.environ.get("PWA_OPTIMIZER_DIR", ""),
+              os.path.dirname(os.path.abspath(__file__))):
+    if _cand and os.path.isfile(os.path.join(_cand, "pwa_optimizer.py")):
+        sys.path.insert(0, _cand)
+        break
+try:
+    from pwa_optimizer import UnifiedPWAOptimizer  # noqa: E402
+except ImportError as _e:  # pragma: no cover - deployment error path
+    sys.stderr.write(
+        f"[aifit] 无法导入 pwa_optimizer（与 aifit.py 同目录的优化器内核）：{_e}\n"
+        f"        aifit.py 实际路径 = {_here}\n"
+        f"        请把 pwa_optimizer.py 放在上述目录，或用 PWA_OPTIMIZER_DIR 指定其目录。\n")
+    raise
+
 EXIT_OK = 0
 EXIT_CONFIG = 1
 EXIT_USAGE = 2
 EXIT_NO_GPU = 3
 EXIT_FIT_FAILED = 4
 
-SCHEMA_VERSION = "0.2.0"
+SCHEMA_VERSION = "0.3.0"
 
 # 撞边界判定：|value - bound| < 1e-3 * (upper - lower) 记为贴边。
 BOUNDARY_FRACTION = 1e-3
@@ -64,7 +93,56 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--max-iter", type=int, default=int(os.environ.get("PWA_AIFIT_MAX_ITER", "10000")), help="单次 LBFGS 最大迭代")
     p.add_argument("--seed", type=int, default=42, help="随机种子基（第 i 次运行用 seed+i）")
     p.add_argument("--json", default="results/fit.json", help="JSON 输出路径")
+    # ---- 优化器（与 ctpwa example/fit.py 同名参数/env，默认 reparam） ----
+    p.add_argument("--optimizer", default=os.environ.get("FIT_OPTIMIZER", "reparam"),
+                   choices=["reparam", "projected", "lbfgs"],
+                   help="reparam=重参数化软墙（默认，推荐）| projected=有界 L-BFGS（KKT/活跃集）| "
+                        "lbfgs=旧路径 torch LBFGS+clamp（仅 A/B 对照）；env FIT_OPTIMIZER")
+    p.add_argument("--no-polish", dest="polish", action="store_false", default=None,
+                   help="关闭最佳解的二阶 damped-Newton 抛光（env FIT_POLISH=0）")
+    p.add_argument("--polish", dest="polish", action="store_true",
+                   help="启用抛光（默认开启）")
+    p.add_argument("--vmax", type=float, default=None, help="耦合幅度上界（env FIT_VMAX，默认 10000）")
+    p.add_argument("--amp-max", type=float, default=None, help="reparam 耦合幅度软墙上限（env FIT_AMP_MAX，默认 1000）")
+    p.add_argument("--amp-lambda", type=float, default=None, help="reparam 幅度罚项 λ·Σ|A|²（env FIT_AMP_LAMBDA，默认 1e-4，0 关闭）")
+    p.add_argument("--lr", type=float, default=None, help="LBFGS 初始步长（env FIT_LR，默认 0.3）")
+    p.add_argument("--tol-grad", type=float, default=None, help="梯度收敛阈值（env FIT_TOL_GRAD，默认 1e-5）")
+    p.add_argument("--tol-change", type=float, default=None, help="参数变化收敛阈值（env FIT_TOL_CHANGE，默认 1e-5）")
+    p.add_argument("--history-size", type=int, default=None, help="LBFGS history 大小（env FIT_HISTORY_SIZE，默认 200）")
     return p.parse_args(argv)
+
+
+def _env_float(name: str, default: float) -> float:
+    v = os.environ.get(name)
+    return float(v) if v is not None else default
+
+
+def _env_int(name: str, default: int) -> int:
+    v = os.environ.get(name)
+    return int(v) if v is not None else default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    return v.lower() in ("1", "true", "yes")
+
+
+def optimizer_options(args: argparse.Namespace) -> dict:
+    """把 CLI/env/默认值并成 UnifiedPWAOptimizer 的构造参数（同 example/fit.py）。"""
+    polish = args.polish if args.polish is not None else _env_bool("FIT_POLISH", True)
+    return {
+        "kind": str(args.optimizer).lower(),
+        "polish": polish,
+        "v_max": args.vmax if args.vmax is not None else _env_float("FIT_VMAX", 10000.0),
+        "amp_max": args.amp_max if args.amp_max is not None else _env_float("FIT_AMP_MAX", 1000.0),
+        "amp_lambda": args.amp_lambda if args.amp_lambda is not None else _env_float("FIT_AMP_LAMBDA", 1e-4),
+        "lr": args.lr if args.lr is not None else _env_float("FIT_LR", 0.3),
+        "tol_grad": args.tol_grad if args.tol_grad is not None else _env_float("FIT_TOL_GRAD", 1e-5),
+        "tol_change": args.tol_change if args.tol_change is not None else _env_float("FIT_TOL_CHANGE", 1e-5),
+        "history_size": args.history_size if args.history_size is not None else _env_int("FIT_HISTORY_SIZE", 200),
+    }
 
 
 def _json_safe(value):
@@ -238,169 +316,24 @@ def run_validate_only(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 2. 拟合（复刻 fit.py 的优化器：归一化空间 LBFGS + Hessian 误差）
+# 2. 拟合（复用 ctpwa example/fit.py 的优化器内核：scripts/pwa_optimizer.py）
+#
+# 旧内联实现（归一化空间 LBFGS + 就地 clamp + 梯度清零）已删除：它会在边界处
+# 静默伪收敛、耦合无界增长到 1e14、被 free_range 钉住的参数仍报伪误差。
+# 现在直接构造 example/fit.py 的 UnifiedPWAOptimizer（默认 reparam 软墙 +
+# damped-Newton polish + 活跃集感知误差）。
 # ---------------------------------------------------------------------------
 
-def generate_initial_params(n_coupling_free: int, free_res_info: torch.Tensor, seed: int, device: str) -> torch.Tensor:
-    n_res = free_res_info.shape[1]
-    n_total = 2 * n_coupling_free + n_res
-    params = torch.zeros(n_total, dtype=torch.float64, device=device)
-    torch.manual_seed(seed)
-    params[0] = 1.0  # 固定参考振幅实部
-    for idx in range(1, n_coupling_free):
-        amp = torch.rand(1, device=device).item() * 0.5
-        phase = torch.rand(1, device=device).item() * 2 * torch.pi
-        params[idx] = amp * np.cos(phase)
-    params[n_coupling_free] = 0.0  # 固定参考振幅虚部
-    for idx in range(1, n_coupling_free):
-        amp = torch.rand(1, device=device).item() * 0.5
-        phase = torch.rand(1, device=device).item() * 2 * torch.pi
-        params[n_coupling_free + idx] = amp * np.sin(phase)
-    if n_res > 0:
-        init_vals = free_res_info[0].to(device=device, dtype=torch.float64)
-        if seed > 42:
-            torch.manual_seed(seed)
-            lower = free_res_info[1].to(device=device, dtype=torch.float64)
-            upper = free_res_info[2].to(device=device, dtype=torch.float64)
-            noise = (torch.rand(n_res, device=device, dtype=torch.float64) - 0.5) * 0.1 * (upper - lower)
-            init_vals = torch.clamp(init_vals + noise, lower + 1e-7 * (upper - lower), upper - 1e-7 * (upper - lower))
-        params[2 * n_coupling_free:] = init_vals
-    return params
+def make_optimizer(ana, free_res_info, params_names, opts: dict) -> UnifiedPWAOptimizer:
+    """构造与 ctpwa example/fit.py 数值同源的优化器（默认 reparam 软墙路径）。"""
+    return UnifiedPWAOptimizer(
+        ana, free_res_info, params_names,
+        v_max=opts["v_max"],
+        optimizer_kind=opts["kind"],
+        amp_max=opts["amp_max"],
+        amp_lambda=opts["amp_lambda"],
+    )
 
-
-class AifitOptimizer:
-    """单次/多次 LBFGS 拟合 + Hessian 诊断（与 fit.py 数值等价）。"""
-
-    def __init__(self, ana, free_res_info: torch.Tensor, params_names: list[str]):
-        self.ana = ana
-        self.params_names = params_names
-        self.device = "cuda"
-        self.n_coupling_free = ana.getNVector()
-        self.n_res_free = int(free_res_info.shape[1])
-        self.n_params = 2 * self.n_coupling_free + self.n_res_free
-        self.has_free_res = self.n_res_free > 0
-        if self.has_free_res:
-            self._lower = free_res_info[1].to(dtype=torch.float64, device=self.device)
-            self._upper = free_res_info[2].to(dtype=torch.float64, device=self.device)
-            self._res_init = free_res_info[0].to(dtype=torch.float64, device=self.device)
-
-    # -- 与 fit.py compute_loss_and_grad 一致 ---------------------------------
-    def compute_loss_and_grad(self, params_norm: torch.Tensor):
-        with torch.no_grad():
-            params_norm.data[0] = 1.0
-            params_norm.data[self.n_coupling_free] = 0.0
-        if self.has_free_res:
-            res_start = 2 * self.n_coupling_free
-            with torch.no_grad():
-                phys = self._res_init * (1.0 + params_norm.data[res_start:])
-                params_norm.data[res_start:] = (torch.clamp(phys, self._lower, self._upper) - self._res_init) / self._res_init
-        if self.has_free_res:
-            res_start = 2 * self.n_coupling_free
-            phys_res = self._res_init * (1.0 + params_norm[res_start:])
-            params_phys = torch.cat([params_norm[:self.n_coupling_free], params_norm[self.n_coupling_free:res_start], phys_res])
-        else:
-            params_phys = params_norm
-        nll = self.ana.getNLL(params_phys)
-        grad_norm = torch.autograd.grad(nll, params_norm, retain_graph=False)[0]
-        with torch.no_grad():
-            grad_norm[0] = 0.0
-            grad_norm[self.n_coupling_free] = 0.0
-        return nll, grad_norm
-
-    def optimize_single_run(self, initial_params: torch.Tensor, run_id: int = 0, max_iter: int = 10000) -> dict:
-        params = initial_params.clone().detach()
-        if self.has_free_res:
-            res_start = 2 * self.n_coupling_free
-            params[res_start:] = (params[res_start:] - self._res_init) / self._res_init
-        params.requires_grad_(True)
-        optimizer = torch.optim.LBFGS([params], lr=1.0, max_iter=max_iter,
-                                      tolerance_grad=1e-8, tolerance_change=1e-10,
-                                      history_size=100, line_search_fn="strong_wolfe")
-        nll_history: list[float] = []
-
-        def closure():
-            optimizer.zero_grad()
-            nll, grad = self.compute_loss_and_grad(params)
-            params.grad = grad
-            nll_history.append(nll.item())
-            return nll
-
-        t0 = time.time()
-        optimizer.step(closure)
-        fit_time = time.time() - t0
-        with torch.no_grad():
-            params.data[0] = 1.0
-            params.data[self.n_coupling_free] = 0.0
-            if self.has_free_res:
-                res_start = 2 * self.n_coupling_free
-                phys = self._res_init * (1.0 + params.data[res_start:])
-                params.data[res_start:] = (torch.clamp(phys, self._lower, self._upper) - self._res_init) / self._res_init
-        final_nll = nll_history[-1] if nll_history else float("inf")
-        final_params = params.clone().detach()
-        if self.has_free_res:
-            res_start = 2 * self.n_coupling_free
-            final_params[res_start:] = self._res_init * (1.0 + final_params[res_start:])
-
-        hessian_full = self.ana.getHessian(final_params)
-        fixed_mask = torch.ones(self.n_params, dtype=torch.bool, device=self.device)
-        fixed_mask[0] = False
-        fixed_mask[self.n_coupling_free] = False
-        hessian = hessian_full[fixed_mask][:, fixed_mask]
-
-        try:
-            eigenvalues = torch.linalg.eigvalsh(hessian)
-            is_pos_def = bool(torch.all(eigenvalues > 0).item())
-            min_eig = float(eigenvalues[0].item())
-            max_eig = float(eigenvalues[-1].item())
-            cond_num = max_eig / min_eig if min_eig > 0 else float("inf")
-        except Exception:
-            is_pos_def, min_eig, max_eig, cond_num = False, float("nan"), float("nan"), float("nan")
-
-        coupling_real_errors = coupling_imag_errors = res_errors = None
-        correlation: torch.Tensor | None = None
-        if is_pos_def:
-            try:
-                covariance = torch.linalg.inv(hessian)
-                std_dev = torch.sqrt(torch.diag(covariance))
-                # Correlation = cov / (sigma_i * sigma_j); diagonal stays 1.
-                with torch.no_grad():
-                    denom = torch.outer(std_dev, std_dev)
-                    correlation = (covariance / denom).clamp(-1.0, 1.0)
-                n_c_var = self.n_coupling_free - 1
-                coupling_real_errors = torch.zeros(self.n_coupling_free, dtype=torch.float32, device=self.device)
-                coupling_imag_errors = torch.zeros(self.n_coupling_free, dtype=torch.float32, device=self.device)
-                for i in range(n_c_var):
-                    coupling_real_errors[i + 1] = std_dev[2 * i].float()
-                    coupling_imag_errors[i + 1] = std_dev[2 * i + 1].float()
-                if self.has_free_res:
-                    res_errors = std_dev[2 * n_c_var:].float()
-            except Exception:
-                coupling_real_errors = coupling_imag_errors = res_errors = None
-                correlation = None
-
-        return {
-            "run_id": run_id,
-            "final_params": final_params,
-            "final_nll": final_nll,
-            "nll_history": nll_history,
-            "time": fit_time,
-            "iterations": len(nll_history),
-            "is_positive_definite": is_pos_def,
-            "min_eigenvalue": min_eig,
-            "condition_number": cond_num,
-            "coupling_real_errors": coupling_real_errors,
-            "coupling_imag_errors": coupling_imag_errors,
-            "res_errors": res_errors,
-            "correlation": correlation,
-        }
-
-    def extract_coupling_complex(self, params: torch.Tensor) -> torch.Tensor:
-        real = params[:self.n_coupling_free].float()
-        imag = params[self.n_coupling_free:2 * self.n_coupling_free].float()
-        return torch.complex(real, imag)
-
-    def extract_theta_phys(self, params: torch.Tensor) -> torch.Tensor | None:
-        return None if not self.has_free_res else params[2 * self.n_coupling_free:]
 
 
 # ---------------------------------------------------------------------------
@@ -417,41 +350,93 @@ def _num(t: torch.Tensor | None, i: int | None = None) -> float | None:
         return None
 
 
-def build_best_json(opt: AifitOptimizer, result: dict, warnings: list[str]) -> dict:
+def _reduced_hessian(opt: UnifiedPWAOptimizer, params: torch.Tensor) -> torch.Tensor:
+    """固定参数 (re_0=1, im_0=0) 剔除后的自由块 Hessian（与 example/fit.py 同约定）。"""
+    h_full = opt._get_hessian_cached(params)
+    mask = torch.ones(opt.n_params, dtype=torch.bool, device=opt.device)
+    mask[0] = False
+    mask[opt.n_coupling_free] = False
+    return h_full[mask][:, mask]
+
+
+def _eig_diagnostics(hessian: torch.Tensor) -> tuple[bool, float, float]:
+    """(正定, λmin, 条件数) —— 与 example/fit.py 的 optimize_single_run 同判据。"""
+    if hessian.numel() == 0:
+        return True, float("nan"), float("nan")
+    try:
+        ev = torch.linalg.eigvalsh(hessian)
+        is_pd = bool(torch.all(ev > 0).item())
+        min_eig = float(ev[0].item())
+        max_eig = float(ev[-1].item())
+        cond = (max_eig / min_eig) if min_eig > 0 else float("inf")
+        return is_pd, min_eig, cond
+    except Exception:
+        return False, float("nan"), float("nan")
+
+
+def _correlation_from_hessian(opt: UnifiedPWAOptimizer, hessian: torch.Tensor,
+                              is_pos_def: bool) -> dict | None:
+    """自由块 Hessian 反演 -> 相关矩阵（名称对齐 fixed_mask 过滤后的顺序：
+    Re(c1), Im(c1), ..., Re(c_{n-1}), Im(c_{n-1}), res_0, ...）。不 PD 返回 None。"""
+    if not is_pos_def:
+        return None
+    try:
+        h = hessian.double()
+        if not bool(torch.all(torch.linalg.eigvalsh(h) > 0).item()):
+            return None
+        cov = torch.linalg.inv(h)
+        sd = torch.sqrt(torch.diag(cov).clamp(min=0.0))
+        denom = torch.outer(sd, sd).clamp(min=1e-300)
+        corr = (cov / denom).clamp(-1.0, 1.0)
+    except Exception:
+        return None
+    names: list[str] = []
+    for i in range(1, opt.n_coupling_free):
+        names.append(f"Re({opt.params_names[i]})")
+        names.append(f"Im({opt.params_names[i]})")
+    for j in range(opt.n_res_free):
+        names.append(opt.params_names[opt.n_coupling_free + j])
+    return {"names": names, "matrix": [[float(x) for x in row] for row in corr.cpu().numpy()]}
+
+
+def build_best_json(opt: UnifiedPWAOptimizer, final_params: torch.Tensor, result: dict,
+                    errors: tuple | None, correlation: dict | None,
+                    warnings: list[str]) -> dict:
     params: list[dict] = []
-    coupling = opt.extract_coupling_complex(result["final_params"])
+    coupling = opt.extract_coupling_complex(final_params)
     coupling_np = coupling.cpu().numpy()
-    re_err = result["coupling_real_errors"]
-    im_err = result["coupling_imag_errors"]
+    re_err, im_err, res_err = errors if errors is not None else (None, None, None)
     for fi in range(opt.n_coupling_free):
-        entry: dict = {
+        params.append({
             "name": opt.params_names[fi],
             "kind": "coupling",
             "real": float(coupling_np[fi].real),
             "imag": float(coupling_np[fi].imag),
             "realError": _num(re_err, fi),
             "imagError": _num(im_err, fi),
-        }
-        params.append(entry)
+        })
     if opt.has_free_res:
-        theta = opt.extract_theta_phys(result["final_params"]).cpu().numpy()
+        theta = opt.extract_theta_phys(final_params).cpu().numpy()
         lower_np = opt._lower.cpu().numpy()
         upper_np = opt._upper.cpu().numpy()
-        res_err = result["res_errors"]
         for j in range(opt.n_res_free):
             idx = opt.n_coupling_free + j
             value = float(theta[j])
             lo, hi = float(lower_np[j]), float(upper_np[j])
             margin = BOUNDARY_FRACTION * (hi - lo)
             at_boundary = value <= lo + margin or value >= hi - margin
+            err = _num(res_err, j)
             if at_boundary:
                 warnings.append(f"{opt.params_names[idx]} = {value:.6g} 贴住 free_range "
                                 f"[{lo:.6g}, {hi:.6g}]（撞边界：数据可能不支持该自由度）")
+                if err is None:
+                    warnings.append(f"{opt.params_names[idx]} 被 free_range 钉住 → 无统计误差"
+                                    f"（放宽 free_range 或按单侧限制报告）")
             params.append({
                 "name": opt.params_names[idx],
                 "kind": "resonance",
                 "value": value,
-                "error": _num(res_err, j),
+                "error": err,
                 "lower": lo,
                 "upper": hi,
                 "atBoundary": at_boundary,
@@ -461,54 +446,49 @@ def build_best_json(opt: AifitOptimizer, result: dict, warnings: list[str]) -> d
         "runId": result["run_id"],
         "nll": float(result["final_nll"]),
         "positiveDefinite": bool(result["is_positive_definite"]),
-        "minEigenvalue": result["min_eigenvalue"],
-        "conditionNumber": result["condition_number"],
+        "minEigenvalue": result.get("min_eigenvalue"),
+        "conditionNumber": result.get("condition_number"),
+        "optimizerStatus": result.get("optimizer_status"),
         "params": params,
         "fitFractions": None,
         "branchFractions": None,
     }
+    if correlation is not None:
+        best["correlation"] = correlation
 
-    # 参数相关性矩阵（Hessian 反演；索引对齐 fixed_mask 过滤后的参数顺序：
-    # Re(c1), Im(c1), ..., Re(c_{n-1}), Im(c_{n-1}), res_0, ...）。
-    corr = result.get("correlation")
-    if corr is not None:
-        corr_names: list[str] = []
-        for i in range(1, opt.n_coupling_free):
-            corr_names.append(f"Re({opt.params_names[i]})")
-            corr_names.append(f"Im({opt.params_names[i]})")
-        for j in range(opt.n_res_free):
-            corr_names.append(opt.params_names[opt.n_coupling_free + j])
-        best["correlation"] = {
-            "names": corr_names,
-            "matrix": [[float(x) for x in row] for row in corr.cpu().numpy()],
-        }
-
-    # 分波贡献 / 分支比（需要 config 提供 phsp_truth；缺则降级为 null + warning）
+    # 分波贡献（phsp_truth 门控；用与拟合同源的统一 Hessian 做误差传播）
     try:
-        ff = opt.ana.getFitFractions(coupling)
-        names = list(opt.ana.getAmplitudeNames())
-        best["fitFractions"] = [
-            {"amplitude": names[i] if i < len(names) else f"amp_{i}",
-             "fraction": float(ff[i, 0]), "error": float(ff[i, 1])}
-            for i in range(ff.shape[0])
-        ]
+        ff = opt.analysis.getFitFractions(coupling, opt._get_hessian_cached(final_params))
+        names = list(opt.analysis.getAmplitudeNames())
+        if ff is not None and ff.numel() > 0:
+            best["fitFractions"] = [
+                {"amplitude": names[i] if i < len(names) else f"amp_{i}",
+                 "fraction": float(ff[i, 0]), "error": float(ff[i, 1])}
+                for i in range(ff.shape[0])
+            ]
+        else:
+            warnings.append("getFitFractions 返回空（config 缺 phsp_truth？）——分波份额不可用")
     except Exception as e:
         warnings.append(f"getFitFractions 不可用（需要 config 的 phsp_truth？）: {type(e).__name__}: {e}")
-    try:
-        bf = opt.ana.getBranchFractions(coupling)
-        names = list(opt.ana.getAmplitudeNames())
-        best["branchFractions"] = [
-            {"amplitude": names[i] if i < len(names) else f"amp_{i}",
-             "fraction": float(bf[i, 0]), "error": float(bf[i, 1])}
-            for i in range(bf.shape[0])
-        ]
-    except Exception as e:
-        warnings.append(f"getBranchFractions 不可用（需要 config 的 phsp_truth？）: {type(e).__name__}: {e}")
+
+    # 分支比：旧 ctpwa 构建没有该 API —— 有才试，没有不刷警告
+    if hasattr(opt.analysis, "getBranchFractions"):
+        try:
+            bf = opt.analysis.getBranchFractions(coupling)
+            names = list(opt.analysis.getAmplitudeNames())
+            if bf is not None and bf.numel() > 0:
+                best["branchFractions"] = [
+                    {"amplitude": names[i] if i < len(names) else f"amp_{i}",
+                     "fraction": float(bf[i, 0]), "error": float(bf[i, 1])}
+                    for i in range(bf.shape[0])
+                ]
+        except Exception as e:
+            warnings.append(f"getBranchFractions 不可用: {type(e).__name__}: {e}")
     return best
 
 
 def _run_fit(args: argparse.Namespace) -> int:
-    """完整拟合：多次 LBFGS + Hessian 诊断 -> fit.json（含结构化错误码）。"""
+    """完整拟合：example/fit.py 同源优化器（多起点 + polish + Hessian 诊断） -> fit.json。"""
     try:
         import ctpwa  # noqa: F401 — 先 torch 后 ctpwa
     except Exception as e:
@@ -521,9 +501,10 @@ def _run_fit(args: argparse.Namespace) -> int:
                                  "message": "ctpwa 仅支持 GPU（CPU 后端未实现）；torch.cuda.is_available() = False"}},
                       args.json, EXIT_NO_GPU)
 
-    workdir = os.path.dirname(os.path.abspath(args.config)) or "."
-    if os.path.abspath(workdir) != os.path.abspath(os.getcwd()):
-        os.chdir(workdir)  # analysis() 从 cwd 读 config.yml（同 fit.py）
+    config_abs = os.path.abspath(args.config)
+    workdir = os.path.dirname(config_abs) or "."
+    if os.path.abspath(os.getcwd()) != workdir:
+        os.chdir(workdir)  # 相对数据路径以 config 目录为基准（同 fit.py）
 
     # 先做无 GPU 校验，失败快速退出（结构化 config-error）。
     try:
@@ -539,21 +520,36 @@ def _run_fit(args: argparse.Namespace) -> int:
                        "error": {"code": "config-invalid", "message": f"DecayInfo.isValid() = false for {args.config}"}},
                       args.json, EXIT_CONFIG)
 
+    opts = optimizer_options(args)
     t_start = time.time()
-    ana = ctpwa.analysis()
+    # ⚠ 显式把 config 路径交给 analysis()：旧代码调 analysis() 依赖 cwd/config.yml，
+    #   `--config other.yml` 会静默读错文件（ctpwa doc/optimizer-attribution §13）。
+    try:
+        ana = ctpwa.analysis(config_abs)
+    except Exception as e:
+        return finish({"schemaVersion": SCHEMA_VERSION, "status": "config-error",
+                       "config": view,
+                       "error": {"code": "config-load-failed", "message": f"{type(e).__name__}: {e}"}},
+                      args.json, EXIT_CONFIG)
+
     free_res_info = ana.getFreeResParams()
     params_names = list(ana.getParamNames())
-    opt = AifitOptimizer(ana, free_res_info, params_names)
+    opt = make_optimizer(ana, free_res_info, params_names, opts)
     warnings: list[str] = []
     runs_json: list[dict] = []
-    best_full: dict | None = None
+    results: list[dict] = []
     os.makedirs("results", exist_ok=True)  # nll_history/fit.json/weight_best.root 的落点
 
     for i in range(args.runs):
         seed = args.seed if i == 0 else args.seed + i
-        initial = generate_initial_params(opt.n_coupling_free, free_res_info, seed=seed, device=opt.device)
+        initial = opt.generate_initial_params(seed=seed)
         try:
-            result = opt.optimize_single_run(initial, run_id=i, max_iter=args.max_iter)
+            result = opt.optimize_single_run(
+                initial, run_id=i, max_iter=args.max_iter,
+                lr=opts["lr"], tolerance_grad=opts["tol_grad"],
+                tolerance_change=opts["tol_change"], history_size=opts["history_size"],
+            )
+            results.append(result)
             runs_json.append({
                 "runId": i,
                 "nll": float(result["final_nll"]),
@@ -561,13 +557,13 @@ def _run_fit(args: argparse.Namespace) -> int:
                 "timeSec": round(result["time"], 2),
                 "positiveDefinite": bool(result["is_positive_definite"]),
                 "minEigenvalue": result["min_eigenvalue"],
+                "optimizerStatus": result.get("optimizer_status"),
             })
-            if best_full is None or result["final_nll"] < best_full["final_nll"]:
-                best_full = result
             # 人读 NLL 历史（兼容旧工具链）
             with open("results/nll_history.txt", "a" if i > 0 else "w") as f:
                 if i == 0:
-                    f.write(f"# NLL History - aifit.py runs={args.runs} max_iter={args.max_iter}\n")
+                    f.write(f"# NLL History - aifit.py runs={args.runs} max_iter={args.max_iter} "
+                            f"optimizer={opts['kind']}\n")
                 f.write(f"# RUN: run_{i}\n")
                 for j, v in enumerate(result["nll_history"]):
                     f.write(f"{j:8d}  {v:15.8f}\n")
@@ -576,16 +572,49 @@ def _run_fit(args: argparse.Namespace) -> int:
             warnings.append(f"run {i} 失败: {type(e).__name__}: {e}")
             traceback.print_exc()
 
-    ok_runs = [r for r in runs_json if "error" not in r]
-    if not ok_runs:
+    if not results:
         return finish({"schemaVersion": SCHEMA_VERSION, "status": "fit-failed",
                        "config": view, "error": {"code": "all-runs-failed",
                        "message": f"{args.runs} 次运行全部失败；见 fit.log 与各 run 的 error 字段"}},
                       args.json, EXIT_FIT_FAILED)
 
-    best_summary = min(ok_runs, key=lambda r: r["nll"])
-    best_json = build_best_json(opt, best_full, warnings)
-    best_json["runId"] = best_full["run_id"]
+    best = min(results, key=lambda r: r["final_nll"])
+
+    # ---- 二阶 polish（damped Newton + 活跃集）：把最优起点再收敛一步 ----
+    if opts["polish"]:
+        try:
+            p2, nll2, pd2 = opt.polish_damped_newton(
+                best["final_params"], max_steps=int(opt.optimizer_polish_steps))
+            warnings.append(f"polish: NLL {best['final_nll']:.6f} → {nll2:.6f} "
+                            f"(Δ={nll2 - best['final_nll']:+.4f}), PD={pd2}")
+            if nll2 <= best["final_nll"]:
+                best["final_params"] = p2.clone()
+                best["final_nll"] = float(nll2)
+                best["is_positive_definite"] = bool(pd2)
+        except Exception as e:
+            warnings.append(f"抛光失败（保留未抛光解）: {type(e).__name__}: {e}")
+
+    # ---- 抛光后重算诊断（正定性/误差/相关/份额都对齐最终参数点） ----
+    # 正定性口径：跑过 polish 时用它的**非活跃子空间**判据（盒约束的正确二阶条件）；
+    # 否则用该 run 的自由块判据。全自由块判据另算，仅用于报告与相关矩阵门控——
+    # 有参数被 free_range 钉住时两者会不一致，此时误差仍可由非活跃子空间给出。
+    final_params = best["final_params"]
+    active_pd = bool(best["is_positive_definite"])
+    reduced_h = _reduced_hessian(opt, final_params)
+    is_pd_full, min_eig, cond = _eig_diagnostics(reduced_h)
+    best["is_positive_definite"] = active_pd
+    best["min_eigenvalue"] = min_eig
+    best["condition_number"] = cond
+    if not active_pd:
+        warnings.append("非活跃子空间 Hessian 不正定 → 参数误差不可用（见 [polish]/[errors] 输出）")
+    elif not is_pd_full:
+        warnings.append(f"全自由块 Hessian 不正定（λmin={min_eig:.3e}）——可能有参数被 "
+                        f"free_range 钉住；参数误差按非活跃子空间给出")
+
+    errors = opt.compute_param_errors(final_params)
+    correlation = _correlation_from_hessian(opt, reduced_h, is_pd_full)
+    best_json = build_best_json(opt, final_params, best, errors, correlation, warnings)
+
     out = {
         "schemaVersion": SCHEMA_VERSION,
         "status": "ok",
@@ -596,6 +625,8 @@ def _run_fit(args: argparse.Namespace) -> int:
             "runs": args.runs,
             "maxIter": args.max_iter,
             "seedBase": args.seed,
+            "optimizer": opts["kind"],
+            "polish": opts["polish"],
             "timeSec": round(time.time() - t_start, 2),
             "runSummaries": runs_json,
             "best": best_json,
@@ -607,39 +638,43 @@ def _run_fit(args: argparse.Namespace) -> int:
     # 保存权重文件（auto_pwa_evaluate 用）；失败只降级 warning。
     try:
         if opt.has_free_res:
-            opt.ana.reCalcAmp(opt.extract_theta_phys(best_full["final_params"]))
-        opt.ana.writeResult(best_full["final_params"], "results/weight_best.root", 0)
+            opt.analysis.reCalcAmp(opt.extract_theta_phys(final_params))
+        opt.analysis.writeResult(final_params, "results/weight_best.root", 0)
     except Exception as e:
         out["fit"]["warnings"].append(f"writeResult 失败（weight_best.root 未生成）: {type(e).__name__}: {e}")
 
     # 干涉矩阵：直接从刚写出的 weight_best.root 读取（引擎已算好，读回即可；
     # 不做 getSLAmpsTensor 全波表——太大易崩）。矩阵不可信时降级 warning。
     interference = read_interference_from_root("results/weight_best.root")
-    if interference["available"]:
-        out["fit"]["interference"] = interference
-    else:
-        out["fit"]["interference"] = interference
+    out["fit"]["interference"] = interference
+    if not interference["available"]:
         out["fit"]["warnings"].append(f"干涉矩阵不可用: {interference['reason']}")
 
     # 兼容旧工具链的人读摘要（fit-summary.ts 的 fallback 解析路径）
     try:
         with open("results/optimization_summary.txt", "w") as f:
-            f.write("PWA优化结果 (aifit.py)\n")
+            f.write("PWA优化结果 (aifit.py / ctpwa example/fit.py 同源优化器)\n")
             f.write("=" * 100 + "\n")
-            f.write(f"总运行次数: {len(ok_runs)}\n")
+            f.write(f"优化器: {opts['kind']}  polish={opts['polish']}\n")
+            f.write(f"总运行次数: {len(results)}\n")
             f.write(f"耦合参数数量: {opt.n_coupling_free}\n")
             f.write(f"自由共振态参数: {opt.n_res_free}\n")
-            f.write(f"最佳NLL: {best_summary['nll']:.6f}\n")
+            f.write(f"最佳NLL: {best['final_nll']:.6f}\n")
             f.write("参数文件: fit.json（机器/AI 主通道）\n")
             f.write("NLL历史: nll_history.txt\n\n")
             f.write("运行结果 (按NLL排序):\n")
-            f.write(f"{'排名':<4} {'运行ID':<6} {'NLL':<12} {'迭代':<8} {'正定':<6}\n")
-            for rank, r in enumerate(sorted(ok_runs, key=lambda x: x["nll"])):
-                f.write(f"{rank + 1:<4} {r['runId']:<6} {r['nll']:<12.6f} "
-                        f"{r.get('iterations', 0):<8} {str(r.get('positiveDefinite')):<6}\n")
+            f.write(f"{'排名':<4} {'运行ID':<6} {'NLL':<14} {'迭代':<8} {'正定':<6} {'优化器状态':<20}\n")
+            for rank, r in enumerate(sorted(runs_json, key=lambda x: x.get("nll", float("inf")))):
+                if "error" in r:
+                    f.write(f"{rank + 1:<4} {r['runId']:<6} FAILED: {r['error']}\n")
+                    continue
+                f.write(f"{rank + 1:<4} {r['runId']:<6} {r['nll']:<14.6f} "
+                        f"{r.get('iterations', 0):<8} {str(r.get('positiveDefinite')):<6} "
+                        f"{str(r.get('optimizerStatus') or '-'):<20}\n")
     except Exception as e:
         out["fit"]["warnings"].append(f"写 optimization_summary.txt 失败: {e}")
     return finish(out, args.json, EXIT_OK)
+
 
 
 def main(argv: list[str]) -> int:

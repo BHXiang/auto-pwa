@@ -12,17 +12,20 @@
  *   auto_pwa_jpc_check     two-vertex J^PC check (decay ∩ production, C conservation)
  *   auto_pwa_config_view   read-only JSON view of config.yml
  *   auto_pwa_validate_add  gate a resonance addition (PDG/JPC/threshold/duplicate)
+ *   auto_pwa_validate_config  run-time gate preview (structure/JPC/C + ctpwa --validate-only)
  *   auto_pwa_edit_config   validate + apply + render + atomically write config.yml
- *   auto_pwa_run_fit       submit a fit via ctx.pwaFit (DSH background job)
+ *   auto_pwa_run_fit       gate the config, record provenance, submit via ctx.pwaFit
  *   auto_pwa_fit_status    poll a fit job and summarize results/ (fit.json preferred)
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
-import { copyFileSync, existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { defaultDb } from '../src/db.js'
+import { cValueOf, getParticleInfo } from '../src/particle-info.js'
 import { lookupResonance, lookupC } from '../src/lookup.js'
-import { decayCheck } from '../src/decay-check.js'
+import { decayCheck, hasDecayTo } from '../src/decay-check.js'
 import { analyzeIntermediateJPC } from '../src/intermediate-jpc.js'
 import { explicitJp } from '../src/jpc.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
@@ -36,12 +39,23 @@ import {
   validateConfig,
 } from '../src/config-edit.js'
 import { suggestFree } from '../src/float-policy.js'
-import { defaultFitRunnerConfig } from '../src/fit-runner.js'
+import { gateConfig, renderGate, type GateResult } from '../src/config-gate.js'
+import {
+  buildProvenance,
+  writeProvenance,
+  readProvenance,
+  provenanceSummary,
+  checkProvenanceDrift,
+  initFromScriptArgs,
+  type Provenance,
+  type ProvenanceInit,
+} from '../src/provenance.js'
+import { defaultFitRunnerConfig, withConfigArg } from '../src/fit-runner.js'
 import { summarizeFitDir, parseFitJson } from '../src/fit-summary.js'
 import { suggestCandidates } from '../src/suggest.js'
 import { diagnoseFit } from '../src/diagnose.js'
 import { freeParamCount, compareModels } from '../src/model-selection.js'
-import { resolveEnv } from '../src/config.js'
+import { resolveEnv, bundledAifitPath } from '../src/config.js'
 import { IterationLog, startIteration, iterationsRootOf, listIterations, createTrialDir } from '../src/iteration-log.js'
 import {
   loadLoopState,
@@ -60,13 +74,129 @@ import {
 } from '../src/loop-state.js'
 import type { IterationRecord } from '../src/report.js'
 import { spawnSync } from 'node:child_process'
-import type { JP, ResonanceProposal, ResonanceRemoval } from '../src/types.js'
+import type {
+  InitialConfigResult,
+  InitialConfigSpec,
+  JP,
+  ResonanceProposal,
+  ResonanceRemoval,
+} from '../src/types.js'
+import { buildInitialConfig } from '../src/config-init.js'
 import { createUsageTracker, maybeSpill, type TokenTotals, type TokenUsageLike } from './pwa-utils.js'
+import {
+  analysisRootOf,
+  blobMd5,
+  commitPaths,
+  gitAvailable,
+  gitDisabled,
+  gitLog,
+  gitProvenance,
+  gitSearch,
+  gitShow,
+  relInside,
+  repoStatus,
+} from '../src/git-log.js'
+import type { FitOwner } from './pwa-fit.js'
 
 export const name = 'auto-pwa'
 export const inject = ['tools', 'pwaFit']
 
 const text = (t: string) => [{ type: 'text' as const, text: t }]
+
+/**
+ * Human-facing review summary for a freshly built initial config: what reaction
+ * and chains were written, which [J,P] groups each intermediate has and which
+ * resonances sit in them, the particle identities (PDGID-derived), the data
+ * samples, the constraints, and the open questions a physicist must confirm
+ * before the automation starts.
+ */
+function renderInitReview(spec: InitialConfigSpec, r: InitialConfigResult): string {
+  const lines: string[] = ['分波分析初始配置 — 请人工复核', '']
+  const cfg = r.config
+  const jpText = (j: number, p: number): string => `${j}${p > 0 ? '+' : '-'}`
+
+  if (cfg) {
+    lines.push('【反应道 / 衰变链】')
+    for (const [chainName, chain] of Object.entries(cfg.decayChains)) {
+      const prod = chain.steps.filter((s) => cfg.particles[s.mother] !== undefined)
+      for (const s of prod) {
+        lines.push(`  ${chainName}: ${s.mother} → ${s.daughters[0]} + ${s.daughters[1]}`)
+      }
+      for (const [intName, int] of Object.entries(chain.intermediates)) {
+        const groups = int.groups
+          .map((g) => `[${jpText(g.jp.j, g.jp.p)}]: ${g.names.length > 0 ? g.names.join(', ') : '(空)'}`)
+          .join('  ')
+        lines.push(`    ${intName}  ${groups}`)
+      }
+    }
+    lines.push('', '【粒子】')
+    for (const [name, p] of Object.entries(cfg.particles)) {
+      const info = p.pdgid !== undefined ? getParticleInfo(defaultDb, p.pdgid) : undefined
+      const id = p.pdgid !== undefined ? `pdgid=${p.pdgid}${info ? ` (${info.name})` : ' ⚠ 表中无此 id'}` : '无 pdgid'
+      const c = info ? cValueOf(info) : undefined
+      const bits = [
+        `  ${name}: ${id}`,
+        `J^P=${jpText(p.j, p.p)}`,
+        `m=${p.mass}`,
+        c !== undefined ? `C=${c > 0 ? '+' : '-'}` : '',
+      ].filter((x) => x !== '')
+      lines.push(bits.join('  '))
+    }
+    lines.push('', '【数据】')
+    const dr = cfg.raw.get('Data') as Map<unknown, unknown> | undefined
+    const sample = (k: string): string => {
+      const v = dr?.get(k)
+      return Array.isArray(v) ? JSON.stringify(v) : '未提供'
+    }
+    lines.push(`  order: ${(dr?.get('order') as string[] | undefined)?.join(', ') ?? '?'}`)
+    for (const k of ['data', 'phsp', 'phsp_truth', 'bkg', 'bkg_weights']) {
+      lines.push(`  ${k}: ${sample(k)}`)
+    }
+    lines.push('', '【约束】')
+    const con = cfg.constraints
+    lines.push(
+      `  maxL=${con.maxL ?? '-'}  bf_d=${con.bfD ?? '-'}  identical=${JSON.stringify(con.identical ?? [])}  ` +
+        `trans=${con.trans?.length ?? 0}  fix_var=${con.fixVar ? Object.keys(con.fixVar).length : 0}  ` +
+        `var_range=${con.varRange ? Object.keys(con.varRange).length : 0}`,
+    )
+    lines.push('', `【共振态】共 ${Object.keys(cfg.resonances).length} 个`)
+    for (const [name, rs] of Object.entries(cfg.resonances)) {
+      lines.push(
+        `  ${name}: ${rs.model} ${JSON.stringify(rs.parameters)}` +
+          `${rs.free && rs.free.length > 0 ? ` free=${JSON.stringify(rs.free)}` : ' (参数全固定)'}` +
+          `${rs.freeRange ? ` range=${JSON.stringify(rs.freeRange)}` : ''}` +
+          `${rs.reference ? ` reference="${rs.reference}"` : ''}`,
+      )
+    }
+    const mcidMissing = Object.entries(cfg.particles)
+      .filter(([, p]) => p.pdgid === undefined)
+      .map(([n]) => n)
+    if (mcidMissing.length > 0) {
+      lines.push('', `⚠ 未写 pdgid 的粒子: ${mcidMissing.join(', ')}（全同/正反/C 判定会退回名字启发式）`)
+    }
+    if (con.identical === undefined || con.identical.length === 0) {
+      const sameSpecies: string[] = []
+      for (const chain of Object.values(cfg.decayChains)) {
+        for (const s of chain.steps) {
+          const a = cfg.particles[s.daughters[0]]
+          const b = cfg.particles[s.daughters[1]]
+          if (a?.pdgid !== undefined && a.pdgid === b?.pdgid) sameSpecies.push(`${s.daughters[0]}+${s.daughters[1]}`)
+        }
+      }
+      if (sameSpecies.length > 0) {
+        lines.push(`⚠ 检测到同 PDGID 的末态对但未声明 identical: ${sameSpecies.join(', ')}（引擎不会对称化）`)
+      }
+    }
+  }
+
+  lines.push('', `changed: ${r.changed.join(' | ')}`)
+  lines.push(`errors: ${r.errors.length}  warnings: ${r.warnings.length}`)
+  for (const e of r.errors) lines.push(`  [error] ${e.code}: ${e.message}`)
+  for (const w of r.warnings) lines.push(`  [warn]  ${w.code}: ${w.message}`)
+  lines.push('', '复核重点：反应道/末态是否正确；每个中间态的 [J,P] 组是否符合自旋分析假设；')
+  lines.push('共振态是否 PDG 真实且质量在阈值内；数据/MC 路径与格式；free/free_range 策略。')
+  return lines.join('\n')
+}
 
 /**
  * Locate a bundled python script (auto_pwa_evaluate.py / root_view.py /
@@ -93,9 +223,22 @@ function bundledScriptPath(name: string): string {
   )
 }
 
-/** Map a tool execution's agent to a pwaFit owner (jobs session fence). */
-const ownerOf = (exec: { agent?: { sessionId?: string } }): { sessionId: string } | undefined =>
-  exec.agent?.sessionId !== undefined ? { sessionId: exec.agent.sessionId } : undefined
+/**
+ * Map a tool execution's agent to a pwaFit owner (jobs session fence).
+ *
+ * The DSH `Agent` exposes `id` (the SessionId) — NOT `sessionId`. Reading the
+ * wrong field yields `undefined`, which registers the fit job UNOWNED: the fit
+ * still runs and shows up in job_list, but dsh-tool-jobs skips the completion
+ * notice (`event.job.owner === undefined`), so the agent is never woken. Both
+ * handles are forwarded here and the provider picks per registry generation.
+ */
+const ownerOf = (exec: { agent?: { id?: string; sessionId?: string } }): FitOwner | undefined => {
+  const agent = exec.agent
+  if (agent === undefined) return undefined
+  const id = typeof agent.id === 'string' ? agent.id : typeof agent.sessionId === 'string' ? agent.sessionId : undefined
+  if (id === undefined) return undefined
+  return { id, agent }
+}
 
 // ---------------------------------------------------------------------------
 // shared parameter fragments
@@ -118,11 +261,13 @@ const proposalParam = {
     name: { type: 'string' as const, required: true, description: '共振态名（分析命名，如 phi1680；须能匹配 PDG 表的 id/别名，除非 model=ONE）' },
     chain: { type: 'string' as const, required: true, description: '加入的 intermediate 名，如 R_KK' },
     jpGroup: { ...jpParam, required: true, description: '要加入（或新建）的 [J,P] 组' },
-    model: { type: 'string' as const, required: true, enum: ['BWR', 'BW', 'ONE', 'Flatte'] as const, description: '线形模型：BWR/BW（有传播子，需 PDG 依据）；ONE=相空间项（无需 PDG）' },
-    parameters: { type: 'array' as const, required: true, items: { type: 'number' as const }, description: '[质量, 宽度] GeV；ONE 恰好 1 个 [质量]（占位，不参与振幅）' },
+    model: { type: 'string' as const, required: true, description: '线形模型。已知：BWR/BW（有传播子，需 PDG 依据）、ONE（相空间项，无需 PDG）、Flatte（需 channels）、GS（Gounaris-Sakurai）、Interp（需 options.file/method）、Custom（需 options，DSL）。其它字符串不被插件拦（只 warning），由 ctpwa --validate-only 在跑前定论' },
+    parameters: { type: 'array' as const, required: true, items: { type: 'number' as const }, description: '[质量, 宽度] GeV；ONE 给 0 或 1 个 [质量] 占位（Bf 的 q0 用固定参考，占位值不进入振幅；可写 []）；Interp/Custom 可写 []' },
     free: { type: 'array' as const, items: { type: 'integer' as const }, description: 'float 的参数索引：0=质量, 1=宽度, -1=全部' },
     freeRange: { type: 'array' as const, items: { type: 'array' as const, items: { type: 'number' as const } }, description: '每个 free 参数一个 [lo, hi] GeV 区间，须包含初始值' },
     tex: { type: 'string' as const, description: 'LaTeX 标签' },
+    channels: { type: 'array' as const, items: { type: 'array' as const, items: { type: 'number' as const } }, description: 'Flatte 专用：道阈值/耦合元数据' },
+    options: { type: 'object' as const, additionalProperties: true, description: '特殊公式逃生舱：原样透传给 ctpwa 的模型载荷（Interp: {file, method}；Custom: {expr,...}）。插件只检查它是 mapping，语义由 ctpwa --validate-only 定论' },
     reference: { type: 'string' as const, description: '出处（可选）：参数遵循该实验/论文而非 PDG 平均值（如 DOI 或 "BESIII 2024"）。提供时跳过 PDG 平均一致性检查（质量/J^P 与 PDG 的偏离改为警告），物理可达性（阈值/J^P/C）仍强制。会写入 config.yml 的 reference 字段并随迭代继承' },
   },
   description: '共振态添加提议（强约束：物理校验与 YAML 渲染均由程序完成）',
@@ -191,6 +336,340 @@ function applyRoundEdits(
   return { errors, warnings, changed }
 }
 
+// ---------------------------------------------------------------------------
+// 跑前门禁（run-time gate）+ 拟合记录（B1 provenance）
+//
+// 取代旧的"写 config.yml 就拦"：guard 管的是谁写文件，既盖不住变体 yml /
+// 外部 Resonances include，又把所有系统检验堵死。现在无论配置是谁写的、
+// 叫什么名字，提交拟合前一律过一遍门禁（TS 结构+物理 → ctpwa 权威解析），
+// 通过则记下"这次到底用了什么"（config md5 / 态清单 / 初值来源 / runs）。
+// ---------------------------------------------------------------------------
+
+interface DeepValidateResult {
+  /** The ctpwa parser actually ran (python + ctpwa importable). */
+  ran: boolean
+  /** ctpwa says the config parses and DecayInfo.isValid() === true. */
+  ok: boolean
+  status?: string
+  message?: string
+  paramNames?: string[]
+  amplitudeNames?: string[]
+  nAmplitudes?: number
+  nFreeParams?: number
+  error?: string
+}
+
+/**
+ * Authoritative config check via the bundled aifit.py `--validate-only`
+ * (no GPU): resolves `Resonances: <file>` includes, validates model names and
+ * parameter arity with the engine's own parser. Writes its JSON to a temp file
+ * (never to the iteration's results/fit.json).
+ */
+function deepValidateConfig(configPath: string): DeepValidateResult {
+  const script = bundledAifitPath()
+  if (!existsSync(script)) return { ran: false, ok: false, error: `aifit.py 不存在: ${script}` }
+  const tmp = join(tmpdir(), `pwa-validate-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`)
+  try {
+    const py = defaultFitRunnerConfig().python
+    const r = spawnSync(py, [script, '--config', configPath, '--validate-only', '--json', tmp], {
+      cwd: dirname(configPath),
+      encoding: 'utf8',
+      timeout: 180_000,
+      env: { ...process.env },
+    })
+    if (r.error !== undefined || r.status === null) {
+      return { ran: false, ok: false, error: `无法启动 ctpwa 校验进程: ${r.error?.message ?? `信号 ${r.signal ?? '?'}`}` }
+    }
+    if (!existsSync(tmp)) {
+      const tail = (r.stderr ?? '').trim().split('\n').slice(-4).join(' | ')
+      return { ran: false, ok: false, error: `校验未产出 JSON（exit ${r.status}）${tail !== '' ? `: ${tail}` : ''}` }
+    }
+    const parsed = JSON.parse(readFileSync(tmp, 'utf8')) as {
+      status?: string
+      error?: { code?: string; message?: string } | null
+      config?: {
+        valid?: boolean
+        nAmplitudes?: number
+        nFreeParams?: number
+        amplitudeNames?: string[]
+        paramNames?: string[]
+        resonanceNames?: string[]
+      }
+    }
+    const cfg = parsed.config
+    const ok = parsed.status === 'ok' && cfg?.valid === true
+    return {
+      ran: true,
+      ok,
+      status: parsed.status,
+      ...(cfg?.paramNames !== undefined ? { paramNames: cfg.paramNames } : {}),
+      ...(cfg?.amplitudeNames !== undefined ? { amplitudeNames: cfg.amplitudeNames } : {}),
+      ...(cfg?.nAmplitudes !== undefined ? { nAmplitudes: cfg.nAmplitudes } : {}),
+      ...(cfg?.nFreeParams !== undefined ? { nFreeParams: cfg.nFreeParams } : {}),
+      ...(parsed.error?.message !== undefined ? { message: parsed.error.message } : {}),
+    }
+  } catch (e) {
+    return { ran: false, ok: false, error: (e as Error).message }
+  } finally {
+    try {
+      rmSync(tmp, { force: true })
+    } catch {
+      // best-effort temp cleanup
+    }
+  }
+}
+
+/**
+ * 本地 git 记录（B2）：把本次写入的文本产物提交进 `<分析目录>/.pwa-git`。
+ *
+ * 尽力而为：`PWA_GIT=off`、git 缺失、无改动都静默跳过；只有真正的失败降级成
+ * warning——记录不是门禁，绝不因为它阻塞拟合。
+ */
+function gitRecord(
+  anchorPath: string,
+  paths: string[],
+  message: string,
+): { commit?: string; changed?: string; warnings: { code: string; message: string }[] } {
+  if (gitDisabled()) return { warnings: [] }
+  const analysisDir = analysisRootOf(anchorPath)
+  const res = commitPaths(analysisDir, paths, message)
+  if (res.committed) {
+    const short = res.sha ?? '?'
+    return { commit: short, changed: `git ${short}: ${message}`, warnings: [] }
+  }
+  if (res.reason === 'nothing-to-commit' || res.reason === 'disabled' || res.reason === 'unavailable') {
+    return { warnings: [] }
+  }
+  return {
+    warnings: [{ code: 'git-record-failed', message: `本地 git 记录失败（${res.reason ?? 'unknown'}）：${res.error ?? ''}` }],
+  }
+}
+
+/** 一句话描述本轮编辑，用于 git 提交信息。 */
+function editSummary(proposal: ResonanceProposal | undefined, removals: ResonanceRemoval[]): string {
+  const parts: string[] = []
+  if (proposal !== undefined) {
+    parts.push(`add ${proposal.name} -> ${proposal.chain} [${proposal.jpGroup.j}${proposal.jpGroup.p > 0 ? '+' : '-'}]`)
+  }
+  for (const r of removals) parts.push(`remove ${r.name}`)
+  return parts.length > 0 ? parts.join('; ') : 'edit'
+}
+
+/** Gate issues as plain {code, message} tool-output items (severity implied). */
+function plainIssues(list: { code: string; message: string }[]): { code: string; message: string }[] {
+  return list.map((i) => ({ code: i.code, message: i.message }))
+}
+
+/**
+ * `PWA_GATE_REQUIRE_DEEP=1` turns "ctpwa 权威校验跑不起来" into a hard error
+ * (default: a loud warning). Rationale: a missing loader path / un-importable
+ * ctpwa on a login node is an ENVIRONMENT failure, not a config error — it must
+ * not lock the user out of submitting fits. Set the knob in a strict pipeline.
+ */
+function requireDeep(): boolean {
+  const v = process.env.PWA_GATE_REQUIRE_DEEP
+  return v === '1' || v?.toLowerCase() === 'true'
+}
+
+interface PreFitGate {
+  ok: boolean
+  configPath: string
+  gate: GateResult
+  deep: DeepValidateResult
+  errors: { code: string; message: string }[]
+  warnings: { code: string; message: string }[]
+  provenance?: Provenance
+  provenanceFile?: string
+  /** Rendered human/model-readable gate report. */
+  report: string
+}
+
+/**
+ * Gate one config that is about to be fitted and, when it passes, record the
+ * provenance (B1). Returns ok=false with actionable errors instead of
+ * submitting — the run never starts on a config that fails the gate.
+ */
+function gateBeforeFit(args: {
+  iterDir: string
+  tool: string
+  configPath?: string
+  fitScript?: string
+  scriptArgs?: string[]
+  init?: ProvenanceInit
+  /** Skip the ctpwa deep check (structure+physics only); default false. */
+  skipDeep?: boolean
+}): PreFitGate {
+  const configPath = args.configPath ?? join(args.iterDir, 'config.yml')
+  const errors: { code: string; message: string }[] = []
+  const warnings: { code: string; message: string }[] = []
+  const emptyGate: GateResult = {
+    ok: false,
+    errors: [],
+    warnings: [],
+    checks: [],
+    stats: { resonances: 0, groups: 0, definedUnreferenced: 0, freeResonanceParams: 0, dataSamples: 0 },
+    resonancesExternal: false,
+    configMd5: '',
+  }
+  if (!existsSync(configPath)) {
+    return {
+      ok: false,
+      configPath,
+      gate: emptyGate,
+      deep: { ran: false, ok: false },
+      errors: [{ code: 'config-missing', message: `config 不存在: ${configPath}` }],
+      warnings,
+      report: `跑前门禁: 拒绝 — config 不存在: ${configPath}`,
+    }
+  }
+  const text = readFileSync(configPath, 'utf8')
+  let cfg: ReturnType<typeof parseConfig>
+  try {
+    cfg = parseConfig(text)
+  } catch (e) {
+    return {
+      ok: false,
+      configPath,
+      gate: { ...emptyGate, configMd5: '' },
+      deep: { ran: false, ok: false },
+      errors: [{ code: 'yaml-parse', message: `YAML 解析失败: ${(e as Error).message}` }],
+      warnings,
+      report: `跑前门禁: 拒绝 — YAML 解析失败: ${(e as Error).message}`,
+    }
+  }
+  const gate = gateConfig(cfg, text, defaultDb, { maxL: cfg.constraints.maxL })
+  // Strip the internal `severity` tag: which array an issue came from already
+  // encodes it, and the tool output schemas declare strict {code, message}
+  // items. Leaking severity made every run_fit return fail output validation
+  // (the job had already been submitted — a silent "submitted, no jobId").
+  errors.push(...plainIssues(gate.errors))
+  warnings.push(...plainIssues(gate.warnings))
+
+  // ctpwa 权威层：外部 include / 模型名 / 参数结构只有引擎能定论。
+  const deep = args.skipDeep === true ? { ran: false, ok: false, error: '已跳过（skipDeep）' } : deepValidateConfig(configPath)
+  if (deep.ran && !deep.ok) {
+    errors.push({ code: 'ctpwa-config-invalid', message: `ctpwa 拒绝该配置: ${deep.message ?? deep.status ?? 'DecayInfo 校验失败'}` })
+  } else if (!deep.ran) {
+    if (gate.resonancesExternal && requireDeep()) {
+      errors.push({
+        code: 'deep-check-required',
+        message:
+          `config 的 Resonances 是外部 include（${gate.resonancesIncludePath ?? '?'}），TS 层看不到定义，` +
+          `且 PWA_GATE_REQUIRE_DEEP 已开启，但 ctpwa --validate-only 无法运行：${deep.error ?? '未知'}`,
+      })
+    } else if (gate.resonancesExternal) {
+      warnings.push({
+        code: 'deep-check-skipped-external',
+        message:
+          `config 的 Resonances 是外部 include（${gate.resonancesIncludePath ?? '?'}）：TS 层看不到定义，` +
+          `共振态级检查（PDG/J^PC/阈值）本次未做，且 ctpwa --validate-only 无法运行（${deep.error ?? '未知'}）——` +
+          `本次门禁只保证 YAML 结构与交叉引用。装好 ctpwa 环境（PWA_CTPWA_PYTHON / PWA_LD_LIBRARY_PATH）或设 ` +
+          `PWA_GATE_REQUIRE_DEEP=1 可把它变成硬错误`,
+      })
+    } else {
+      warnings.push({
+        code: 'deep-check-skipped',
+        message: `ctpwa 深度校验未运行（${deep.error ?? '未知'}）——TS 层结构/物理检查已通过，但引擎级问题（模型名、参数结构）未验证`,
+      })
+    }
+  }
+
+  // 同目录漂移：config 或拟合设置变了 → 旧结果不再对应（B1 的核心价值）。
+  const drift = checkProvenanceDrift(args.iterDir, text, args.scriptArgs, args.fitScript)
+  warnings.push(...drift.drift.map((d) => ({ code: d.code, message: d.message })))
+
+  // B2：git 绑定 + md5 ↔ commit 互验。dirty 说明 HEAD 不是这份配置；blob 比对
+  // 还能抓到 dirty 抓不到的"假可复现"——拟合用的 config 从未入库（手写变体）。
+  const analysisDir = analysisRootOf(configPath)
+  const git = gitProvenance(analysisDir)
+  let gitVerified: boolean | undefined
+  if (git !== undefined) {
+    const rel = relInside(analysisDir, configPath)
+    if (rel !== undefined) {
+      const blob = blobMd5(analysisDir, rel, git.commit ?? 'HEAD')
+      gitVerified = blob !== undefined && blob === gate.configMd5
+      if (!gitVerified) {
+        warnings.push({
+          code: 'git-config-not-committed',
+          message:
+            `${rel} 不在 git HEAD 里（或与 HEAD 内容不同）——本次结果的配置无法从 commit 复原。` +
+            `工具写入的配置会自动提交；手写/外部改动的文件请先提交（或确认被 .gitignore 忽略是有意的）`,
+        })
+      }
+    }
+  }
+
+  const ok = errors.length === 0
+  let provenance: Provenance | undefined
+  let provenanceFile: string | undefined
+  if (ok) {
+    try {
+      provenance = buildProvenance({
+        tool: args.tool,
+        iterDir: args.iterDir,
+        configPath,
+        configText: text,
+        config: cfg,
+        gate,
+        ...(args.fitScript !== undefined ? { fitScript: args.fitScript } : {}),
+        ...(args.scriptArgs !== undefined ? { scriptArgs: args.scriptArgs } : {}),
+        init: args.init ?? initFromScriptArgs(args.scriptArgs),
+        ...(git !== undefined ? { git } : {}),
+        ...(gitVerified !== undefined ? { gitVerified } : {}),
+      })
+      provenanceFile = writeProvenance(args.iterDir, provenance)
+    } catch (e) {
+      warnings.push({ code: 'provenance-write-failed', message: `拟合记录写入失败: ${(e as Error).message}` })
+    }
+  }
+
+  const report =
+    renderGate({ ...gate, ok, errors: errors.map((e) => ({ ...e, severity: 'error' as const })), warnings: warnings.map((w) => ({ ...w, severity: 'warning' as const })) }) +
+    (deep.paramNames !== undefined
+      ? `\n  ctpwa: ${deep.nAmplitudes ?? '?'} 个振幅, ${deep.nFreeParams ?? '?'} 个自由参数` +
+        `\n  参数顺序(前 16): ${deep.paramNames.slice(0, 16).join(', ')}${deep.paramNames.length > 16 ? ' …' : ''}`
+      : '')
+  return {
+    ok,
+    configPath,
+    gate,
+    deep,
+    errors,
+    warnings,
+    ...(provenance !== undefined ? { provenance } : {}),
+    ...(provenanceFile !== undefined ? { provenanceFile } : {}),
+    report,
+  }
+}
+
+/** Gate report fields shared by every submitting tool's output schema/render. */
+const gateOutputFields = {
+  gate: {
+    type: 'object' as const,
+    additionalProperties: false,
+    properties: {
+      ok: { type: 'boolean' as const, required: true },
+      report: { type: 'string' as const, required: true },
+      errors: { type: 'array' as const, items: { type: 'object' as const, additionalProperties: false, properties: { code: { type: 'string' as const, required: true }, message: { type: 'string' as const, required: true } } } },
+      warnings: { type: 'array' as const, items: { type: 'object' as const, additionalProperties: false, properties: { code: { type: 'string' as const, required: true }, message: { type: 'string' as const, required: true } } } },
+      configMd5: { type: 'string' as const },
+      provenancePath: { type: 'string' as const },
+      ctpwa: {
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: {
+          ran: { type: 'boolean' as const, required: true },
+          ok: { type: 'boolean' as const, required: true },
+          nAmplitudes: { type: 'integer' as const },
+          nFreeParams: { type: 'integer' as const },
+          paramNames: { type: 'array' as const, items: { type: 'string' as const } },
+          message: { type: 'string' as const },
+        },
+      },
+    },
+  },
+} as const
+
 export function apply(ctx: Context) {
   // 自注册 skill（npm bundle 安装后零手动配置）：把包内 SKILL.md 作为
   // runtime skill 注册进当前 context 的 skills 层（project > runtime > user，
@@ -249,7 +728,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_lookup',
-    description: '查询 PDG 共振态表（data/pdg.json，scikit-hep particle 权威数据）。按名称/别名、J^P、质量范围、衰变末态过滤，按质量升序返回。用于：确认共振态存在、查 J^P/质量/宽度、找 pull 偏差区的候选。',
+    description: '查 PDG-2026 共振态表：名称/J^P/C/质量/宽度/阈值下候选/单实验测量历史。用：加态前确认它存在与量子数；扫某质量段的候选。不要用：校验一份 config 是否合法（用 validate_config/jpc_check）；查你 config 里已有的态（用 config_view）。',
     parameters: {
       name: { type: 'string', description: '粒子名或其别名，如 "phi1680" 或 "phi(1680)"；省略则按其他条件过滤' },
       jp: jpParam,
@@ -351,7 +830,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_decay_check',
-    description: '物理可达性检查：枚举 A -> R + B 允许的中间态 J^P（角动量+宇称守恒，maxL 截断），并列出质量阈值以下、每个 J^P 的 PDG 候选。加共振态前先查这个，确认 J^P 物理允许。',
+    description: '运动学可达性：A→R+B 允许的中间态 J^P（角动量+宇称守恒，maxL 截断）与阈值下候选。用：起草新链、确认某 J^P 能否产生。不要用：查已有 config 的两顶点 J^PC/C（用 jpc_check）。',
     parameters: {
       mother: {
         type: 'object',
@@ -455,8 +934,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_jpc_check',
-    description:
-      '两顶点 J^PC 检查（只读）：对 config 中每个中间态输出——① 衰变顶点 J^PC 全集（R→d1+d2：S 来自子自旋、J=L⊗S、P=P1·P2·(−1)^L；C 仅对共轭对（K+K−、K0K~0…）与 Constraints.identical 组定义：C=(−1)^(L+S)，全同组施加 Bose/Fermi 选择定则；sl 白名单与 maxL 生效，波表与 ctpwa Amp2BD::ComSL 逐点一致）② 产生顶点允许 J^P（A→R+B 角动量+宇称）与 C 守恒要求（母子均自共轭时 C(R)=C(A)·C(B)）③ 两顶点交集（唯一可写入的 J^PC）④ 每个允许 J^PC 的 PDG 候选（按 J^PC 过滤）。加共振态前先查这个，能直接看到 f2(1270)→R_KK 这类 C 违例为什么被拦。',
+    description: '两顶点 J^PC 检查（只读）：逐中间态给出衰变顶点 J^PC 集与产生顶点 J^P/C 守恒要求的交集，附按 J^PC 过滤的 PDG 候选与 on-shell 余量。用：写 config 前确认某 [J,P] 组可达、看哪些波被 C 拦。不要用：整份 config 校验（用 validate_config）；查单态是否存在（用 lookup）。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       target: { type: 'string', description: '链名（如 decay1）或中间态名（如 R_KK）；省略 = 全部链的全部中间态' },
@@ -489,6 +967,15 @@ export function apply(ctx: Context) {
                     cRequired: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
                   },
                 },
+                cStatus: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    status: { type: 'string', description: 'enforced | not-applicable | unknown' },
+                    required: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+                    reason: { type: 'string' },
+                  },
+                },
                 decaySteps: {
                   type: 'array',
                   items: {
@@ -496,7 +983,8 @@ export function apply(ctx: Context) {
                     additionalProperties: false,
                     properties: {
                       daughters: { type: 'array', items: { type: 'string' } },
-                      identical: { type: 'boolean' },
+                      identical: { type: 'boolean', description: '引擎事实：已声明 Constraints.identical（引擎会对称化）' },
+                      identicalDerived: { type: 'boolean', description: '物理事实：两个 daughter 同 PDGID（同种粒子）。true 而 identical=false ⇒ 漏声明，引擎不会对称化' },
                       cDefined: { type: 'boolean' },
                       sl: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
                       jpc: { type: 'array', items: { type: 'string' } },
@@ -522,6 +1010,8 @@ export function apply(ctx: Context) {
                             mass: { type: 'number', required: true },
                             width: { oneOf: [{ type: 'number' }, { type: 'null' }] },
                             cMatch: { type: 'string' },
+                            thresholdMargin: { oneOf: [{ type: 'number' }, { type: 'null' }], description: 'm_threshold - m_PDG（on-shell 余量）' },
+                            decaysTo: { type: 'boolean', description: 'PDG 列出该态衰变到本中间态的末态对' },
                           },
                         },
                       },
@@ -529,6 +1019,7 @@ export function apply(ctx: Context) {
                   },
                 },
                 cBlocked: { type: 'array', items: { type: 'string' } },
+                filteredAboveThreshold: { type: 'integer', description: '因超过 on-shell 阈值而未列出的候选数' },
               },
             },
           },
@@ -550,32 +1041,68 @@ export function apply(ctx: Context) {
           name: string
           chain: string
           production?: { mother?: string; daughter?: string; threshold?: number; allowedJP?: string[]; cRequired?: number | null }
-          decaySteps?: { daughters: string[]; identical?: boolean; cDefined?: boolean; sl?: [number, number][]; jpc?: string[] }[]
-          allowed?: { jpc: string; sl?: [number, number][]; candidates?: { id: string; mass: number; cMatch?: string }[] }[]
+          cStatus?: { status?: string; required?: number | null; reason?: string }
+          decaySteps?: { daughters: string[]; identical?: boolean; identicalDerived?: boolean; cDefined?: boolean; sl?: [number, number][]; jpc?: string[] }[]
+          allowed?: {
+            jpc: string
+            sl?: [number, number][]
+            candidates?: { id: string; mass: number; cMatch?: string; thresholdMargin?: number | null; decaysTo?: boolean }[]
+          }[]
           cBlocked?: string[]
+          filteredAboveThreshold?: number
         }[]
         spilled?: { locator: string; bytes: number; retrievalHint: string }
         error?: string
       }) => {
         if (value.error !== undefined) return text(`JPC 检查失败: ${value.error}`)
-        const lines = [`JPC 检查（maxL=${value.maxL}）`]
+        const lines = [
+          `JPC 检查（maxL=${value.maxL}）候选标记: * = PDG 列出衰变到该末态对, ~ = C 未定义(数据缺口); (…) = on-shell 余量 GeV`,
+        ]
         for (const it of value.intermediates) {
           lines.push(`== ${it.name} (chain ${it.chain}) ==`)
           const prod = it.production
           if (prod) {
             lines.push(
               `  产生: ${prod.mother ?? '?'} -> R + ${prod.daughter ?? '?'}, 阈值 ${prod.threshold?.toFixed(4) ?? '?'}, ` +
-                `允许 J^P: ${prod.allowedJP?.join(' ') ?? '?'}${prod.cRequired !== undefined && prod.cRequired !== null ? `, C(R)=${prod.cRequired > 0 ? '+' : '-'} 必需` : ''}`,
+                `允许 J^P: ${prod.allowedJP?.join(' ') ?? '?'}`,
             )
           }
+          const cs = it.cStatus
+          if (cs) {
+            const tag =
+              cs.status === 'enforced'
+                ? `C 约束：enforced${cs.required !== undefined && cs.required !== null ? `，C(R)=${cs.required > 0 ? '+' : '-'} 必需` : ''}`
+                : cs.status === 'not-applicable'
+                  ? 'C 约束：不适用（某端无 C）'
+                  : 'C 约束：未知（缺运动学）'
+            lines.push(`  ${tag}${cs.reason ? ` — ${cs.reason}` : ''}`)
+          }
           for (const st of it.decaySteps ?? []) {
+            const flag = st.identical
+              ? ' (identical, 已声明)'
+              : st.identicalDerived
+                ? ' (⚠ 同 PDGID 未声明 identical — 引擎不会对称化)'
+                : ''
             lines.push(
-              `  衰变: ${st.daughters.join(' + ')}${st.identical ? ' (identical)' : ''}${st.sl ? ` sl=${JSON.stringify(st.sl)}` : ''} -> J^PC: ${st.jpc?.join(' ') ?? '?'}`,
+              `  衰变: ${st.daughters.join(' + ')}${flag}${st.sl ? ` sl=${JSON.stringify(st.sl)}` : ''} -> J^PC: ${st.jpc?.join(' ') ?? '?'}`,
             )
           }
           for (const a of it.allowed ?? []) {
-            const cands = (a.candidates ?? []).slice(0, 10).map((c) => `${c.id}${c.cMatch === 'unknown' ? '~' : ''}`).join(', ')
+            const cands = (a.candidates ?? [])
+              .slice(0, 10)
+              .map((c) => {
+                const marks = `${c.decaysTo === true ? '*' : ''}${c.cMatch === 'unknown' ? '~' : ''}`
+                const margin =
+                  typeof c.thresholdMargin === 'number'
+                    ? `(${c.thresholdMargin >= 0 ? '+' : ''}${c.thresholdMargin.toFixed(3)})`
+                    : ''
+                return `${c.id}${marks}${margin}`
+              })
+              .join(', ')
             lines.push(`  ✓ ${a.jpc} (sl ${(a.sl ?? []).map((s) => `${s[0]}/${s[1]}`).join(' ')}) 候选: ${cands}${(a.candidates ?? []).length > 10 ? ' …' : ''}`)
+          }
+          if (typeof it.filteredAboveThreshold === 'number' && it.filteredAboveThreshold > 0) {
+            lines.push(`  （另有 ${it.filteredAboveThreshold} 个候选因超过 on-shell 阈值未列出）`)
           }
           for (const b of it.cBlocked ?? []) lines.push(`  ✗ ${b} (C 守恒拦截)`)
         }
@@ -615,34 +1142,64 @@ export function apply(ctx: Context) {
           allowedJP?: string[]
           cRequired?: 1 | -1 | null
         }
+        cStatus?: { status: string; required: 1 | -1 | null; reason: string }
         decaySteps?: {
           daughters: string[]
           identical?: boolean
+          identicalDerived?: boolean
           cDefined?: boolean
           sl?: [number, number][]
           jpc?: string[]
         }[]
-        allowed?: { jpc: string; c: 1 | -1 | null; sl: [number, number][]; candidates: { id: string; mass: number; width: number | null; cMatch: string }[] }[]
+        allowed?: {
+          jpc: string
+          c: 1 | -1 | null
+          sl: [number, number][]
+          candidates: { id: string; mass: number; width: number | null; cMatch: string; thresholdMargin: number | null; decaysTo: boolean }[]
+        }[]
         cBlocked?: string[]
+        filteredAboveThreshold?: number
       }[] = []
       for (const chainName of chains) {
         const chain = cfg.decayChains[chainName]
         for (const intName of Object.keys(chain.intermediates)) {
           const ana = analyzeIntermediateJPC(cfg, defaultDb, intName, { maxL })
           if (ana === undefined) continue
-          const allowed: { jpc: string; c: 1 | -1 | null; sl: [number, number][]; candidates: { id: string; mass: number; width: number | null; cMatch: string }[] }[] = []
+          const kin = cfg.kinematics[intName]
+          // Daughters of every decay step of this intermediate, used to flag
+          // which candidates the PDG actually lists decaying to this system.
+          const decayToSets = ana.decaySteps.map((s) => s.daughters).filter((d) => d.length >= 2)
+          let filteredAboveThreshold = 0
+          const allowed: {
+            jpc: string
+            c: 1 | -1 | null
+            sl: [number, number][]
+            candidates: { id: string; mass: number; width: number | null; cMatch: string; thresholdMargin: number | null; decaysTo: boolean }[]
+          }[] = []
           for (const w of ana.allowed) {
             const candidates = lookupResonance(defaultDb, { jp: { j: w.j, p: w.p } })
               .filter((r) => {
                 if (w.c === null) return true
                 return r.c === w.c || r.c === undefined // undefined C = data gap, flagged
               })
+              .filter((r) => {
+                // On-shell threshold: a state above m_mother - m_spectator
+                // cannot be produced in this channel (validate_add errors on it),
+                // so it must not be offered as a candidate here either.
+                if (kin === undefined || r.mass <= kin.threshold) return true
+                filteredAboveThreshold += 1
+                return false
+              })
               .map((r) => ({
                 id: r.id,
                 mass: r.mass,
                 width: r.width ?? null,
                 cMatch: w.c === null ? 'n/a' : r.c === w.c ? 'yes' : 'unknown',
+                thresholdMargin: kin !== undefined ? kin.threshold - r.mass : null,
+                decaysTo: decayToSets.some((d) => hasDecayTo(r, d)),
               }))
+              // PDG-listed decays first, then by mass ascending.
+              .sort((a, b) => (a.decaysTo === b.decaysTo ? a.mass - b.mass : a.decaysTo ? -1 : 1))
             allowed.push({ jpc: w.jpc, c: w.c, sl: w.sl, candidates })
           }
           // Optional fields are omitted rather than set to undefined: the tool
@@ -668,10 +1225,12 @@ export function apply(ctx: Context) {
             name: intName,
             chain: ana.chain,
             ...(production !== undefined ? { production } : {}),
+            cStatus: { status: ana.cStatus.status, required: ana.cStatus.required, reason: ana.cStatus.reason },
             decaySteps: ana.decaySteps.map((s) => {
-              const step: { daughters: string[]; identical: boolean; cDefined: boolean; sl?: [number, number][]; jpc: string[] } = {
+              const step: { daughters: string[]; identical: boolean; identicalDerived: boolean; cDefined: boolean; sl?: [number, number][]; jpc: string[] } = {
                 daughters: s.daughters,
                 identical: s.identical,
+                identicalDerived: s.identicalDerived,
                 cDefined: s.cDefined,
                 jpc: s.jpc,
               }
@@ -680,6 +1239,7 @@ export function apply(ctx: Context) {
             }),
             allowed,
             cBlocked: ana.cBlocked,
+            ...(filteredAboveThreshold > 0 ? { filteredAboveThreshold } : {}),
           })
         }
       }
@@ -693,12 +1253,231 @@ export function apply(ctx: Context) {
   }))
 
   // ---------------------------------------------------------------------
-  // auto_pwa_config_view（只读 JSON 视图）
+  // auto_pwa_init_config（从 0 创建 config：结构化提案 → 渲染 → 门禁 → 人工复核）
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
+    name: 'auto_pwa_init_config',
+    description: '从 0 起草 init_config.yml（结构化 spec→渲染→物理门禁→原子写；preview 只构建）。用：全新分析目录的第一份配置。不要用：改已有 config（用 edit_config/remove_resonance）；校验已有配置（用 validate_config）。',
+    parameters: {
+      dir: { type: 'string', required: true, description: '分析目录（绝对路径）；写入 <dir>/<fileName>' },
+      fileName: { type: 'string', description: '文件名，默认 init_config.yml' },
+      preview: { type: 'boolean', description: 'true = 只构建/校验并返回文本，不写文件（先看再写）' },
+      spec: {
+        type: 'object',
+        required: true,
+        additionalProperties: false,
+        description: 'InitialConfigSpec：particles/chains/resonances/constraints/data/plot/precision',
+        properties: {
+          particles: {
+            type: 'array',
+            required: true,
+            description: 'Particles 段。只写 pdgid（J/P/mass 自动取自 PDG）；或显式给 j/p/mass',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true, description: '分析名（config 键，如 Kp/pi01）' },
+                pdgid: { type: 'integer', description: '有符号 MC 编号（π⁰=111、K⁺=321、K⁻=−321、p=2212、Λ=3122）' },
+                j: { type: 'number' }, p: { type: 'integer' }, mass: { type: 'number' },
+                c: { type: 'integer' }, tex: { type: 'string' },
+              },
+            },
+          },
+          chains: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true, description: '链名，如 decay1' },
+                steps: {
+                  type: 'array',
+                  required: true,
+                  description: '所有两体步：产生步（mother 是粒子）+ 级联步（mother 是中间态）',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      mother: { type: 'string', required: true },
+                      daughters: { type: 'array', required: true, items: { type: 'string' }, description: '恰好两个' },
+                      sl: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: '(2S+1, L) 白名单' },
+                      pBreak: { type: 'boolean' }, hasBf: { type: 'boolean' }, bfD: { type: 'number' },
+                    },
+                  },
+                },
+                intermediates: {
+                  type: 'array',
+                  required: true,
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      name: { type: 'string', required: true, description: '如 R_KK' },
+                      groups: {
+                        type: 'array',
+                        required: true,
+                        description: '[J,P] 组，顺序即振幅块索引（trans 引用它）',
+                        items: {
+                          type: 'object',
+                          additionalProperties: false,
+                          properties: { j: { type: 'number' }, p: { type: 'integer' } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          resonances: {
+            type: 'array',
+            description: '要挂到中间态 [J,P] 组的共振态（每个都过物理门禁）',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                chain: { type: 'string', required: true, description: '中间态名，如 R_KK' },
+                jpGroup: { type: 'object', required: true, additionalProperties: false, properties: { j: { type: 'number' }, p: { type: 'integer' } } },
+                model: { type: 'string', required: true, enum: ['BWR', 'BW', 'ONE', 'Flatte'] },
+                parameters: { type: 'array', required: true, items: { type: 'number' } },
+                free: { type: 'array', items: { type: 'integer' } },
+                freeRange: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+                tex: { type: 'string' },
+                channels: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+                reference: { type: 'string' },
+              },
+            },
+          },
+          constraints: { type: 'object', additionalProperties: true, description: 'Constraints：maxL / identical / trans / bf_d / has_bf / fix_var / free_var / var_range / var_equal / gauss_constr' },
+          data: {
+            type: 'object',
+            required: true,
+            additionalProperties: false,
+            properties: {
+              order: { type: 'array', required: true, items: { type: 'string' }, description: '末态粒子顺序（branch 顺序）' },
+              data: { type: 'array', required: true, description: "如 ['dat','./data.dat'] 或 ['ROOT',path,'TTree',branch...]" },
+              phsp: { type: 'array' },
+              phspTruth: { type: 'array' },
+              bkg: { type: 'array' },
+              bkgWeights: { type: 'array' },
+            },
+          },
+          plot: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string' },
+                expression: { type: 'string' },
+                bins: { type: 'array', items: { type: 'integer' } },
+                ranges: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+                display: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+          precision: { type: 'string' },
+        },
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          written: { type: 'boolean', required: true },
+          initConfigPath: { type: 'string' },
+          changed: { type: 'array', required: true, items: { type: 'string' } },
+          errors: {
+            type: 'array', required: true,
+            items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } },
+          },
+          warnings: {
+            type: 'array', required: true,
+            items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } },
+          },
+          reviewSummary: { type: 'string', required: true },
+          configText: { type: 'string' },
+          requiresHumanReview: { type: 'boolean', required: true },
+          spilled: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { locator: { type: 'string' }, bytes: { type: 'integer' }, retrievalHint: { type: 'string' } },
+          },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        written: boolean
+        initConfigPath?: string
+        errors: { code: string; message: string }[]
+        warnings: { code: string; message: string }[]
+        reviewSummary: string
+        requiresHumanReview: boolean
+        spilled?: { locator: string; retrievalHint: string }
+      }) => {
+        const lines = [value.reviewSummary]
+        if (value.ok) {
+          lines.push(
+            '',
+            value.written
+              ? `已写入 ${value.initConfigPath}（requiresHumanReview=true）——请把上面的摘要给用户确认；通过后 auto_pwa_iter_start(baseConfigPath=${value.initConfigPath})`
+              : '（preview 模式，未写文件）',
+          )
+        } else {
+          lines.push('', '存在 errors：已拒绝写文件，请修正 spec 后重试。')
+        }
+        if (value.spilled) lines.push(`（完整输出已 spill: ${value.spilled.locator} — ${value.spilled.retrievalHint}）`)
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { dir: string; fileName?: string; preview?: boolean; spec: InitialConfigSpec }, exec) {
+      const spec = args.spec
+      if (
+        spec === null ||
+        typeof spec !== 'object' ||
+        !Array.isArray(spec.particles) ||
+        !Array.isArray(spec.chains) ||
+        spec.data === undefined
+      ) {
+        return {
+          ok: false,
+          written: false,
+          changed: [],
+          errors: [{ code: 'invalid-spec', message: 'spec 必须含 particles[]、chains[]、data{}' }],
+          warnings: [],
+          reviewSummary: 'spec 结构不合法：至少需要 particles[]、chains[]、data{}。',
+          requiresHumanReview: true,
+        }
+      }
+      const r = buildInitialConfig(spec, defaultDb, { baseDir: args.dir })
+      const reviewSummary = renderInitReview(spec, r)
+      const initConfigPath = join(args.dir, args.fileName ?? 'init_config.yml')
+      if (r.errors.length > 0 || r.text === undefined) {
+        return { ok: false, written: false, initConfigPath, changed: r.changed, errors: r.errors, warnings: r.warnings, reviewSummary, requiresHumanReview: true }
+      }
+      if (args.preview === true) {
+        return { ok: true, written: false, initConfigPath, changed: r.changed, errors: [], warnings: r.warnings, reviewSummary, configText: r.text, requiresHumanReview: true }
+      }
+      // Atomic write with backup (mirrors auto_pwa_edit_config).
+      mkdirSync(args.dir, { recursive: true })
+      if (existsSync(initConfigPath)) copyFileSync(initConfigPath, `${initConfigPath}.bak`)
+      const tmp = join(args.dir, `.${args.fileName ?? 'init_config.yml'}.tmp-${Date.now().toString(36)}`)
+      writeFileSync(tmp, r.text)
+      renameSync(tmp, initConfigPath)
+      const out = { ok: true, written: true, initConfigPath, changed: r.changed, errors: [], warnings: r.warnings, reviewSummary, requiresHumanReview: true }
+      const ref = await maybeSpill(ctx, exec, 'auto_pwa_init_config', JSON.stringify(out), null)
+      return ref === null ? out : { ...out, spilled: ref }
+    },
+  }))
+
+
+  ctx.tools.register(defineTool({
     name: 'auto_pwa_config_view',
-    description:
-      'config.yml 的只读 JSON 视图（AI 阅读用）：Particles / DecayChains（intermediates 组 + 衰变步含 sl/p_break opts）/ Resonances / 运动学阈值 / Constraints 解析（identical/trans/maxL/bf_d/has_bf/fix_var/free_var/var_range/var_equal/gauss_constr）/ validateConfig 校验结果 / 每个共振态的 PDG 命中与阈值余量。config.yml 是唯一源头（人看、引擎读），此视图是机器/AI 读法——要修改必须走 auto_pwa_edit_config，禁止用视图直接改文件。',
+    description: 'config.yml 只读视图：粒子/链与衰变步/共振态（含 options）/约束解析/校验结果/PDG 与阈值余量。用：先看清"这份 config 到底有什么"。不要用：改配置（用 edit_config）；判断能否跑（用 validate_config）；查历史（用 git_log）。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       filter: {
@@ -753,7 +1532,17 @@ export function apply(ctx: Context) {
         },
       },
       render: (_args, value: {
-        particles?: { name: string; jp: string; mass: number }[]
+        particles?: {
+          name: string
+          jp: string
+          mass: number
+          pdgid?: number | null
+          pdgName?: string
+          selfConjugate?: boolean
+          pdgC?: number | null
+          antiparticle?: string | null
+          pdgUnknown?: boolean
+        }[]
         chains?: { name: string; intermediates: string; steps: number }[]
         resonances?: { name: string; jp: string; jpSource?: string; model: string; pdg?: string | null; jpcMatch?: boolean | null; thresholdMargin?: { chain: string; margin: number } | null }[]
         kinematics?: { intermediate: string; threshold: number }[]
@@ -761,6 +1550,18 @@ export function apply(ctx: Context) {
         validation?: { ok: boolean; errors: { code: string; message: string }[]; warnings: { code: string; message: string }[] }
       }) => {
         const lines = [`config 视图: ${value.particles?.length ?? 0} particles, ${value.chains?.length ?? 0} chains, ${value.resonances?.length ?? 0} resonances`]
+        for (const p of value.particles ?? []) {
+          if (p.pdgid === undefined || p.pdgid === null) continue
+          const bits: string[] = [`  ${p.name} [${p.jp}] pdgid=${p.pdgid}`]
+          if (p.pdgName !== undefined) bits.push(`= ${p.pdgName}`)
+          if (p.pdgUnknown === true) bits.push('⚠ PDG 表中无此 id')
+          else {
+            if (p.selfConjugate === true) bits.push('自共轭')
+            if (typeof p.pdgC === 'number') bits.push(`C=${p.pdgC > 0 ? '+' : '-'}`)
+            if (p.antiparticle !== undefined && p.antiparticle !== null) bits.push(`↔ ${p.antiparticle}`)
+          }
+          lines.push(bits.join(' '))
+        }
         const con = value.constraints
         if (con && Object.keys(con).length > 0) {
           lines.push(`Constraints: maxL=${con.maxL ?? '-'} identical=${JSON.stringify(con.identical ?? [])} trans=${con.trans ?? 0} 条`)
@@ -788,12 +1589,34 @@ export function apply(ctx: Context) {
       const filter = args.filter ?? 'all'
       const out: Record<string, unknown> = { configPath: args.configPath }
       if (filter === 'all' || filter === 'particles') {
-        out.particles = Object.entries(cfg.particles).map(([name, p]) => ({
-          name,
-          jp: `${p.j}${p.p > 0 ? '+' : '-'}`,
-          mass: p.mass,
-          c: p.c ?? null,
-        }))
+        out.particles = Object.entries(cfg.particles).map(([name, p]) => {
+          const item: Record<string, unknown> = {
+            name,
+            jp: `${p.j}${p.p > 0 ? '+' : '-'}`,
+            mass: p.mass,
+            c: p.c ?? null,
+            pdgid: p.pdgid ?? null,
+          }
+          if (p.pdgid !== undefined) {
+            const info = getParticleInfo(defaultDb, p.pdgid)
+            if (info === undefined) {
+              item.pdgUnknown = true
+            } else {
+              item.pdgName = info.name
+              item.selfConjugate = info.selfConjugate
+              item.pdgC = cValueOf(info) ?? null
+              item.pdgG = info.g ?? null
+              item.pdgJ = info.j ?? null
+              item.pdgP = info.p ?? null
+              const anti = info.selfConjugate ? p.pdgid : info.conjugate
+              if (anti !== undefined) {
+                item.antiparticlePdgid = anti
+                item.antiparticle = getParticleInfo(defaultDb, anti)?.name ?? null
+              }
+            }
+          }
+          return item
+        })
       }
       if (filter === 'all' || filter === 'chains') {
         out.chains = Object.entries(cfg.decayChains).map(([name, chain]) => ({
@@ -828,7 +1651,8 @@ export function apply(ctx: Context) {
                 if (g.names.includes(name)) groupJps.add(`${g.jp.j}${g.jp.p > 0 ? '+' : '-'}`)
               }
               const kin = cfg.kinematics[intName]
-              if (kin) {
+              // ONE 可以完全不给参数（mass 只是占位）→ 没有质量就算不出阈值余量
+              if (kin && Number.isFinite(spec.parameters[0])) {
                 thresholdMargin = { chain: cname, margin: kin.threshold - spec.parameters[0] }
               }
             }
@@ -868,7 +1692,7 @@ export function apply(ctx: Context) {
         out.constraints = cfg.constraints
       }
       if (filter === 'all' || filter === 'validation') {
-        const v = validateConfig(cfg)
+        const v = validateConfig(cfg, defaultDb)
         out.validation = { ok: v.errors.length === 0, errors: v.errors, warnings: v.warnings }
       }
       const ref = await maybeSpill(ctx, exec, 'auto_pwa_config_view', JSON.stringify(out), null)
@@ -877,11 +1701,136 @@ export function apply(ctx: Context) {
   }))
 
   // ---------------------------------------------------------------------
+  // auto_pwa_validate_config（秒级校验：写-验回路，不碰 GPU）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_validate_config',
+    description: '跑前门禁预览（秒级、无 GPU、不写文件）：结构/交叉引用/两顶点 J^PC+C/阈值/PDG/预算逐项回报；deep=true 再跑 ctpwa --validate-only 并打印权威参数清单与振幅数。用：手改或工具改完立刻自查。不要用：加单个态前的提案预检（用 validate_add）；看配置内容（用 config_view）。',
+    parameters: {
+      configPath: { type: 'string', description: '要校验的配置文件绝对路径（与 yamlText 二选一；deep 需要它）' },
+      yamlText: { type: 'string', description: '直接给 YAML 文本（还没落盘时用；此时 deep 自动跳过）' },
+      deep: { type: 'boolean', description: '是否跑 ctpwa --validate-only 权威校验（默认：给了 configPath 就跑）' },
+      maxL: { type: 'integer', description: '两顶点 J^PC 检查的轨道角动量上限（默认取 Constraints.maxL，否则 4）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          gateReport: { type: 'string', required: true },
+          errors: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } } },
+          warnings: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } } },
+          checks: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', required: true }, ran: { type: 'boolean', required: true }, errors: { type: 'integer', required: true }, warnings: { type: 'integer', required: true }, note: { type: 'string' } } } },
+          stats: { type: 'object', additionalProperties: true },
+          configMd5: { type: 'string' },
+          ctpwa: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              ran: { type: 'boolean', required: true },
+              ok: { type: 'boolean', required: true },
+              status: { type: 'string' },
+              message: { type: 'string' },
+              nAmplitudes: { type: 'integer' },
+              nFreeParams: { type: 'integer' },
+              paramNames: { type: 'array', items: { type: 'string' } },
+              amplitudeNames: { type: 'array', items: { type: 'string' } },
+              error: { type: 'string' },
+            },
+          },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        gateReport: string
+        ctpwa?: { ran: boolean; ok: boolean; status?: string; message?: string; nAmplitudes?: number; nFreeParams?: number; paramNames?: string[]; amplitudeNames?: string[]; error?: string }
+        error?: string
+      }) => {
+        const lines = [value.gateReport]
+        if (value.error !== undefined) lines.push(`  [error] ${value.error}`)
+        const c = value.ctpwa
+        if (c !== undefined) {
+          lines.push(
+            c.ran
+              ? `  ctpwa 权威校验: ${c.ok ? '✓ 通过' : `✗ 拒绝 (${c.status ?? '?'})`}${c.message !== undefined ? ` — ${c.message}` : ''}`
+              : `  ctpwa 权威校验: 未运行（${c.error ?? '?'}）`,
+          )
+          if (c.ran && c.ok) {
+            lines.push(`  振幅 ${c.nAmplitudes ?? '?'} 个，自由参数 ${c.nFreeParams ?? '?'} 个`)
+            if (c.paramNames !== undefined) {
+              lines.push('  参数顺序: ' + c.paramNames.join(', '))
+            }
+            if (c.amplitudeNames !== undefined && c.amplitudeNames.length > 0) {
+              lines.push(`  分波(${c.amplitudeNames.length}): ${c.amplitudeNames.slice(0, 20).join(', ')}${c.amplitudeNames.length > 20 ? ' …' : ''}`)
+            }
+          }
+        }
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: { configPath?: string; yamlText?: string; deep?: boolean; maxL?: number }) {
+      if (args.configPath === undefined && args.yamlText === undefined) {
+        return { ok: false, gateReport: '配置校验: 拒绝 — 需要 configPath 或 yamlText 之一', errors: [], warnings: [] }
+      }
+      const configPath = args.configPath ?? '<yamlText>'
+      const text = args.yamlText ?? readFileSync(args.configPath!, 'utf8')
+      let cfg: ReturnType<typeof parseConfig>
+      try {
+        cfg = parseConfig(text)
+      } catch (e) {
+        return {
+          ok: false,
+          gateReport: `配置校验（${configPath}）: 拒绝 — YAML 解析失败: ${(e as Error).message}`,
+          errors: [{ code: 'yaml-parse', message: (e as Error).message }],
+          warnings: [],
+        }
+      }
+      const gate = gateConfig(cfg, text, defaultDb, {
+        ...(args.maxL !== undefined ? { maxL: args.maxL } : {}),
+      })
+      const doDeep = args.deep ?? args.configPath !== undefined
+      const deep: DeepValidateResult = doDeep && args.configPath !== undefined
+        ? deepValidateConfig(args.configPath)
+        : { ran: false, ok: false, error: args.configPath === undefined ? 'yamlText 模式无文件路径：deep 需要真实 configPath（include/相对路径要靠文件位置）' : '已关闭（deep=false）' }
+      const errors = [...gate.errors]
+      const warnings = [...gate.warnings]
+      if (deep.ran && !deep.ok) {
+        errors.push({ code: 'ctpwa-config-invalid', message: `ctpwa 拒绝该配置: ${deep.message ?? deep.status ?? 'DecayInfo 校验失败'}`, severity: 'error' })
+      } else if (!deep.ran && (args.deep === true || gate.resonancesExternal)) {
+        warnings.push({ code: 'deep-check-skipped', message: `ctpwa 深度校验未运行：${deep.error ?? '?'}`, severity: 'warning' })
+      }
+      const ok = errors.length === 0
+      return {
+        ok,
+        gateReport: renderGate({ ...gate, ok, errors, warnings }),
+        errors: errors.map(({ code, message }) => ({ code, message })),
+        warnings: warnings.map(({ code, message }) => ({ code, message })),
+        checks: gate.checks,
+        stats: gate.stats,
+        configMd5: gate.configMd5,
+        ctpwa: {
+          ran: deep.ran,
+          ok: deep.ok,
+          ...(deep.status !== undefined ? { status: deep.status } : {}),
+          ...(deep.message !== undefined ? { message: deep.message } : {}),
+          ...(deep.nAmplitudes !== undefined ? { nAmplitudes: deep.nAmplitudes } : {}),
+          ...(deep.nFreeParams !== undefined ? { nFreeParams: deep.nFreeParams } : {}),
+          ...(deep.paramNames !== undefined ? { paramNames: deep.paramNames } : {}),
+          ...(deep.amplitudeNames !== undefined ? { amplitudeNames: deep.amplitudeNames } : {}),
+          ...(deep.error !== undefined ? { error: deep.error } : {}),
+        },
+      }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
   // auto_pwa_suggest（决策层：pull 驱动的候选发现）
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_suggest',
-    description: '候选发现（只读）：把评估结果（evaluate.json 的 pull>3σ 质量区）与每个中间态的物理允许 J^PC 相交，列出质量落在 pull 区附近的 PDG 共振态候选，按对齐度排序并给出阈值余量。决策输入——先 suggest 再决定加什么，而不是凭空猜名字。',
+    description: '候选发现：把评估出的 pull>3σ 质量区与各中间态允许 J^PC 相交，按质量对齐度排序给出 PDG 候选（含阈值余量）。用：评估之后决定"下一个加什么"。不要用：凭空查 PDG（用 lookup）；判收敛（用 loop_next）。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       evaluateJsonPath: { type: 'string', required: true, description: 'evaluate.json 绝对路径（auto_pwa_evaluate 的输出）' },
@@ -970,7 +1919,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_validate_add',
-    description: '验证"添加共振态"提议（只读，不写文件）：PDG 依据、JPC 一致性、运动学阈值、重复、参数/free 结构、J^P 物理可达性。errors 阻止写入；warnings 提示风险；附 float 策略建议。任何 error 出现时不要调用 auto_pwa_edit_config。',
+    description: '“添加共振态”只读门禁：PDG 依据/JPC/阈值/衰变顶点 J^P/C 守恒/全同/重复/free 结构，并给 float 建议。用：edit_config 之前预检提案。不要用：整份 config 校验（用 validate_config）；只查 PDG（用 lookup）。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       proposal: { ...proposalParam, required: true },
@@ -1051,7 +2000,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_edit_config',
-    description: '把"添加共振态"提议写入 config.yml（强约束：先物理校验→结构化修改→交叉引用→YAML 渲染→原子写）。errors 非空时绝不写文件。写前自动备份原文件为 config.yml.bak。',
+    description: '把共振态写入 config.yml 的快车道：物理校验→结构化修改→写前总闸→原子写(+.bak)，并自动本地 git 提交。用：加态/挂链（含 Interp/Custom 的 options 透传）。不要用：删除（用 remove_resonance）；整份校验（用 validate_config）；从零起草（用 init_config）。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径（会被修改）' },
       proposal: { ...proposalParam, required: true },
@@ -1113,7 +2062,7 @@ export function apply(ctx: Context) {
       // Final gate: the WHOLE resulting config must pass the structural
       // validation (identical groups, trans refs, maxL ...) and the
       // cross-reference check before anything is written to disk.
-      const finalV = validateConfig(applied.config)
+      const finalV = validateConfig(applied.config, defaultDb)
       const finalXref = crossReferenceErrors(applied.config)
       if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
         return {
@@ -1133,12 +2082,13 @@ export function apply(ctx: Context) {
       const tmpPath = join(dirname(configPath), `.config.yml.tmp-${Date.now().toString(36)}`)
       writeFileSync(tmpPath, rendered)
       renameSync(tmpPath, configPath)
+      const gitRec = gitRecord(configPath, [configPath], `config: ${applied.changed[0] ?? 'edit'}${applied.changed.length > 1 ? ` (+${applied.changed.length - 1})` : ''}`)
       return {
         ok: true,
         written: true,
-        changed: applied.changed,
+        changed: [...applied.changed, ...(gitRec.changed !== undefined ? [gitRec.changed] : [])],
         errors: [...finalV.errors, ...finalXref.errors],
-        warnings: [...v.warnings, ...finalXref.warnings, ...finalV.warnings],
+        warnings: [...v.warnings, ...finalXref.warnings, ...finalV.warnings, ...gitRec.warnings],
         configPath,
         backupPath,
         resonanceCount: Object.keys(applied.config.resonances).length,
@@ -1151,7 +2101,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_remove_resonance',
-    description: '从 config.yml 删除/摘除共振态（添加的逆操作；显著性检查主力）：先 dry-run 校验（存在性、作用域、删除后交叉引用）→ 结构化摘除 → 全 config 写前总闸 → 原子写（自动备份 .bak）。摘除按名进行，[J,P] 组即使变空也保留（维持 Constraints.trans 的振幅块索引）；Resonances 定义仅在无组引用时删除（dropDefinition:false 可保留参数）。',
+    description: '摘除共振态（显著性剪枝）：dry-run 校验→按名摘除→写前总闸→原子写(+.bak)+git 提交；[J,P] 组即使变空也保留（维持 Constraints.trans 索引）。用：删份额不显著/撞边界的态做 ΔNLL 对照。不要用：改参数（用 edit_config 重挂或直接编辑 yml）；从零起草（用 init_config）。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径（会被修改）' },
       removals: { ...removalListParam, required: true },
@@ -1224,7 +2174,7 @@ export function apply(ctx: Context) {
         }
       }
       // Final gate: whole-config structural + cross-reference validation.
-      const finalV = validateConfig(cfg)
+      const finalV = validateConfig(cfg, defaultDb)
       const finalXref = crossReferenceErrors(cfg)
       if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
         return {
@@ -1244,14 +2194,15 @@ export function apply(ctx: Context) {
       const tmpPath = join(dirname(configPath), `.config.yml.tmp-${Date.now().toString(36)}`)
       writeFileSync(tmpPath, dumpConfig(cfg))
       renameSync(tmpPath, configPath)
+      const gitRec = gitRecord(configPath, [configPath], `config: remove ${args.removals.map((r) => r.name).join(', ')}`)
       return {
         ok: true,
         written: true,
-        changed: detached,
+        changed: [...detached, ...(gitRec.changed !== undefined ? [gitRec.changed] : [])],
         detached,
         dropped,
         errors: [],
-        warnings: [...finalV.warnings, ...finalXref.warnings],
+        warnings: [...finalV.warnings, ...finalXref.warnings, ...gitRec.warnings],
         configPath,
         backupPath,
         resonanceCount: Object.keys(cfg.resonances).length,
@@ -1264,7 +2215,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_round',
-    description: '一轮完整迭代（主路径，一次调用）：自动评估上一轮拟合（NLL、ΔNLL、pull 诊断）→ 若提供 proposal 则物理验证（0 errors 才继续）→ 创建新迭代目录 → 写入 config.yml → 提交后台拟合。模型每轮只需：决定 proposal（加/挂什么共振态）或省略 proposal 做纯评估。内部机械链全部原子化，禁止也不用自己写脚本。',
+    description: '[已弃用，改用 iterate 或 loop_decide(iterate)] 一轮迭代：评估上一轮+应用 proposal/removals+建轮+门禁+提交拟合。保留仅供旧脚本兼容。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-004），其 config.yml 为基座、results/ 被评估' },
       proposal: { ...proposalParam, description: '要添加/挂载的共振态（省略 = 纯评估模式，不创建新轮）' },
@@ -1310,6 +2261,7 @@ export function apply(ctx: Context) {
             items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } },
           },
           convergenceHint: { type: 'string' },
+          gateReport: { type: 'string', description: '跑前门禁报告（TS 结构/物理 + ctpwa --validate-only）' },
         },
       },
       render: (_args, value: {
@@ -1326,8 +2278,9 @@ export function apply(ctx: Context) {
         errors: { code: string; message: string }[]
         warnings: { code: string; message: string }[]
         convergenceHint?: string
+        gateReport?: string
       }) => {
-        const lines: string[] = []
+        const lines: string[] = ['⚠️ auto_pwa_round 已弃用：请改用 auto_pwa_iterate（单步）或 auto_pwa_loop_decide（状态机）']
         if (value.nll !== undefined) {
           const d = value.deltaNll === undefined ? '' : `（ΔNLL=${value.deltaNll > 0 ? '+' : ''}${value.deltaNll.toFixed(2)}）`
           lines.push(`上轮评估: NLL=${value.nll.toFixed(2)}${d}${value.hessianPositive === false ? ' ⚠️Hessian 不正定' : ''}`)
@@ -1339,6 +2292,7 @@ export function apply(ctx: Context) {
         if (!value.ok) {
           lines.push(`迭代未执行（${value.errors.length} errors）:`)
           lines.push(...value.errors.map((e) => `  [error] ${e.code}: ${e.message}`))
+          if (value.gateReport !== undefined) lines.push(value.gateReport)
           return text(lines.join('\n'))
         }
         if (value.mode === 'evaluate-only') {
@@ -1347,6 +2301,7 @@ export function apply(ctx: Context) {
           lines.push(`iter-${String(value.iter).padStart(3, '0')} 已创建并提交拟合（job ${value.jobId}）:`)
           lines.push(...value.changed.map((c) => '  ' + c))
           if (value.warnings.length > 0) lines.push(...value.warnings.slice(0, 3).map((w) => `  [warn] ${w.message}`))
+          if (value.gateReport !== undefined) lines.push(value.gateReport)
         }
         return text(lines.join('\n'))
       },
@@ -1371,6 +2326,7 @@ export function apply(ctx: Context) {
         errors: { code: string; message: string }[]
         warnings: { code: string; message: string }[]
         convergenceHint?: string
+        gateReport?: string
       } = { ok: false, mode: 'evaluate-only', iter: -1, iterDir: '', changed, errors, warnings }
 
       // ---- 1. evaluate the previous round ----
@@ -1454,7 +2410,7 @@ export function apply(ctx: Context) {
         // Final gate: the whole resulting config must pass structural +
         // cross-reference validation before the write (same gate as
         // auto_pwa_edit_config).
-        const finalV = validateConfig(newCfg)
+        const finalV = validateConfig(newCfg, defaultDb)
         const finalXref = crossReferenceErrors(newCfg)
         if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
           errors.push(...finalV.errors, ...finalXref.errors)
@@ -1466,6 +2422,22 @@ export function apply(ctx: Context) {
         renameSync(tmp, target)
         changed.push(...applied.changed)
         warnings.push(...finalXref.warnings, ...finalV.warnings)
+        // B2：配置每次写入即记录（即使随后门禁拒绝，这次改动也留在历史里）
+        const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`)
+        if (gitRec.changed !== undefined) changed.push(gitRec.changed)
+        warnings.push(...gitRec.warnings)
+        // 跑前门禁：与所有提交口同一条闸（TS 结构/物理 + ctpwa 权威解析）
+        const gate = gateBeforeFit({
+          iterDir: started.iterDir,
+          tool: 'auto_pwa_round',
+          fitScript: args.fitScriptPath ?? env.fitScript,
+        })
+        out.gateReport = gate.report
+        if (!gate.ok) {
+          errors.push(...gate.errors)
+          warnings.push(...gate.warnings)
+          return out
+        }
         try {
           out.jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
         } catch (e) {
@@ -1483,7 +2455,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_iter_start',
-    description: '创建下一轮迭代目录 iterations/iter-N/：复制基座 config.yml，软链 fit.py/plot.py，写 note.md 骨架。返回新目录路径。每轮拟合前先调用它。',
+    description: '创建 iterations/iter-N/（复制基座 config、软链 fit.py、写 note 骨架、Data 路径绝对化）并 git 提交。用：手动分步跑一轮时先建目录。不要用：一步到位跑一轮（用 iterate/loop_decide）；只评估（用 loop_next）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录（如 <分析目录>/iterations）' },
       baseConfigPath: { type: 'string', required: true, description: '本轮基座 config.yml（上一轮的 config 或项目初始 config）' },
@@ -1520,7 +2492,14 @@ export function apply(ctx: Context) {
           fitScriptPath: args.fitScriptPath ?? resolveEnv().fitScript,
           plotScriptPath: args.plotScriptPath ?? resolveEnv().plotScript,
         })
-        return { iter: r.iter, iterDir: r.iterDir, changed: r.changed, warnings: r.warnings }
+        // B2：新迭代目录（config + note 骨架）立即入库
+        const gitRec = gitRecord(r.iterDir, [`${r.iterDir}/config.yml`, `${r.iterDir}/note.md`], `iter-${String(r.iter).padStart(3, '0')}: new iteration from ${args.baseConfigPath}`)
+        return {
+          iter: r.iter,
+          iterDir: r.iterDir,
+          changed: [...r.changed, ...(gitRec.changed !== undefined ? [gitRec.changed] : [])],
+          warnings: [...r.warnings, ...gitRec.warnings.map((w) => w.message)],
+        }
       } catch (e) {
         return { iter: -1, iterDir: '', changed: [], error: (e as Error).message }
       }
@@ -1532,7 +2511,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_note',
-    description: '把本轮迭代的结论写入迭代日记（SUMMARY.jsonl + 重渲染 HTML 日记页）。结论（conclusion/nextPlan）会持久化，下一轮开始时用 auto_pwa_history 读取——这是"拟合结论传给下一步"的通道。',
+    description: '把本轮结论写进迭代日记（SUMMARY.jsonl + HTML），并 git 提交该轮配置与结果；includeTokens 记 token 成本。用：每轮结束记录决策/证据/下一步计划。不要用：代替配置变更记录（edit_config 等已自动提交配置）。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '本轮迭代目录（如 .../iterations/iter-001）' },
       title: { type: 'string', required: true, description: '本轮决策一句话（如 "添加 rho(1450) 到 R_KK [1-]"）' },
@@ -1580,11 +2559,19 @@ export function apply(ctx: Context) {
           iter: { type: 'integer', required: true },
           summaryPath: { type: 'string', required: true },
           records: { type: 'integer', required: true },
+          gitCommit: { type: 'string', description: '本地 git 记录的提交（B2；PWA_GIT=off 时无）' },
+          gitWarning: { type: 'string', description: 'git 记录失败的原因（不阻塞）' },
           error: { type: 'string' },
         },
       },
       render: (_args, value) =>
-        text(value.ok ? `已记录第 ${value.iter} 轮 → ${value.summaryPath}（共 ${value.records} 轮）` : `记录失败: ${value.error ?? '未知'}`),
+        text(
+          value.ok
+            ? `已记录第 ${value.iter} 轮 → ${value.summaryPath}（共 ${value.records} 轮）` +
+              (value.gitCommit !== undefined ? `，git ${value.gitCommit}` : '') +
+              (value.gitWarning !== undefined ? `\n  [warn] git 记录未完成: ${value.gitWarning}` : '')
+            : `记录失败: ${value.error ?? '未知'}`,
+        ),
     },
     async execute(args: {
       iterDir: string
@@ -1631,15 +2618,204 @@ export function apply(ctx: Context) {
         verification: args.verification,
         notes: args.notes,
       }
-      if (args.includeTokens === true && exec.agent?.sessionId !== undefined) {
-        const t: TokenTotals = usage.takeDelta(exec.agent.sessionId)
+      // B1：把该目录的拟合记录（config md5 / 态清单 / 初值来源 / runs）一并写进日记，
+      // 半年后能复现，也能判断两次拟合是否可比。
+      const prov = readProvenance(args.iterDir)
+      if (prov !== undefined) record.provenance = provenanceSummary(prov)
+      // The real Agent carries `id` (its `sessionId` field does not exist).
+      const agentId = exec.agent?.id ?? exec.agent?.sessionId
+      if (args.includeTokens === true && agentId !== undefined) {
+        const t: TokenTotals = usage.takeDelta(agentId)
         record.tokens = { input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite }
       }
       try {
         log.append(record)
-        return { ok: true, iter: record.iter, summaryPath: log.summaryPath, records: log.readAll().length }
+        // B2：结果入库——日记、note、fit.json、provenance 同一提交里，
+        // 于是"这轮的结论/NLL"和"当时的配置"永远对得上。
+        const iterLabel = `iter-${String(record.iter).padStart(3, '0')}`
+        const nllBit = record.nll !== undefined ? ` NLL=${record.nll.toFixed(2)}` : ''
+        const dBit = record.deltaNll !== undefined ? ` dNLL=${record.deltaNll >= 0 ? '+' : ''}${record.deltaNll.toFixed(2)}` : ''
+        const pdBit = record.hessianPositive === false ? ' [Hessian not PD]' : ''
+        // 把"当时实际拟合的配置"和结果放进同一个提交：provenance 里记的
+        // configPath 才是真相（可能是 variant.yml，而不是 config.yml）。
+        const provForGit = readProvenance(args.iterDir)
+        const fittedConfig = provForGit?.configPath ?? `${args.iterDir}/config.yml`
+        const gitRec = gitRecord(args.iterDir, [
+          log.summaryPath,
+          `${args.iterDir}/note.md`,
+          `${args.iterDir}/results/fit.json`,
+          `${args.iterDir}/results/provenance.json`,
+          fittedConfig,
+        ], `${iterLabel} result: ${record.title}${nllBit}${dBit}${pdBit}`)
+        return {
+          ok: true,
+          iter: record.iter,
+          summaryPath: log.summaryPath,
+          records: log.readAll().length,
+          ...(gitRec.commit !== undefined ? { gitCommit: gitRec.commit } : {}),
+          ...(gitRec.warnings[0] !== undefined ? { gitWarning: gitRec.warnings[0].message } : {}),
+        }
       } catch (e) {
         return { ok: false, iter: record.iter, summaryPath: log.summaryPath, records: 0, error: (e as Error).message }
+      }
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_git_log（B2：本地 git 记录，只读查看）
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_git_log',
+    description: '本地 git 记录（无远端）：log 列每轮提交、show 看某轮 config diff、search 用 pickaxe 找某态/参数是哪轮进来的、status 看有无未提交改动。用：审计"谁改了哪一条"、判断结果能否由 HEAD 复现。不要用：看拟合数值（用 evaluate/diagnose）；看迭代结论（用 history）。',
+    parameters: {
+      anyPath: { type: 'string', description: '分析目录内的任意路径（分析目录、iterations/、迭代目录或 config 文件），用于定位仓库（等价于旧名 path）' },
+      path: { type: 'string', description: '[已弃用别名，用 anyPath]' },
+      action: { type: 'string', required: true, enum: ['log', 'show', 'search', 'status'] as const, description: 'log=最近提交；show=某提交的 diff；search=pickle 查找文本引入于哪轮；status=仓库状态' },
+      rev: { type: 'string', description: 'action=show 用：提交（sha / 标签；默认 HEAD）' },
+      needle: { type: 'string', description: 'action=search 用：要查找的文本（如共振态名 X1750）' },
+      file: { type: 'string', description: '限定路径（相对分析目录，如 config.yml）；show=只显示该文件，search=只搜该文件' },
+      limit: { type: 'integer', description: 'log / search 的条数（默认 20）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          action: { type: 'string', required: true },
+          analysisDir: { type: 'string', required: true },
+          initialized: { type: 'boolean', required: true },
+          commit: { type: 'string' },
+          dirty: { type: 'boolean' },
+          untracked: { type: 'integer' },
+          entries: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                short: { type: 'string', required: true },
+                date: { type: 'string' },
+                subject: { type: 'string', required: true },
+              },
+            },
+          },
+          text: { type: 'string' },
+          note: { type: 'string' },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: {
+        ok: boolean
+        action: string
+        analysisDir: string
+        initialized: boolean
+        commit?: string
+        dirty?: boolean
+        untracked?: number
+        entries?: { short: string; date?: string; subject: string }[]
+        text?: string
+        note?: string
+        error?: string
+      }) => {
+        if (!value.ok) return text(`git 记录不可用: ${value.error ?? '未知'}`)
+        const head = `本地 git（${value.analysisDir}/.pwa-git）`
+        if (!value.initialized) {
+          return text(`${head}: 尚未初始化\n  ${value.note ?? '下次工具写 config / note 时自动创建'}`)
+        }
+        const lines = [`${head}${value.commit !== undefined ? ` @ ${value.commit}` : ''}${value.dirty === true ? ' ⚠️ 有未提交改动' : ''}${typeof value.untracked === 'number' && value.untracked > 0 ? `（未跟踪 ${value.untracked}）` : ''}`]
+        if (value.action === 'log' && value.entries !== undefined) {
+          if (value.entries.length === 0) lines.push('  （无提交）')
+          for (const e of value.entries) lines.push(`  ${e.short} ${e.date ?? ''} ${e.subject}`)
+        } else if (value.text !== undefined && value.text.trim() !== '') {
+          lines.push(value.text.trim())
+        } else {
+          lines.push('  （无输出）')
+        }
+        if (value.note !== undefined) lines.push(`  ${value.note}`)
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: {
+      anyPath?: string
+      path?: string
+      action: 'log' | 'show' | 'search' | 'status'
+      rev?: string
+      needle?: string
+      file?: string
+      limit?: number
+    }) {
+      const anchor = args.anyPath ?? args.path
+      if (anchor === undefined) {
+        return { ok: false, action: args.action, analysisDir: '', initialized: false, error: '需要 anyPath（分析目录内的任意路径）' }
+      }
+      const analysisDir = analysisRootOf(anchor)
+      const base = { action: args.action, analysisDir }
+      if (gitDisabled()) return { ok: false, ...base, initialized: false, error: 'PWA_GIT=off：本地 git 记录已关闭' }
+      if (!gitAvailable()) return { ok: false, ...base, initialized: false, error: 'git 不可用（PATH 里找不到 git）' }
+      const st = repoStatus(analysisDir)
+      const statusBits = {
+        initialized: st.initialized,
+        ...(st.commit !== undefined ? { commit: st.commit } : {}),
+        dirty: st.dirty,
+        ...(st.untracked !== undefined ? { untracked: st.untracked } : {}),
+      }
+      if (!st.initialized) {
+        return { ok: true, ...base, ...statusBits, note: '该目录还没有 .pwa-git：工具写 config / note 时会自动创建并开始记录' }
+      }
+      const limit = Math.max(1, Math.min(args.limit ?? 20, 200))
+      // `file` may be given relative to the analysis dir OR to `path`'s own
+      // directory (iterations/iter-001/config.yml vs config.yml) — accept both.
+      const resolveFile = (): string | undefined => {
+        if (args.file === undefined) return undefined
+        let base = analysisDir
+        try {
+          base = lstatSync(anchor).isDirectory() ? anchor : dirname(anchor)
+        } catch {
+          base = analysisDir
+        }
+        for (const cand of [resolve(base, args.file), resolve(analysisDir, args.file)]) {
+          if (existsSync(cand)) {
+            const rel = relInside(analysisDir, cand)
+            if (rel !== undefined) return rel
+          }
+        }
+        return args.file
+      }
+      const file = resolveFile()
+      if (args.action === 'log') {
+        const entries = gitLog(analysisDir, limit).map((e) => ({
+          short: e.short,
+          ...(e.date !== undefined ? { date: e.date } : {}),
+          subject: e.subject,
+        }))
+        return { ok: true, ...base, ...statusBits, entries }
+      }
+      if (args.action === 'status') {
+        return {
+          ok: true,
+          ...base,
+          ...statusBits,
+          note:
+            st.dirty === true
+              ? '已跟踪文件与 HEAD 不同：当前 results/ 不能由 HEAD 复现（provenance.git.dirty=true）'
+              : '已跟踪文件与 HEAD 一致（未跟踪的新文件不影响已记录 config 的可复现性）',
+        }
+      }
+      if (args.action === 'show') {
+        const rev = args.rev ?? 'HEAD'
+        const r = gitShow(analysisDir, rev, file)
+        return { ok: r.ok, ...base, ...statusBits, ...(r.ok ? { text: r.stdout } : { error: r.error }) }
+      }
+      // search
+      const needle = args.needle ?? ''
+      if (needle === '') return { ok: false, ...base, ...statusBits, error: 'action=search 需要 needle' }
+      const r = gitSearch(analysisDir, needle, file, limit)
+      return {
+        ok: r.ok,
+        ...base,
+        ...statusBits,
+        ...(r.ok ? { text: r.stdout.trim() === '' ? `（没有提交引入/删除含 "${needle}" 的行）` : r.stdout } : { error: r.error }),
       }
     },
   }))
@@ -1649,7 +2825,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_history',
-    description: '读取迭代日记（iterations/SUMMARY.jsonl）的全部记录：每轮的决策、NLL、ΔNLL、结论与下一步计划。新一轮决策前必读——它是"上一轮结论 → 本轮方向"的输入。',
+    description: '读迭代日记全部记录（每轮决策/NLL/ΔNLL/结论/下一步/token 成本）。用：新一轮决策前恢复上下文。不要用：看配置文本差异（用 git_log）；看拟合细节（用 diagnose/evaluate）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
     },
@@ -1734,7 +2910,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_iterate',
-    description: '一轮完整迭代（复合操作，模型只需决策提议什么）：以上一轮迭代目录为基座 → 物理验证提案（0 errors 才继续）→ 创建新迭代目录 → 写入 config.yml → 提交后台拟合。一次调用完成 iter_start+edit_config+run_fit 的全部机械步骤，内部强约束，模型无需也不能干预中间过程。评估上轮结果用 auto_pwa_evaluate，记录结论用 auto_pwa_note。',
+    description: '一轮完整迭代（复合）：验证 proposal/removals→建新迭代目录→写 config→跑前门禁→提交拟合，并 git 提交配置。用：单步循环的默认入口。不要用：需要状态机与预测验证时用 loop_decide；只评估上一轮用 loop_next。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-000），其 config.yml 作为本轮基座' },
       proposal: proposalParam,
@@ -1817,7 +2993,7 @@ export function apply(ctx: Context) {
       const target = `${started.iterDir}/config.yml`
       // Final gate: whole-config structural + cross-reference validation
       // before the write (same gate as auto_pwa_edit_config).
-      const finalV = validateConfig(newCfg)
+      const finalV = validateConfig(newCfg, defaultDb)
       const finalXref = crossReferenceErrors(newCfg)
       if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
         return {
@@ -1833,7 +3009,25 @@ export function apply(ctx: Context) {
       const tmp = `${target}.tmp-${Date.now().toString(36)}`
       writeFileSync(tmp, dumpConfig(newCfg))
       renameSync(tmp, target)
-      // 4. submit fit
+      // B2：配置写入即记录（门禁拒绝也保留这次改动）
+      const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`)
+      const gitChanged = gitRec.changed !== undefined ? [gitRec.changed] : []
+      // 4. 跑前门禁 + submit fit
+      const gate = gateBeforeFit({
+        iterDir: started.iterDir,
+        tool: 'auto_pwa_iterate',
+        fitScript: args.fitScriptPath ?? resolveEnv().fitScript,
+      })
+      if (!gate.ok) {
+        return {
+          ok: false,
+          iter: started.iter,
+          iterDir: started.iterDir,
+          changed: [...started.changed, ...applied.changed, ...gitChanged],
+          errors: gate.errors,
+          warnings: [...applied.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings, ...gate.warnings],
+        }
+      }
       let jobId: string | undefined
       try {
         jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
@@ -1842,7 +3036,7 @@ export function apply(ctx: Context) {
           ok: false,
           iter: started.iter,
           iterDir: started.iterDir,
-          changed: [...started.changed, ...applied.changed],
+          changed: [...started.changed, ...applied.changed, ...gitChanged],
           errors: [{ code: 'fit-submit-failed', message: (e as Error).message }],
           warnings: [...applied.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
         }
@@ -1852,7 +3046,7 @@ export function apply(ctx: Context) {
         iter: started.iter,
         iterDir: started.iterDir,
         jobId,
-        changed: [...started.changed, ...applied.changed],
+        changed: [...started.changed, ...applied.changed, ...gitChanged],
         errors: [],
         warnings: [...applied.warnings, ...startWarnings, ...finalXref.warnings, ...finalV.warnings],
       }
@@ -1864,7 +3058,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_evaluate',
-    description: '把 weight_best.root 转成 AI 可读的数值评估包：每个分布（mass/cosbeta）的 chi2/ndf、max|pull|、>3σ/>5σ bin 数、偏差区域、每个分波占总拟合的份额。数值化是 AI 判断拟合好坏的主通道（当前模型不能直接看图）；PNG 图同时生成供人阅读。',
+    description: '把 weight_best.root 数值化：每分布 chi2/ndf、max|pull|、>3σ/>5σ、泊松偏差与 top 偏差 bin、分波份额、勒让德矩，并出 PNG。用：判断拟合好坏、定位偏差区。不要用：看单个波的形状（用 root_view/wave_view）；把事实转成决策（用 diagnose）。',
     parameters: {
       rootPath: { type: 'string', required: true, description: 'weight_best.root 绝对路径' },
       outDir: { type: 'string', description: '评估输出目录（默认 root 同目录下的 evaluate/）' },
@@ -1901,6 +3095,7 @@ export function apply(ctx: Context) {
                 max_abs_pull: { type: 'number' },
                 bins_over_5sigma: { type: 'integer' },
                 bins_over_3sigma: { type: 'integer' },
+                has_background: { type: 'boolean', description: '该分布是否含本底模板 hbkg；true 时 pull=(data-(fit+bkg))/sqrt(fit+bkg)，false 时 pull=(data-fit)/sqrt(fit)' },
                 pull_regions_over_3sigma: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
                 worst_bin: { type: 'object', additionalProperties: false, properties: { center: { type: 'number' }, pull: { type: 'number' } } },
                 meta: {
@@ -1940,13 +3135,19 @@ export function apply(ctx: Context) {
         ok: boolean
         error?: string
         worst: { name: string; chi2_ndf?: number; max_abs_pull: number; bins_over_5sigma: number }[]
-        distributions?: { name: string; moments?: Record<string, { data?: number; fit?: number; delta?: number }> }[]
+        distributions?: { name: string; has_background?: boolean; moments?: Record<string, { data?: number; fit?: number; delta?: number }> }[]
         evaluateJsonPath: string
         pngFiles?: string[]
         spilled?: { locator: string; retrievalHint: string }
       }) => {
         if (!value.ok) return text(`评估失败: ${value.error ?? '未知错误'}`)
         const lines = ['拟合质量评估（按最差排序）:']
+        const withBkg = (value.distributions ?? []).filter((d) => d.has_background === true).length
+        lines.push(
+          withBkg > 0
+            ? `  residual = data-(fit+bkg)，pull=(data-(fit+bkg))/sqrt(fit+bkg)（${withBkg} 个分布含本底）`
+            : '  residual = data-fit，pull=(data-fit)/sqrt(fit)（无本底模板）',
+        )
         for (const w of value.worst) {
           lines.push(
             `  ${w.name}: chi2/ndf=${w.chi2_ndf ?? '—'}, max|pull|=${w.max_abs_pull}, ` +
@@ -2009,6 +3210,7 @@ export function apply(ctx: Context) {
         max_abs_pull?: number
         bins_over_5sigma?: number
         bins_over_3sigma?: number
+        has_background?: boolean
         pull_regions_over_3sigma?: number[][]
         worst_bin?: { center?: number; pull?: number }
         meta?: { kind?: string; intermediate?: string; particles?: string[]; display?: string[] }
@@ -2022,6 +3224,7 @@ export function apply(ctx: Context) {
         for (const k of ['chi2_ndf', 'max_abs_pull', 'bins_over_5sigma', 'bins_over_3sigma', 'pull_regions_over_3sigma', 'worst_bin'] as const) {
           if (typeof rec[k] === 'number' || typeof rec[k] === 'object') (item as Record<string, unknown>)[k] = rec[k]
         }
+        if (typeof rec.has_background === 'boolean') item.has_background = rec.has_background
         if (rec.moments !== null && typeof rec.moments === 'object' && !Array.isArray(rec.moments)) {
           const m = rec.moments as Record<string, unknown>
           const moments: Record<string, { data?: number; fit?: number; delta?: number }> = {}
@@ -2083,7 +3286,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_diagnose',
-    description: '拟合诊断（只读）：解析 results/fit.json，把参数撞边界、份额不显著（<2σ）、强干涉对、Hessian 不正定等数值事实转成"可行动的假设"清单（含删除/换模型/浮耦合建议）。决策输入——判断当前拟合好不好、下一步该动什么。',
+    description: '把 results/fit.json 转成可行动假设：退化解(Σ波强度/总强度≥3)、参数精确贴边、撞边界、份额<2σ、强干涉、参数简并、Hessian 不正定。用：拿到 NLL 后判断"能不能信、下一步动什么"。不要用：看分布形状（用 evaluate/root_view）。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录（读其 results/fit.json）' },
       configPath: { type: 'string', description: 'config.yml 绝对路径（用于把共振态名映射到链/组，给出删除建议上下文）' },
@@ -2148,12 +3351,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_root_view',
-    description:
-      '直接读拟合权重文件 weight_best.root 的直方图（uproot，ctpwa env python）——AI 的"眼睛"。' +
-      'list 模式列出全部直方图；read 模式取指定直方图的逐 bin 数据（bin 中心/值/误差/积分）。' +
-      '每个分布目录（massX_* 质量谱、cosbetaX_* 角分布）含 hdata/hfit/hbkg（数据/拟合/本底）和 ' +
-      'h_<chain>-<intermediate>-<resonance>（**每个共振态的波谱**：大小与形状）。' +
-      '决策流程：先 list 看有什么 → read 取关键直方图（如 pull 区的波谱、角分布）→ 判断哪个共振态主导/缺失。输出大时自动 spill。',
+    description: '直接读 weight_best.root 直方图：list 列全部、read 取逐 bin。用：看某个共振态的波谱 h_<chain>-<int>-<res> 或角分布。不要用：整体拟合质量（用 evaluate）；任意分波组合（用 wave_view）。',
     parameters: {
       rootPath: { type: 'string', required: true, description: 'weight_best.root 绝对路径' },
       mode: { type: 'string', required: true, enum: ['list', 'read'], description: 'list=列全部直方图；read=取指定直方图逐 bin 数据' },
@@ -2262,13 +3460,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_wave_view',
-    description:
-      '画出任意分波组合的分布（决策层）：从 fit.json 重建 best 参数 → ctpwa writeResult(waves) → ' +
-      '只含选中分波的组合拟合分布（hdata/hfit/hbkg 同尺度归一化，可与全波 weight_best.root 直接对比）。' +
-      '用途：①"这几个波加起来长什么样"——与数据谱对比判断缺什么；②"去掉某波后的分布"——该态贡献的形状；' +
-      '③ h_<name> 波谱逐 bin 值（每个选中波自己的形状）。默认直方图模式（小文件）；' +
-      'eventWeights=true 时才用逐事件 TTree（大文件，慎用），输出选中波对的干涉分布并自动删除大文件。' +
-      '波名取 weight_best.root 的 h_ 名（如 chain1-R_KK-phi1020），可先 auto_pwa_root_view list 查看。',
+    description: '画任意分波组合的拟合分布（与全波同归一化），可直接与数据谱对比。用：检验"缺哪个波/去掉某波后长什么样"。不要用：单波谱（用 root_view）；整体质量指标（用 evaluate）。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录（须含 config.yml 与 results/fit.json、results/weight_best.root）' },
       waves: { type: 'array', required: true, items: { type: 'string' }, description: '要组合的波名（h_ 名去掉前缀，如 chain1-R_KK-phi1020），最多 6 个' },
@@ -2390,10 +3582,14 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_run_fit',
-    description: '在迭代目录提交拟合（pwa-fit-local 经 ctx.jobs 启动；自动探测 transport：本机有 CUDA -> 本地 spawn python fit.py；无 CUDA 但有 SLURM -> 写 fit.slurm 并 sbatch 交作业，登录节点轮询。返回 jobId（ctpwa-N），完成时 DSH 会自动通知（background job ctpwa-N finished），用 auto_pwa_fit_status 或 job_output 查结果。两种 transport 都不可用时立即失败并给出诊断。',
+    description: '提交拟合（本地/SLURM 自动探测）：先跑前门禁（errors 拒绝提交）→ 记录 provenance（md5/初值/runs/git commit）→ 作为本会话后台任务运行，完成自动唤醒。用：正式拟合一版配置。不要用：先并行试多个候选（用 try_candidates）；查已提交任务（用 fit_status）。',
     parameters: {
-      iterDir: { type: 'string', required: true, description: '迭代目录绝对路径（须含 fit.py 与 config.yml）' },
-      timeoutMs: { type: 'integer', description: '超时毫秒，超过则终止（默认无）' },
+      iterDir: { type: 'string', required: true, description: '迭代目录绝对路径（须含 fit.py；配置默认取 <iterDir>/config.yml）' },
+      configPath: { type: 'string', description: '要拟合的配置文件（默认 <iterDir>/config.yml）；变体实验可指向 <dir>/variant_xxx.yml —— 门禁一视同仁' },
+      config: { type: 'string', description: '[已弃用别名，用 configPath]' },
+      scriptArgs: { type: 'array', items: { type: 'string' }, description: '额外传给 fit.py 的参数（如 ["--runs","1","--max-iter","500"]）；记录进 provenance' },
+      timeoutMin: { type: 'integer', description: '超时分钟数（默认无）' },
+      timeoutMs: { type: 'integer', description: '[已弃用别名，用 timeoutMin] 超时毫秒' },
     },
     output: {
       schema: {
@@ -2405,22 +3601,88 @@ export function apply(ctx: Context) {
           logPath: { type: 'string', required: true },
           transport: { type: 'string', enum: ['local', 'slurm'] },
           error: { type: 'string' },
+          ...gateOutputFields,
         },
       },
-      render: (_args, value) => text(value.error
-        ? `拟合提交失败: ${value.error}`
-        : `拟合已提交: job ${value.jobId} (${value.state}, ${value.transport ?? '?'} transport), 日志: ${value.logPath}`),
+      render: (_args, value: {
+        error?: string
+        jobId: string
+        state: string
+        logPath: string
+        transport?: string
+        gate?: { ok: boolean; report: string }
+      }) => text(value.error
+        ? `拟合提交失败: ${value.error}\n${value.gate?.report ?? ''}`
+        : `拟合已提交: job ${value.jobId} (${value.state}, ${value.transport ?? '?'} transport), 日志: ${value.logPath}\n` +
+          '拟合完成时 DSH 会自动唤醒本会话（通知里带 job id）——**不要轮询**；收到通知后用 auto_pwa_fit_status 取结果。\n' +
+          `${value.gate?.report ?? ''}`),
     },
-    async execute(args: { iterDir: string; timeoutMs?: number }, exec) {
+    async execute(
+      args: { iterDir: string; configPath?: string; config?: string; scriptArgs?: string[]; timeoutMin?: number; timeoutMs?: number },
+      exec,
+    ) {
+      // 参数规范化：configPath 是规范名，config 是保留别名；timeoutMin 优先于 timeoutMs。
+      const cfgTarget = args.configPath ?? args.config
+      const timeoutMin = args.timeoutMin ?? (args.timeoutMs !== undefined ? Math.ceil(args.timeoutMs / 60_000) : undefined)
+      // Variant runs: tell the driver which config to read, and gate +
+      // provenance-record that same file (not merely <iterDir>/config.yml).
+      const scriptArgs = withConfigArg(args.scriptArgs, cfgTarget)
+      const gate = gateBeforeFit({
+        iterDir: args.iterDir,
+        tool: 'auto_pwa_run_fit',
+        ...(cfgTarget !== undefined ? { configPath: cfgTarget } : {}),
+        fitScript: join(args.iterDir, 'fit.py'),
+        ...(scriptArgs !== undefined ? { scriptArgs } : {}),
+      })
+      if (!gate.ok) {
+        return {
+          jobId: '',
+          state: 'failed' as const,
+          logPath: join(args.iterDir, 'fit.log'),
+          error: `跑前门禁拒绝（${gate.errors.length} errors）：${gate.errors.map((e) => `${e.code}: ${e.message}`).join(' | ')}`,
+          gate: { ok: false, report: gate.report, errors: gate.errors, warnings: gate.warnings, configMd5: gate.gate.configMd5 },
+        }
+      }
       try {
         const jobId = ctx.pwaFit.submit(
-          { iterDir: args.iterDir, timeoutMin: args.timeoutMs !== undefined ? Math.ceil(args.timeoutMs / 60_000) : undefined },
+          {
+            iterDir: args.iterDir,
+            timeoutMin,
+            ...(scriptArgs !== undefined ? { scriptArgs } : {}),
+          },
           ownerOf(exec),
         )
         const transport = (ctx.pwaFit as { transport?: string }).transport ?? 'local'
-        return { jobId, state: 'running' as const, logPath: join(args.iterDir, 'fit.log'), transport }
+        return {
+          jobId,
+          state: 'running' as const,
+          logPath: join(args.iterDir, 'fit.log'),
+          transport,
+          gate: {
+            ok: true,
+            report: gate.report,
+            errors: gate.errors,
+            warnings: gate.warnings,
+            configMd5: gate.gate.configMd5,
+            ...(gate.provenanceFile !== undefined ? { provenancePath: gate.provenanceFile } : {}),
+            ctpwa: {
+              ran: gate.deep.ran,
+              ok: gate.deep.ok,
+              ...(gate.deep.nAmplitudes !== undefined ? { nAmplitudes: gate.deep.nAmplitudes } : {}),
+              ...(gate.deep.nFreeParams !== undefined ? { nFreeParams: gate.deep.nFreeParams } : {}),
+              ...(gate.deep.paramNames !== undefined ? { paramNames: gate.deep.paramNames } : {}),
+              ...(gate.deep.message !== undefined ? { message: gate.deep.message } : {}),
+            },
+          },
+        }
       } catch (e) {
-        return { jobId: '', state: 'failed' as const, logPath: join(args.iterDir, 'fit.log'), error: (e as Error).message }
+        return {
+          jobId: '',
+          state: 'failed' as const,
+          logPath: join(args.iterDir, 'fit.log'),
+          error: (e as Error).message,
+          gate: { ok: true, report: gate.report, errors: gate.errors, warnings: gate.warnings, configMd5: gate.gate.configMd5 },
+        }
       }
     },
   }))
@@ -2430,9 +3692,9 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_fit_status',
-    description: '查询拟合任务状态：running/done/failed，附日志尾部；拟合完成后解析 results/ 给出最佳 NLL、迭代数、正定性等摘要。',
+    description: '查询后台拟合任务：running/done/failed + 日志尾部 + results/ 摘要（NLL/正定性）。用：收到完成通知后取结果。不要用：提交拟合（用 run_fit）；判断拟合好坏（用 evaluate/diagnose）。',
     parameters: {
-      jobId: { type: 'string', required: true, description: 'auto_pwa_run_fit 返回的 jobId' },
+      jobId: { type: 'string', required: true, description: 'run_fit 返回的 jobId（ctpwa-N）' },
     },
     output: {
       schema: {
@@ -2670,7 +3932,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_try_candidates',
-    description: '并行试探多个候选（执行层）：在同一基座 config 上各加一个候选（或各删一个 removals），建独立 trial 目录（iterations/_trials/，不进 iter-N 序列），以短拟合（--runs 1 --max-iter 500，可用 PWA_AIFIT_RUNS 风格参数调整）提交后台任务。全部完成后用 auto_pwa_compare 比较 ΔNLL 选出最优者（删共振态的显著性检查 = 删它后 ΔNLL 是否显著变差）。物理门禁与写前总闸与正式迭代一致。',
+    description: '并行短拟合试探 2–5 个候选：各建 _trials 目录、各自跑前门禁与 provenance（--runs 1 --max-iter 500）。用：一轮里同时比较多个假设。不要用：正式单轮迭代（用 iterate）；裁决用 compare，不要自己拍 ΔNLL。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '基座迭代目录（其 config.yml 作为所有候选的公共起点）' },
       candidates: {
@@ -2795,7 +4057,7 @@ export function apply(ctx: Context) {
             skipped.push({ candidate: candidateId, errors: res.errors })
             return
           }
-          const finalV = validateConfig(cfg)
+          const finalV = validateConfig(cfg, defaultDb)
           const finalXref = crossReferenceErrors(cfg)
           if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
             skipped.push({ candidate: candidateId, errors: [...finalV.errors, ...finalXref.errors] })
@@ -2826,11 +4088,40 @@ export function apply(ctx: Context) {
         idx += 1
         buildTrial(`${baseIterName}-rm${idx}-${removal.name}`, `rm:${removal.name}`, (cfg) => applyRoundEdits(cfg, [removal], undefined))
       }
+      // 跑前门禁：每个 trial 的 config 也过同一条闸（TS 结构/物理 + ctpwa
+      // --validate-only）。不通过的候选进 skipped，绝不进拟合队列。
+      const gatedPending: typeof pending = []
+      for (const p of pending) {
+        const g = gateBeforeFit({
+          iterDir: p.iterDir,
+          tool: 'auto_pwa_try_candidates',
+          fitScript: fitScriptPath,
+          scriptArgs: ['--runs', runs, '--max-iter', maxIter],
+        })
+        if (!g.ok) {
+          skipped.push({ candidate: p.candidate, errors: g.errors })
+          continue
+        }
+        warnings.push(...g.warnings.map((w) => `${p.candidate}: ${w.message}`))
+        gatedPending.push(p)
+      }
+      pending.length = 0
+      pending.push(...gatedPending)
+      // B2：一批候选一个提交（trial 配置是"哪个候选更好"的比较依据）
+      if (pending.length > 0) {
+        const gitBatch = gitRecord(
+          args.baseIterDir,
+          pending.map((p) => `${p.iterDir}/config.yml`),
+          `trials(${baseIterName}): ${pending.map((p) => p.candidate).join(', ')}`,
+        )
+        if (gitBatch.changed !== undefined) warnings.push(gitBatch.changed)
+        warnings.push(...gitBatch.warnings.map((w) => w.message))
+      }
       // Decide batching: only the SLURM transport batches (local stays one DSH
       // job per candidate, the historical behavior).
       const pwaFit = ctx.pwaFit as {
         transport?: string
-        submitBatch?: (r: { iterDir: string; iterDirs?: string[]; timeoutMin?: number; scriptArgs?: string[] }, o?: { sessionId: string }) => string
+        submitBatch?: (r: { iterDir: string; iterDirs?: string[]; timeoutMin?: number; scriptArgs?: string[] }, o?: FitOwner) => string
       }
       const batchMode = pwaFit.transport === 'slurm'
         ? resolveSlurmBatchMode(env, readBaselineTimeSec(args.baseIterDir))
@@ -2868,7 +4159,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_compare',
-    description: '比较基座与各 trial 的 ΔNLL 并给显著性判定（决策层）：新共振态约 2 个自由参数，|ΔNLL| >= threshold（默认 3，可调）才认为显著。输出每个 trial 的 NLL/ΔNLL/Hessian 正定性与裁决，并推荐晋级者（或都不推荐）。',
+    description: '基座 vs trial 的 ΔNLL 显著性 + AIC/BIC 复杂度惩罚，给出晋级裁决。用：try_candidates 之后选最优。不要用：拿不同起点/不同 runs 的两次拟合比 ΔNLL（条件不可比）。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '基座迭代目录（参考 NLL 的来源）' },
       trialDirs: { type: 'array', required: true, items: { type: 'string' }, description: 'auto_pwa_try_candidates 返回的 trial 目录列表' },
@@ -3092,7 +4383,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_next',
-    description: '循环状态机（执行面，主驱动器）：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 按目标判据（max|pull|、chi2/ndf≈1 的 pull 分布、|ΔNLL| 显著阈值、轮次预算）判定收敛 → 收敛则写 FINAL-REPORT.md 并宣告 done；未收敛则进入 propose 阶段等 AI 决策。首次调用传 baseIterDir 启动（状态持久化在 iterations/.loop-state.json，重启可续）。',
+    description: '循环状态机：评估当前迭代（NLL/ΔNLL/max|pull|/chi2ndf/Hessian）→ 按目标判收敛，收敛则写 FINAL-REPORT.md，未收敛进入 propose。用：每轮开始时。不要用：落盘决策（用 loop_decide）；只想评估单轮（用 evaluate）。',
     parameters: {
       iterationsRoot: { type: 'string', description: 'iterations/ 目录（省略时从 baseIterDir 推导）' },
       baseIterDir: { type: 'string', description: '起始基线迭代目录（仅首次/重启时必填；如 .../iterations/iter-004）' },
@@ -3260,7 +4551,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_status',
-    description: '读取循环状态机（只读）：当前阶段、迭代、预算与最近一次评估。重启/断线后续跑前先查它。',
+    description: '只读循环状态：阶段/轮次预算/最近一次评估。用：重启或断线后续跑前恢复。不要用：评估新结果（用 loop_next）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
     },
@@ -3312,7 +4603,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_decide',
-    description: '循环状态机（执行面）：把 AI 的决策落盘。action=iterate：验证 + 新建迭代 + 写 config（全部门禁）+ 提交拟合；action=rollback：把当前迭代标记失败（记入日记）、基线回退到上一轮；action=converge：强制收敛并出最终报告。',
+    description: '把决策落盘：iterate（验证+建轮+写 config+门禁+提交拟合）/ rollback（标记失败并回退）/ converge（强制收敛出报告）；可带 hypothesis+prediction 供下轮自动验证。用：状态机主路径。不要用：只想跑一轮且不带状态机（用 iterate）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
       action: { type: 'string', required: true, enum: ['iterate', 'rollback', 'converge'], description: '决策动作' },
@@ -3414,7 +4705,7 @@ export function apply(ctx: Context) {
           if (applied.errors.length > 0) {
             return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: applied.errors, error: '应用 removals/proposal 失败' }
           }
-          const finalV = validateConfig(newCfg)
+          const finalV = validateConfig(newCfg, defaultDb)
           const finalXref = crossReferenceErrors(newCfg)
           if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
             return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: [...finalV.errors, ...finalXref.errors], error: '写前总闸未通过' }
@@ -3424,6 +4715,25 @@ export function apply(ctx: Context) {
           const tmp = `${target}.tmp-${Date.now().toString(36)}`
           writeFileSync(tmp, dumpConfig(newCfg))
           renameSync(tmp, target)
+          // B2：配置写入即记录
+          const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`)
+          // 跑前门禁（与 run_fit / round / iterate 同一条闸）
+          const gate = gateBeforeFit({
+            iterDir: started.iterDir,
+            tool: 'auto_pwa_loop_decide',
+            fitScript: args.fitScriptPath ?? env.fitScript,
+          })
+          if (!gate.ok) {
+            return {
+              ok: false,
+              action: args.action,
+              iter: state.iter,
+              iterDir: state.currentIterDir,
+              phase: state.phase,
+              errors: gate.errors,
+              error: `跑前门禁拒绝（${gate.errors.length} errors）`,
+            }
+          }
           const jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
           state.baseIterDir = state.currentIterDir
           state.currentIterDir = started.iterDir
@@ -3447,6 +4757,7 @@ export function apply(ctx: Context) {
               ...started.changed,
               ...started.warnings.map((w) => `[warn] ${w}`),
               ...applied.changed,
+              ...(gitRec.changed !== undefined ? [gitRec.changed] : []),
               ...[...applied.warnings, ...finalXref.warnings, ...finalV.warnings].map((w) => `[warn] ${w.code}: ${w.message}`),
             ],
             errors: [],

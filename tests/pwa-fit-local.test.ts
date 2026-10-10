@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PwaFitLocalService, FIT_OUTPUT_LIMIT_BYTES } from '../plugin/pwa-fit-local.js'
-import type { JobHooks, JobKind, JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type { JobHooks, JobIdentity, JobKind, JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type { FitOwner } from '../plugin/pwa-fit.js'
 import type { FitStatus } from '../src/fit-runner.js'
 import type { Context } from '@deepseek-ai/cordis'
 
@@ -9,8 +10,12 @@ class FakeJobRegistry {
   jobs = new Map<string, { snapshot: () => JobSnapshot; hooks: JobHooks; output: () => string }>()
   seq = 0
   attached: string[] = []
-
-  start(spec: { kind: JobKind; label: string; outputLimitBytes?: number; owner?: { sessionId: string }; run(): JobHooks }): string {
+  /** Owner identity handed to start() — asserted by the generation tests. */
+  owners: (JobIdentity | undefined)[] = []
+  /** Caller identity handed to get()/read()/kill(). */
+  callers: (JobIdentity | undefined)[] = []
+  start(spec: { kind: JobKind; label: string; outputLimitBytes?: number; owner?: JobIdentity; run(): JobHooks }): string {
+    this.owners.push(spec.owner)
     const hooks = spec.run()
     const id = `ctpwa-${++this.seq}`
     const state = { status: 'running' as 'running' | 'completed' | 'killed' | 'failed', detail: undefined as string | undefined, output: '' }
@@ -39,19 +44,22 @@ class FakeJobRegistry {
     return id
   }
 
-  get(id: string): JobSnapshot {
+  get(id: string, caller?: JobIdentity): JobSnapshot {
+    this.callers.push(caller)
     const job = this.jobs.get(id)
     if (!job) throw new Error(`unknown job ${id}`)
     return job.snapshot()
   }
 
-  read(id: string): { text: string; snapshot: JobSnapshot } {
+  read(id: string, caller?: JobIdentity): { text: string; snapshot: JobSnapshot } {
+    this.callers.push(caller)
     const job = this.jobs.get(id)
     if (!job) throw new Error(`unknown job ${id}`)
     return { text: job.output(), snapshot: job.snapshot() }
   }
 
-  kill(id: string): 'requested' | 'already-finished' {
+  kill(id: string, caller?: JobIdentity): 'requested' | 'already-finished' {
+    this.callers.push(caller)
     const job = this.jobs.get(id)
     if (!job) throw new Error(`unknown job ${id}`)
     if (job.snapshot().status !== 'running') return 'already-finished'
@@ -63,13 +71,14 @@ class FakeJobRegistry {
     return [...this.jobs.values()].map((j) => j.snapshot())
   }
 
-  onJobDone(): () => void {
-    return () => {}
-  }
-
   attachController(name: string): void {
     this.attached.push(name)
   }
+}
+
+/** Current-DSH surface: `onJobDone` exists, so identity is the live Agent. */
+class AgentFakeJobRegistry extends FakeJobRegistry {
+  readonly onJobDone = () => () => {}
 }
 
 /** Controllable fake runner: settled() resolves when the test says so. */
@@ -108,16 +117,42 @@ const ctx = (registry: FakeJobRegistry) => ({ jobs: registry } as unknown as Con
 
 describe('PwaFitLocalService (ctx.jobs provider)', () => {
   it('submits a fit as a ctpwa job owned by the caller, with output cap', () => {
-    const registry = new FakeJobRegistry()
+    const registry = new AgentFakeJobRegistry()
     const service = new PwaFitLocalService(ctx(registry), { runner: new FakeRunner() })
     expect(registry.attached).toContain('pwa-fit-local')
-    const jobId = service.submit({ iterDir: '/pwa/iter-001' }, { sessionId: 'sess-1' })
+    const owner: FitOwner = { id: 'sess-1', agent: { id: 'sess-1' } }
+    const jobId = service.submit({ iterDir: '/pwa/iter-001' }, owner)
     expect(jobId).toBe('ctpwa-1')
+    // Current DSH wants the live Agent as owner — a bare SessionId string (or
+    // a wrong field like the old {sessionId}) would register the job UNOWNED,
+    // which is why dsh-tool-jobs never delivered a completion notice.
+    expect(registry.owners[0]).toBe(owner.agent)
     const snap = registry.get(jobId)
     expect(snap.kind).toBe('ctpwa')
     expect(snap.label).toContain('/pwa/iter-001')
     expect(snap.outputLimitBytes).toBe(FIT_OUTPUT_LIMIT_BYTES)
     expect(service.status(jobId).state).toBe('running')
+  })
+
+  it('passes the SessionId string to a released-DSH registry (no onJobDone)', () => {
+    const registry = new FakeJobRegistry()
+    const service = new PwaFitLocalService(ctx(registry), { runner: new FakeRunner() })
+    service.submit({ iterDir: '/pwa/iter-legacy' }, { id: 'sess-9', agent: { id: 'sess-9' } })
+    expect(registry.owners[0]).toBe('sess-9')
+    // Reads take the same string identity in that generation.
+    service.status('ctpwa-1', { id: 'sess-9', agent: { id: 'sess-9' } })
+    expect(registry.callers).toContain('sess-9')
+  })
+
+  it('passes the Agent as the read/kill caller on current DSH', () => {
+    const registry = new AgentFakeJobRegistry()
+    const service = new PwaFitLocalService(ctx(registry), { runner: new FakeRunner() })
+    const owner: FitOwner = { id: 'sess-1', agent: { id: 'sess-1' } }
+    const jobId = service.submit({ iterDir: '/pwa/iter-owner' }, owner)
+    service.status(jobId, owner)
+    service.kill(jobId, owner)
+    expect(registry.callers[0]).toBe(owner.agent)
+    expect(registry.callers.every((c) => c === owner.agent)).toBe(true)
   })
 
   it('maps completion to done + exit code + log tail (final-output job)', async () => {

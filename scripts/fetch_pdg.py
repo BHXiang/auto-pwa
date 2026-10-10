@@ -160,6 +160,89 @@ def normalize_seed_name(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
+def extract_particles(api) -> dict[str, dict]:
+    """mcid-keyed particle table for identity / symmetry checks.
+
+    Key = signed Monte-Carlo ID — the community "PDGID" (K+ = 321, K- = -321,
+    pi0 = 111, J/psi = 443, Lambda = 3122, K(S)0 = 310). This is what the
+    tooling resolves `Particles.<name>.pdgid` against, and it is what makes
+    the symmetry questions decidable from data instead of naming heuristics:
+
+      - identical  : same mcid
+      - conjugate  : `conjugate` (antiparticle mcid)
+      - self-conj. : `selfConjugate` (PDG cc_type == 'S')
+
+    ⚠ C is stored ONLY for self-conjugate states. The sqlite `quantum_c`
+    column also carries values for charged multiplet members (rho(770)+ -> '-',
+    a_2(1320)+ -> '+') where C is physically undefined, so `selfConjugate`
+    is the gate and `c` only carries the value. '?' = unknown, never a value.
+
+    ⚠ `PdgParticle.antiparticle` raises PdgNoDataError for states with no
+    distinct antiparticle block (K(S)0/K(L)0) — handled, `conjugate` stays
+    unset for those.
+
+    Restricted to mesons/baryons/leptons/gamma: quarks, gluons, nuclei and BSM
+    entries are irrelevant to partial-wave analyses and would only bloat the
+    shipped JSON (~71 KB for 599 entries).
+    """
+    con = sqlite3.connect(str(DB))
+    try:
+        rows = con.execute(
+            "SELECT name, mcid, cc_type, charge, quantum_j, quantum_p, "
+            "quantum_c, quantum_g, quantum_i FROM pdgparticle WHERE mcid IS NOT NULL"
+        ).fetchall()
+    finally:
+        con.close()
+
+    out: dict[str, dict] = {}
+    for name, mcid, cc_type, charge, j_raw, p_raw, c_raw, g_raw, i_raw in rows:
+        try:
+            p = api.get_particle_by_mcid(int(mcid))
+        except Exception:
+            continue
+        if not (p.is_meson or p.is_baryon or p.is_lepton or name == "gamma"):
+            continue
+        self_conj = cc_type == "S"
+        entry: dict = {"name": name, "ccType": cc_type, "selfConjugate": self_conj}
+        if charge is not None:
+            entry["charge"] = charge
+        # Mass in GeV (summary property). Some states (K(L)0, ...) have no
+        # mass property and raise — omit rather than fail.
+        try:
+            mass = p.mass
+            if mass:
+                entry["mass"] = round(float(mass), 6)
+        except Exception:
+            pass
+        j = parse_j(j_raw)
+        if j is not None:
+            entry["j"] = int(j) if float(j).is_integer() else j
+        if p_raw in ("+", "-"):
+            entry["p"] = 1 if p_raw == "+" else -1
+        if self_conj:
+            if c_raw in ("+", "-"):
+                entry["c"] = 1 if c_raw == "+" else -1
+            if g_raw in ("+", "-"):
+                entry["g"] = 1 if g_raw == "+" else -1
+        else:
+            try:
+                anti = p.antiparticle
+                if (
+                    anti is not None
+                    and anti.mcid is not None
+                    and int(anti.mcid) != int(mcid)
+                ):
+                    entry["conjugate"] = int(anti.mcid)
+            except Exception:
+                # K(S)0 / K(L)0: no distinct antiparticle block (the API goes
+                # looking for -310 and raises). Leave `conjugate` unset.
+                pass
+        if i_raw not in (None, "?"):
+            entry["i"] = i_raw
+        out[str(int(mcid))] = entry
+    return out
+
+
 def quantum_c(name: str) -> int | None:
     """C parity (+1/-1) for self-conjugate (neutral) states, else None.
 
@@ -174,7 +257,8 @@ def quantum_c(name: str) -> int | None:
         row = con.execute(
             "SELECT charge, quantum_c FROM pdgparticle WHERE name=?", (name,)
         ).fetchone()
-        if not row or row[0] != 0.0 or not row[1]:
+        # '?' is the "unknown" sentinel (K(3100), X(3940), ...) — never a value.
+        if not row or row[0] != 0.0 or row[1] not in ("+", "-"):
             return None
         return 1 if row[1] == "+" else -1
     finally:
@@ -305,13 +389,15 @@ def main() -> int:
         n_hit += 1
 
     out = {
-        "schemaVersion": "0.4.0",
+        "schemaVersion": "0.5.0",
         "source": "pdg-2026 official package (fetch_pdg.py)",
         "resonances": seed,
+        "particles": extract_particles(api),
     }
     OUT.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
     print(f"[fetch_pdg] {len(seed)} entries: {n_hit} updated with PDG-2026 "
-          f"(+errors), {n_miss} kept as seed -> {OUT}")
+          f"(+errors), {n_miss} kept as seed; "
+          f"particles table: {len(out['particles'])} mcids -> {OUT}")
     return 0
 
 

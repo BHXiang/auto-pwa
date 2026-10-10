@@ -67,10 +67,19 @@ export class PwaFitLocalService extends FitService {
   private readonly iterDirs = new Map<string, string>()
   /** batch jobId -> iterDirs（status 时给出整批目录）。 */
   private readonly batchIterDirs = new Map<string, string[]>()
+  /**
+   * Which identity generation the running registry wants (see the vendored
+   * dsh-jobs header): current DSH takes the live Agent for both `owner` and
+   * `caller`, released DSH 0.2.0-rc.2 takes the SessionId string. Detected
+   * once from the registry surface: `onJobDone` exists only in the generation
+   * that speaks Agent identity.
+   */
+  private readonly agentIdentity: boolean
 
   constructor(ctx: Context, options: { runner?: FitSpawner; transport?: FitTransport } = {}) {
     super(ctx)
     this.jobs = ctx.jobs
+    this.agentIdentity = typeof (this.jobs as { onJobDone?: unknown }).onJobDone === 'function'
     const picked = options.runner !== undefined
       ? { transport: (options.transport ?? 'local') as FitTransport, runner: options.runner }
       : pickFitRunner()
@@ -83,12 +92,27 @@ export class PwaFitLocalService extends FitService {
     }
   }
 
+  /**
+   * The value to pass as `owner` / `caller` for this registry generation.
+   *
+   * CRITICAL: an owner of the wrong shape does not fail loudly on current DSH —
+   * the job is created UNOWNED, and dsh-tool-jobs then skips the completion
+   * notice entirely (`event.job.owner === undefined`). The agent never wakes
+   * up, which is the whole point of registering the fit as a background job.
+   * So: Agent when the registry speaks Agent identity, SessionId otherwise.
+   */
+  private identityOf(owner?: FitOwner): import('@deepseek-ai/dsh-jobs').JobIdentity | undefined {
+    if (owner === undefined) return undefined
+    if (this.agentIdentity) return (owner.agent ?? owner.id) as import('@deepseek-ai/dsh-jobs').JobIdentity
+    return owner.id
+  }
+
   submit(request: FitRequest, owner?: FitOwner): string {
     const jobId = this.jobs.start({
       kind: 'ctpwa',
       label: `ctpwa fit ${request.iterDir}`,
       outputLimitBytes: FIT_OUTPUT_LIMIT_BYTES,
-      owner,
+      ...(owner !== undefined ? { owner: this.identityOf(owner) } : {}),
       run: () => this.spawnFit(request),
     })
     // Key the iterDir record by the REGISTRY id (ctpwa-N) — the runner's own
@@ -107,7 +131,7 @@ export class PwaFitLocalService extends FitService {
       kind: 'ctpwa',
       label: `ctpwa batch ${dirs.length} (${dirs[0]})`,
       outputLimitBytes: FIT_OUTPUT_LIMIT_BYTES,
-      owner,
+      ...(owner !== undefined ? { owner: this.identityOf(owner) } : {}),
       run: () => this.spawnBatch(dirs, request),
     })
     this.batchIterDirs.set(jobId, dirs)
@@ -162,7 +186,8 @@ export class PwaFitLocalService extends FitService {
   }
 
   status(jobId: string, caller?: FitOwner): FitStatusView {
-    const snap = this.jobs.get(jobId, caller)
+    const ident = this.identityOf(caller)
+    const snap = ident === undefined ? this.jobs.get(jobId) : this.jobs.get(jobId, ident)
     const out: FitStatusView = {
       jobId,
       iterDir: this.iterDirs.get(jobId) ?? this.batchIterDirs.get(jobId)?.join(',') ?? '',
@@ -175,7 +200,7 @@ export class PwaFitLocalService extends FitService {
     if (snap.status !== 'running' && snap.status !== 'stopping') {
       // Final-output jobs: read() is idempotent after settlement.
       try {
-        out.logTail = this.jobs.read(jobId, caller).text
+        out.logTail = ident === undefined ? this.jobs.read(jobId).text : this.jobs.read(jobId, ident).text
       } catch {
         // The record may have been reaped with its owner; keep the snapshot.
       }
@@ -184,7 +209,8 @@ export class PwaFitLocalService extends FitService {
   }
 
   kill(jobId: string, caller?: FitOwner): 'requested' | 'already-finished' {
-    return this.jobs.kill(jobId, caller)
+    const ident = this.identityOf(caller)
+    return ident === undefined ? this.jobs.kill(jobId) : this.jobs.kill(jobId, ident)
   }
 }
 

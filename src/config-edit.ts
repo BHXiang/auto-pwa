@@ -15,6 +15,13 @@
 import { parseDocument, stringify } from 'yaml'
 import { normalizeName } from './lookup.js'
 import { explicitJp, jpLabel } from './jpc.js'
+import { parameterStructureError } from './resonance-validate.js'
+import {
+  cValueOf,
+  deriveIdenticalGroups,
+  getParticleInfo,
+  isIdenticalByPdgid,
+} from './particle-info.js'
 import type {
   ChainKinematics,
   ConfigEditResult,
@@ -24,6 +31,7 @@ import type {
   Particle,
   PwaConfig,
   PwaConstraints,
+  ResonanceDb,
   ResonanceModel,
   ResonanceProposal,
   ResonanceRemoval,
@@ -31,7 +39,6 @@ import type {
   RemovalValidation,
   ValidationIssue,
 } from './types.js'
-import { RESONANCE_MODELS } from './resonance-validate.js'
 
 /** YAML mappings can have complex (non-string) keys, e.g. `[J: 1, P: -1]`. */
 type YamlMap = Map<unknown, unknown>
@@ -76,18 +83,10 @@ export function rebuildViews(
   const kinematics: Record<string, ChainKinematics> = {}
 
   // --- Particles ----------------------------------------------------------
-  const particlesRaw = asMap(raw.get('Particles')) ?? asMap(raw.get('particles'))
-  if (particlesRaw) {
-    for (const [name, propsRaw] of particlesRaw) {
-      if (typeof name !== 'string') continue
-      const props = asMap(propsRaw)
-      if (!props) continue
-      const j = transJValue(asStr(props.get('J')) ?? asNum(props.get('J')))
-      const p = asNum(props.get('P'))
-      const mass = asNum(props.get('mass'))
-      if (j === undefined || p === undefined || mass === undefined) continue
-      particles[name] = { j, p: p === 1 ? 1 : -1, mass }
-    }
+  // Single parser: parseParticles also reads the optional `pdgid`/`c`
+  // extensions (the engine ignores them; the symmetry checks use them).
+  for (const [name, particle] of Object.entries(parseParticles(raw))) {
+    particles[name] = particle
   }
 
   // --- Resonances ---------------------------------------------------------
@@ -136,6 +135,17 @@ export function rebuildViews(
             return row?.map(asNum).filter((x): x is number => x !== undefined)
           })
           .filter((r): r is number[] => r !== undefined)
+      }
+      // Model-specific payload (Interp table / Custom DSL): kept as a plain
+      // object so views and the run gate can see it (the engine owns the
+      // semantics; the plugin only checks the mapping shape).
+      const opts = spec.get('options')
+      if (opts instanceof Map) {
+        resonance.options = Object.fromEntries(
+          [...opts.entries()].filter(([k]) => typeof k === 'string'),
+        ) as Record<string, unknown>
+      } else if (typeof opts === 'object' && opts !== null && !Array.isArray(opts)) {
+        resonance.options = opts as Record<string, unknown>
       }
       resonances[name] = resonance
     }
@@ -236,7 +246,15 @@ function parseParticles(raw: YamlMap): Record<string, Particle> {
     const p = asNum(props.get('P'))
     const mass = asNum(props.get('mass'))
     if (j === undefined || p === undefined || mass === undefined) continue
-    particles[name] = { j, p: p === 1 ? 1 : -1, mass }
+    const particle: Particle = { j, p: p === 1 ? 1 : -1, mass }
+    // `pdgid` is our extension: the signed Monte-Carlo ID (K+ = 321). ctpwa's
+    // ConfigParser::parseParticles ignores unknown keys, so the engine is
+    // unaffected; the tooling uses it for symmetry checks.
+    const pdgid = asNum(props.get('pdgid') ?? props.get('PDGID') ?? props.get('pdgId'))
+    if (pdgid !== undefined) particle.pdgid = pdgid
+    const c = asNum(props.get('c') ?? props.get('C'))
+    if (c === 1 || c === -1) particle.c = c
+    particles[name] = particle
   }
   return particles
 }
@@ -469,8 +487,11 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
     errors.push({ code: 'unknown-chain', message: `no intermediates block defines "${proposal.chain}"` })
     return { config, changed, errors }
   }
-  if (!RESONANCE_MODELS.includes(proposal.model)) {
-    errors.push({ code: 'invalid-model', message: `model "${proposal.model}" not supported` })
+  // Model names are open-ended on purpose: a KNOWN model has checked arity,
+  // an unknown one is a warning (see resonance-validate) and ctpwa decides.
+  // Only a missing/blank model is a structural error.
+  if (typeof proposal.model !== 'string' || proposal.model.trim() === '') {
+    errors.push({ code: 'invalid-model', message: `model must be a non-empty string, got ${JSON.stringify(proposal.model)}` })
     return { config, changed, errors }
   }
   const existingGroup_ = groupLists
@@ -510,20 +531,16 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
       return { config, changed, errors }
     }
   }
-  if (!Number.isFinite(proposal.parameters[0]) || proposal.parameters[0] <= 0) {
-    errors.push({ code: 'invalid-parameters', message: 'parameters[0] (mass) must be a positive number' })
-    return { config, changed, errors }
-  }
-  const arityOk =
-    (proposal.model === 'BWR' && proposal.parameters.length >= 2) ||
-    (proposal.model === 'BW' && proposal.parameters.length >= 2) ||
-    (proposal.model === 'ONE' && proposal.parameters.length === 1) ||
-    (proposal.model === 'Flatte' && proposal.parameters.length >= 2 && !!proposal.channels)
-  if (!arityOk) {
-    errors.push({
-      code: 'invalid-parameters',
-      message: `parameter structure invalid for ${proposal.model} (BWR/BW: >=2, ONE: exactly 1, Flatte: >=2 + channels)`,
-    })
+  // ONE 的 mass 只是占位（ctpwa Bf 的 q0 取固定参考，占位值不进入振幅）→ 可省略；
+  // Interp/Custom 的载荷在 options；未知模型交给跑前门禁的 ctpwa 校验。
+  // 与 validateResonanceAddition 共用同一个结构检查（不会漂移）。
+  const structErr = parameterStructureError(
+    proposal.model,
+    proposal.parameters,
+    proposal.channels !== undefined,
+  )
+  if (structErr !== undefined) {
+    errors.push(structErr)
     return { config, changed, errors }
   }
   const free = proposal.free ?? []
@@ -604,6 +621,12 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
       spec.free_range = proposal.freeRange.map(([lo, hi]) => [lo, hi])
     }
     if (proposal.channels !== undefined) spec.channels = proposal.channels
+    // Model-specific payload (Interp/Custom/…): passed through verbatim — the
+    // engine owns the semantics, the plugin only guarantees the mapping shape
+    // and the run gate's ctpwa --validate-only is the verdict.
+    if (proposal.options !== undefined && Object.keys(proposal.options).length > 0) {
+      spec.options = proposal.options
+    }
     if (proposal.reference !== undefined && proposal.reference.trim() !== '') {
       spec.reference = proposal.reference.trim()
     }
@@ -612,6 +635,7 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
     changed.push(
       `Resonances.${proposal.name} = ${proposal.model} ${JSON.stringify(proposal.parameters)}` +
         `${proposal.free ? ` free=${JSON.stringify(proposal.free)}` : ''}` +
+        `${proposal.options !== undefined ? ` options=${JSON.stringify(proposal.options)}` : ''}` +
         `${proposal.reference ? ` reference="${proposal.reference}"` : ''}`,
     )
   } else {
@@ -946,7 +970,10 @@ export function parseConstraints(raw: YamlMap): PwaConstraints {
  *   - per-step sl whitelist entries are legal (2S+1, L).
  * Errors indicate the config is structurally broken; warnings are hygiene.
  */
-export function validateConfig(config: PwaConfig): { errors: ValidationIssue[]; warnings: ValidationIssue[] } {
+export function validateConfig(
+  config: PwaConfig,
+  db?: ResonanceDb,
+): { errors: ValidationIssue[]; warnings: ValidationIssue[] } {
   const errors: ValidationIssue[] = []
   const warnings: ValidationIssue[] = []
   const { constraints } = config
@@ -1082,6 +1109,102 @@ export function validateConfig(config: PwaConfig): { errors: ValidationIssue[]; 
             message: `step ${step.mother} -> ${step.daughters.join(' + ')}: sl L = ${l} must be a non-negative integer`,
           })
         }
+      }
+    }
+  }
+
+  // ---- PDGID-driven checks (only when the particle table is available) ----
+  // `Particles.<name>.pdgid` is our extension; ctpwa ignores the key. It turns
+  // the symmetry questions (identical / conjugate / self-conjugate / C) from
+  // name heuristics into data. These are all WARNINGS: a wrong PDGID or a
+  // missing identical declaration is a physics defect, not a parse failure,
+  // and must not brick an otherwise loadable config.
+  if (db !== undefined) {
+    const identicalGroups = constraints.identical ?? []
+    const declaredTogether = (a: string, b: string): boolean =>
+      identicalGroups.some((g) => g.includes(a) && g.includes(b))
+    const derivedGroups = deriveIdenticalGroups(config, db)
+
+    for (const [name, p] of Object.entries(config.particles)) {
+      if (p.pdgid === undefined) continue
+      const info = getParticleInfo(db, p.pdgid)
+      if (info === undefined) {
+        warnings.push({
+          code: 'pdgid-unknown',
+          message: `Particles.${name}.pdgid = ${p.pdgid} is not in the PDG particle table — check the id (or drop the field to fall back to name-based checks)`,
+        })
+        continue
+      }
+      const cDisp = cValueOf(info)
+      if (info.j !== undefined && info.j !== p.j) {
+        warnings.push({
+          code: 'pdgid-j-mismatch',
+          message: `Particles.${name}: J = ${p.j} but PDGID ${p.pdgid} (${info.name}) has J = ${info.j}`,
+        })
+      }
+      if (info.p !== undefined && info.p !== p.p) {
+        warnings.push({
+          code: 'pdgid-p-mismatch',
+          message: `Particles.${name}: P = ${p.p > 0 ? '+' : '-'} but PDGID ${p.pdgid} (${info.name}) has P = ${info.p > 0 ? '+' : '-'}`,
+        })
+      }
+      if (cDisp === undefined && p.c !== undefined) {
+        warnings.push({
+          code: 'pdgid-c-not-eigenstate',
+          message: `Particles.${name}: an explicit C = ${p.c > 0 ? '+' : '-'} is set but PDGID ${p.pdgid} (${info.name}) is not a C eigenstate — the C will be ignored by the symmetry checks`,
+        })
+      }
+    }
+
+    // Identical-particle derivation: any two daughters of one two-body step
+    // that carry the same PDGID must sit in one Constraints.identical group,
+    // or the engine silently skips the Bose/Fermi symmetrisation.
+    for (const chain of Object.values(config.decayChains)) {
+      for (const step of chain.steps) {
+        const [n1, n2] = step.daughters
+        if (n1 === undefined || n2 === undefined) continue
+        if (n1 === n2) {
+          if (!declaredTogether(n1, n2)) {
+            warnings.push({
+              code: 'identical-not-declared',
+              message: `step ${step.mother} -> ${n1} + ${n2} uses the same particle twice but "${n1}" is not in a Constraints.identical group — ctpwa will NOT symmetrise`,
+            })
+          }
+          continue
+        }
+        const p1 = config.particles[n1]
+        const p2 = config.particles[n2]
+        if (p1?.pdgid === undefined || p2?.pdgid === undefined) continue
+        if (!isIdenticalByPdgid(db, p1, p2)) continue
+        if (declaredTogether(n1, n2)) continue
+        const merged = derivedGroups.find((g) => g.includes(n1) && g.includes(n2))
+        const suggested = JSON.stringify(merged ?? [n1, n2])
+        warnings.push({
+          code: 'identical-missing',
+          message:
+            `step ${step.mother} -> ${n1} + ${n2}: both have PDGID ${p1.pdgid} ` +
+            `(${getParticleInfo(db, p1.pdgid)?.name}) — identical particles — but they are not in one ` +
+            `Constraints.identical group, so ctpwa will NOT apply the Bose/Fermi selection rule; ` +
+            `add Constraints.identical: [${suggested}]`,
+        })
+      }
+    }
+
+    // A declared identical group whose members carry different PDGIDs is a
+    // wrong declaration (e.g. K0 vs K~0, which are a conjugate pair).
+    for (const group of identicalGroups) {
+      const pdgids = new Set<number>()
+      for (const member of group) {
+        const p = config.particles[member]
+        if (p?.pdgid !== undefined && getParticleInfo(db, p.pdgid) !== undefined) {
+          pdgids.add(p.pdgid)
+        }
+      }
+      if (pdgids.size > 1) {
+        warnings.push({
+          code: 'identical-pdgid-mismatch',
+          message: `Constraints.identical group ${JSON.stringify(group)} mixes different PDGIDs (${[...pdgids].join(', ')}) — these are not the same particle; check the declaration`,
+        })
       }
     }
   }

@@ -19,10 +19,10 @@
  */
 import { spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { renderSlurmBatchSubmission, renderSlurmSubmission, type SlurmTemplateKind } from './slurm-template.js'
 import type { SlurmClusterConfig } from './fit-transport.js'
-import type { FitStatus, FitState } from './fit-runner.js'
+import { configPathFromArgs, type FitStatus, type FitState } from './fit-runner.js'
 
 export type { FitState, FitStatus }
 
@@ -319,7 +319,12 @@ export class SbatchFitRunner {
   }
 
   private launchSingle(iterDir: string, key: string, options: { scriptArgs?: string[] }): string {
-    const configPath = join(iterDir, 'config.yml')
+    // The engine reads `--config <path>` (aifit default: config.yml); honor it
+    // so variant experiments run on the cluster exactly as they do locally.
+    const fromArgs = configPathFromArgs(options.scriptArgs)
+    const configPath = fromArgs !== undefined
+      ? isAbsolute(fromArgs) ? fromArgs : join(iterDir, fromArgs)
+      : join(iterDir, 'config.yml')
     if (!existsSync(configPath)) throw new Error(`config not found: ${configPath}`)
     const logPath = join(iterDir, 'fit.log')
     const script = renderSlurmSubmission({

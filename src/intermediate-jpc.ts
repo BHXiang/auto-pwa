@@ -18,7 +18,7 @@
 import type { PwaConfig, ResonanceDb } from './types.js'
 import { allowedIntermediateJP } from './decay-check.js'
 import { pairJPC, pairKind, jpcLabel, type PairKind } from './jpc.js'
-import { lookupC } from './lookup.js'
+import { classifyPairPhysics, resolveC } from './particle-info.js'
 import type { JP } from './types.js'
 
 export interface ProductionView {
@@ -29,13 +29,38 @@ export interface ProductionView {
   allowedJP: JP[]
   /** C(R) required by C(A) = C(R) * C(B); null when not determined. */
   cRequired: 1 | -1 | null
+  /** C of the mother / the spectator (undefined = not a C eigenstate). */
+  cMother?: 1 | -1
+  cDaughter?: 1 | -1
+}
+
+/**
+ * Whether C conservation is applied at the production vertex, and why.
+ *   - 'enforced'       : A and B are both C eigenstates -> C(R) is fixed;
+ *   - 'not-applicable' : at least one of A/B has no C -> nothing to enforce
+ *                        (e.g. J/psi -> K+ eta: the charged kaon has no C);
+ *   - 'unknown'        : no production kinematics available.
+ * C is not an engine input (Amp2BD never sees C), so this gate is the only
+ * thing that stops a C-violating wave from being written.
+ */
+export interface CStatusView {
+  status: 'enforced' | 'not-applicable' | 'unknown'
+  required: 1 | -1 | null
+  reason: string
 }
 
 export interface StepView {
   daughters: string[]
   /** pair classification (identical-boson / pair-anti / distinct / ...). */
   kind: PairKind
+  /** Engine truth: both daughters sit in one DECLARED Constraints.identical group. */
   identical: boolean
+  /**
+   * Physics truth from the PDGIDs: the two daughters are the same species.
+   * `identical === false && identicalDerived === true` is exactly the silent
+   * hole (add the identical group or the engine skips symmetrisation).
+   */
+  identicalDerived: boolean
   cDefined: boolean
   sl: [number, number][] | null
   /** J^PC labels of this step's waves (C appended when defined). */
@@ -58,6 +83,8 @@ export interface MergedWave {
 export interface IntermediateJpcAnalysis {
   chain: string
   production?: ProductionView
+  /** Whether C conservation is enforced at the production vertex. */
+  cStatus: CStatusView
   decaySteps: StepView[]
   /** J^P-only union over all decay modes. */
   jpUnion: string[]
@@ -89,9 +116,12 @@ export function jpKeyOf(jp: { j: number; p: 1 | -1 }): string {
 function named(
   config: JpcConfig,
   name: string,
-): { name: string; j: number; p: 1 | -1 } | undefined {
+): { name: string; j: number; p: 1 | -1; pdgid?: number } | undefined {
   const p = config.particles[name]
-  return p === undefined ? undefined : { name, j: p.j, p: p.p }
+  if (p === undefined) return undefined
+  return p.pdgid !== undefined
+    ? { name, j: p.j, p: p.p, pdgid: p.pdgid }
+    : { name, j: p.j, p: p.p }
 }
 
 /**
@@ -111,17 +141,42 @@ export function analyzeIntermediateJPC(
   const identicalGroups = config.constraints?.identical
   const kin = config.kinematics[intName]
 
+  const refOf = (name: string | undefined): { name?: string; pdgid?: number; c?: 1 | -1 } => {
+    if (name === undefined) return {}
+    const p = config.particles[name]
+    return p !== undefined ? { ...p, name } : { name }
+  }
+
   let production: ProductionView | undefined
+  let cStatus: CStatusView = { status: 'unknown', required: null, reason: 'no production kinematics' }
   if (kin !== undefined) {
     const allowedJP = allowedIntermediateJP(kin.mother, kin.daughter, maxL).map((a) => a.jp)
-    const motherC = kin.motherName !== undefined ? lookupC(db, kin.motherName) : undefined
-    const daughterC = kin.daughterName !== undefined ? lookupC(db, kin.daughterName) : undefined
+    const motherC = resolveC(db, refOf(kin.motherName))
+    const daughterC = resolveC(db, refOf(kin.daughterName))
     production = {
       mother: kin.motherName,
       daughter: kin.daughterName,
       threshold: kin.threshold,
       allowedJP,
       cRequired: motherC !== undefined && daughterC !== undefined ? ((motherC * daughterC) as 1 | -1) : null,
+    }
+    if (motherC !== undefined) production.cMother = motherC
+    if (daughterC !== undefined) production.cDaughter = daughterC
+    if (motherC !== undefined && daughterC !== undefined) {
+      cStatus = {
+        status: 'enforced',
+        required: (motherC * daughterC) as 1 | -1,
+        reason: `C(${kin.motherName}) = ${motherC > 0 ? '+' : '-'}, C(${kin.daughterName}) = ${daughterC > 0 ? '+' : '-'} => C(R) = ${motherC * daughterC > 0 ? '+' : '-'}`,
+      }
+    } else {
+      const missing: string[] = []
+      if (motherC === undefined) missing.push(`${kin.motherName} (no C)`)
+      if (daughterC === undefined) missing.push(`${kin.daughterName} (no C)`)
+      cStatus = {
+        status: 'not-applicable',
+        required: null,
+        reason: `${missing.join(' and ')} — not a C eigenstate, so C conservation does not constrain this vertex`,
+      }
     }
   }
 
@@ -132,11 +187,19 @@ export function analyzeIntermediateJPC(
   for (const step of steps) {
     const d1 = named(config, step.daughters[0])
     const d2 = named(config, step.daughters[1])
+    const declaredIdentical =
+      identicalGroups?.some((g) => g.includes(step.daughters[0]) && g.includes(step.daughters[1])) ?? false
+    const derivedIdentical = classifyPairPhysics(
+      db,
+      refOf(step.daughters[0]),
+      refOf(step.daughters[1]),
+    ).identical
     if (d1 === undefined || d2 === undefined) {
       decaySteps.push({
         daughters: step.daughters,
         kind: 'distinct',
         identical: false,
+        identicalDerived: derivedIdentical,
         cDefined: false,
         sl: step.sl ?? null,
         jpc: [],
@@ -145,8 +208,8 @@ export function analyzeIntermediateJPC(
       })
       continue
     }
-    const waves = pairJPC(d1, d2, { maxL, identicalGroups, slFilter: step.sl })
-    const kind = pairKind(d1, d2, identicalGroups)
+    const waves = pairJPC(d1, d2, { maxL, identicalGroups, slFilter: step.sl, db })
+    const kind = pairKind(d1, d2, identicalGroups, db)
     const cOf: Record<string, 1 | -1 | 'x'> = {}
     const jpcLabels: string[] = []
     const jpLabels: string[] = []
@@ -171,6 +234,7 @@ export function analyzeIntermediateJPC(
       daughters: step.daughters,
       kind: kind.kind,
       identical: kind.kind.startsWith('identical'),
+      identicalDerived: derivedIdentical,
       cDefined: kind.cDefined,
       sl: step.sl ?? null,
       jpc: jpcLabels,
@@ -197,6 +261,7 @@ export function analyzeIntermediateJPC(
   return {
     chain,
     production,
+    cStatus,
     decaySteps,
     jpUnion: [...jpUnion],
     merged: [...byKey.values()],

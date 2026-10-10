@@ -211,6 +211,141 @@ describe('diagnoseFit (fit.json hypotheses)', () => {
     const items = diagnoseFit(fit)
     expect(items.some((i) => i.code === 'parameter-correlation')).toBe(false)
   })
+
+  /** Fit view carrying only an interference block (wave-cancellation checks). */
+  const withInterference = (
+    interference: NonNullable<NonNullable<FitJsonView['fit']>['interference']>,
+  ): FitJsonView => ({
+    status: 'ok',
+    fit: {
+      runs: 1,
+      maxIter: 100,
+      best: { nll: 10, positiveDefinite: true, params: [] },
+      interference,
+    },
+  })
+
+  it('wave-cancellation: R=31 is a danger (large mutually-cancelling amplitudes)', () => {
+    const fit = withInterference({
+      available: true,
+      totalIntensity: 1.0,
+      // Each wave carries 15.5 units of intensity that cancel down to 1.
+      matrix: [
+        [15.5, 0],
+        [0, 15.5],
+      ],
+    })
+    const item = diagnoseFit(fit).find((i) => i.code === 'wave-cancellation')!
+    expect(item).toBeDefined()
+    expect(item.severity).toBe('danger')
+    expect(item.message).toContain('R=31.00')
+    expect(item.message).toContain('总强度 1')
+    expect(item.suggestion).toBeTruthy()
+    expect(item.suggestion).toContain('NLL 不可信')
+  })
+
+  it('wave-cancellation: R=1.7 is a warn, R=1.0 emits nothing', () => {
+    const mk = (diag: number[]): FitJsonView =>
+      withInterference({
+        available: true,
+        totalIntensity: 1,
+        matrix: diag.map((d, i) => diag.map((_, j) => (i === j ? d : 0))),
+      })
+    const warn = diagnoseFit(mk([1.0, 0.7])).find((i) => i.code === 'wave-cancellation')
+    expect(warn?.severity).toBe('warn')
+    expect(warn?.message).toContain('R=1.70')
+    expect(diagnoseFit(mk([1.0])).some((i) => i.code === 'wave-cancellation')).toBe(false)
+  })
+
+  it('wave-cancellation: malformed/absent inputs are skipped without crashing', () => {
+    const cases: NonNullable<NonNullable<FitJsonView['fit']>['interference']>[] = [
+      { available: true }, // no matrix, no totalIntensity
+      { available: true, totalIntensity: 0, matrix: [[5]] }, // total <= 0
+      { available: true, totalIntensity: Number.NaN, matrix: [[5]] }, // NaN total
+      { available: true, totalIntensity: 1 }, // matrix absent
+      { available: true, totalIntensity: 1, matrix: [] }, // empty matrix
+      { available: true, totalIntensity: 1, matrix: [[1, 0], [0]] }, // non-square row
+      { available: true, totalIntensity: 1, matrix: [[1, Number.NaN], [0, 1]] }, // non-finite entry
+      { available: false, totalIntensity: 1, matrix: [[31]] }, // not available
+    ]
+    for (const interference of cases) {
+      const items = diagnoseFit(withInterference(interference))
+      expect(items.some((i) => i.code === 'wave-cancellation')).toBe(false)
+    }
+    // available=false keeps the existing interference-unavailable path.
+    expect(
+      diagnoseFit(withInterference({ available: false, reason: 'x' })).some((i) => i.code === 'interference-unavailable'),
+    ).toBe(true)
+  })
+
+  it('param-exact-boundary: exact lower/upper hits flagged before the generic item', () => {
+    const fit: FitJsonView = {
+      status: 'ok',
+      fit: {
+        runs: 1,
+        maxIter: 100,
+        best: {
+          nll: 10,
+          positiveDefinite: true,
+          params: [
+            { name: 'phi1680', kind: 'resonance', value: 1.5, lower: 1.5, upper: 1.7, atBoundary: false },
+            { name: 'X1750', kind: 'resonance', value: 1.6, lower: 1.5, upper: 1.6, atBoundary: true },
+          ],
+        },
+      },
+    }
+    const items = diagnoseFit(fit)
+    const exact = items.filter((i) => i.code === 'param-exact-boundary')
+    expect(exact).toHaveLength(2)
+    expect(exact.every((i) => i.severity === 'warn')).toBe(true)
+    expect(exact[0]!.message).toContain('phi1680')
+    expect(exact[0]!.message).toContain('精确落在下限 1.5')
+    expect(exact[0]!.message).toContain('不是测量值')
+    expect(exact[1]!.message).toContain('X1750')
+    expect(exact[1]!.message).toContain('精确落在上限 1.6')
+    // The exact item precedes the generic at-boundary item for the same param.
+    const exactIdx = items.findIndex((i) => i.code === 'param-exact-boundary' && i.message.includes('X1750'))
+    const genericIdx = items.findIndex((i) => i.code === 'param-at-boundary' && i.message.includes('X1750'))
+    expect(exactIdx).toBeGreaterThanOrEqual(0)
+    expect(genericIdx).toBeGreaterThan(exactIdx)
+    // phi1680 is exactly on the lower bound but atBoundary=false -> no generic item.
+    expect(items.some((i) => i.code === 'param-at-boundary' && i.message.includes('phi1680'))).toBe(false)
+  })
+
+  it('param-exact-boundary: a near-but-not-exact hit does not fire', () => {
+    const fit: FitJsonView = {
+      status: 'ok',
+      fit: {
+        runs: 1,
+        maxIter: 100,
+        best: {
+          nll: 10,
+          positiveDefinite: true,
+          params: [{ name: 'phi1680', kind: 'resonance', value: 1.5 + 1e-6, lower: 1.5, upper: 1.7, atBoundary: true }],
+        },
+      },
+    }
+    const items = diagnoseFit(fit)
+    expect(items.some((i) => i.code === 'param-exact-boundary')).toBe(false)
+    // The generic boundary path still reports it.
+    expect(items.some((i) => i.code === 'param-at-boundary')).toBe(true)
+  })
+
+  it('param-exact-boundary: non-resonance (coupling) params are ignored', () => {
+    const fit: FitJsonView = {
+      status: 'ok',
+      fit: {
+        runs: 1,
+        maxIter: 100,
+        best: {
+          nll: 10,
+          positiveDefinite: true,
+          params: [{ name: 'Re(g1)', kind: 'coupling', value: 0.5, lower: 0.5, upper: 1.5, real: 0.5 }],
+        },
+      },
+    }
+    expect(diagnoseFit(fit).some((i) => i.code === 'param-exact-boundary')).toBe(false)
+  })
 })
 
 describe('loop-state (convergence / persistence / report)', () => {

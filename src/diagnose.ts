@@ -42,6 +42,61 @@ function resonanceContext(config: PwaConfig | undefined, name: string): string |
   return undefined
 }
 
+type InterferenceView = NonNullable<NonNullable<FitJsonView['fit']>['interference']>
+
+/**
+ * R = (sum of the interference-matrix diagonal) / totalIntensity.
+ *
+ * Diagonal element i is the intensity of wave i while totalIntensity is the
+ * intensity of the coherent sum, so R >> 1 means the solution is built from
+ * large mutually-cancelling amplitudes (a degenerate, unphysical minimum that
+ * can still post a lower NLL). Returns undefined on any missing/malformed/
+ * non-finite input so callers emit nothing rather than a bogus ratio.
+ *
+ * Only the matrix diagonal is used. `fractions` is deliberately NOT used as a
+ * fallback: fit-summary.ts types it as a plain wave/branch fraction with no
+ * guarantee that it is normalized as diag/total, so substituting it would be
+ * unproven (see the report accompanying this change).
+ */
+function waveCancellationRatio(inter: InterferenceView): number | undefined {
+  const total = inter.totalIntensity
+  if (total === undefined || !Number.isFinite(total) || total <= 0) return undefined
+  const matrix = inter.matrix
+  if (!Array.isArray(matrix) || matrix.length === 0) return undefined
+  const n = matrix.length
+  let diagSum = 0
+  for (let i = 0; i < n; i++) {
+    const row = matrix[i]
+    if (!Array.isArray(row) || row.length !== n) return undefined // non-square
+    for (let j = 0; j < n; j++) {
+      const entry = row[j]
+      if (typeof entry !== 'number' || !Number.isFinite(entry)) return undefined // non-finite entry
+    }
+    diagSum += row[i]!
+  }
+  if (!Number.isFinite(diagSum)) return undefined // overflowed diag sum
+  return diagSum / total
+}
+
+/**
+ * Tolerance for "sits exactly on an analysis-supplied bound": the larger of
+ * absolute 1e-9 and relative 1e-9 (float comparison, never string equality).
+ */
+function onBoundTolerance(bound: number): number {
+  return Math.max(1e-9, Math.abs(bound) * 1e-9)
+}
+
+/** True when `value` is numerically pinned to `bound` within the tolerance. */
+function isPinnedTo(value: number, bound: number): boolean {
+  return Number.isFinite(value) && Number.isFinite(bound) && Math.abs(value - bound) <= onBoundTolerance(bound)
+}
+
+/** Compact number label that keeps enough digits to expose an exact-bound hit. */
+function fmtNum(x: number): string {
+  if (!Number.isFinite(x)) return String(x)
+  return String(Number(x.toPrecision(10)))
+}
+
 /**
  * Diagnose one fit result. `fitJson` comes from results/fit.json (may be
  * partial); `config` is optional context for naming suggestions.
@@ -71,11 +126,50 @@ export function diagnoseFit(fitJson: FitJsonView, config?: PwaConfig, options: D
     })
   }
 
+  // Wave-cancellation ratio (matrix diagonal / total intensity): R >> 1 means
+  // the coherent sum is built from large mutually-cancelling amplitudes — a
+  // degenerate minimum that can look better in NLL without being physical.
+  const inter = fit.interference
+  if (inter !== undefined && inter.available === true) {
+    const ratio = waveCancellationRatio(inter)
+    if (ratio !== undefined && ratio >= 1.5) {
+      const danger = ratio >= 3
+      out.push({
+        severity: danger ? 'danger' : 'warn',
+        code: 'wave-cancellation',
+        message: `分波强度之和/总强度 R=${ratio.toFixed(2)}（总强度 ${fmtNum(inter.totalIntensity!)}）—— 拟合由大振幅相消构成`,
+        suggestion: danger
+          ? '该解是相消假象：各分波强度之和远超相干总强度，这个 NLL 不可信 —— 应减少/合并分波或重新拟合，不要据此宣称改进'
+          : '各分波强度之和明显大于总强度，存在较强相消 —— 检查是否有多余的大振幅分波在互相抵消',
+      })
+    }
+  }
+
   // Resonance parameters at boundaries -> the resonance may be redundant.
+  // A value pinned *exactly* on an analysis-supplied bound is a stronger
+  // statement than the generic atBoundary flag (it is not a measurement), so
+  // it gets its own item, emitted before the generic one for the same param.
   for (const p of best.params ?? []) {
     if (p.kind !== 'resonance') continue
+    const where = resonanceContext(config, p.name)
+    const value = p.value
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const onLower = typeof p.lower === 'number' && isPinnedTo(value, p.lower)
+      const onUpper = typeof p.upper === 'number' && isPinnedTo(value, p.upper)
+      if (onLower || onUpper) {
+        const boundName = onLower && onUpper ? '下限/上限' : onLower ? '下限' : '上限'
+        const bound = onLower ? p.lower : p.upper
+        const lo = typeof p.lower === 'number' ? fmtNum(p.lower) : '-∞'
+        const hi = typeof p.upper === 'number' ? fmtNum(p.upper) : '+∞'
+        out.push({
+          severity: 'warn',
+          code: 'param-exact-boundary',
+          message: `${p.name}${where !== undefined ? `（${where}）` : ''} 拟合值 ${fmtNum(value)} 精确落在${boundName} ${fmtNum(bound!)}（区间 [${lo}, ${hi}]）—— 这不是测量值`,
+          suggestion: '该值被钉在分析设定的边界上：不应带误差引用为测量结果 —— 应放宽该参数的 free_range、把它固定，或移除对应共振态',
+        })
+      }
+    }
     if (p.atBoundary === true) {
-      const where = resonanceContext(config, p.name)
       out.push({
         severity: 'warn',
         code: 'param-at-boundary',
@@ -107,7 +201,6 @@ export function diagnoseFit(fitJson: FitJsonView, config?: PwaConfig, options: D
   }
 
   // Interference hotspots.
-  const inter = fit.interference
   if (inter !== undefined && inter.available && (inter.topInterference ?? []).length > 0) {
     const top = inter.topInterference!.slice(0, 3)
     for (const t of top) {

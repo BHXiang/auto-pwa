@@ -67,6 +67,24 @@ export interface IterationRecord {
     actual: number | null
     note: string
   }
+  /** B1 provenance of the fit this round evaluated: config md5, the states it
+   * contained, where the initial values came from, and the run settings. Read
+   * by auto_pwa_note from `<iterDir>/results/provenance.json`. */
+  provenance?: {
+    configMd5?: string
+    recordedAt?: string
+    resonancesInclude?: { path: string; resolved?: string; md5?: string }
+    fitScript?: string
+    fitScriptMd5?: string
+    scriptArgs?: string[]
+    init?: { source?: string; seed?: number; from?: string; note?: string }
+    /** B2 本地 git 绑定：commit 可复原该轮 config（md5 互验）。 */
+    git?: { repo: string; commit?: string; dirty?: boolean; untracked?: number }
+    /** 本次拟合的 config 是否真的能从 HEAD 复原（假可复现检测）。 */
+    gitVerified?: boolean
+    resonances?: { name: string; model: string; parameters: number[]; free?: number[] }[]
+    stats?: Record<string, unknown>
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +295,46 @@ export function renderReport(record: IterationRecord): string {
   }
   if (record.nextPlan) {
     parts.push(`<h3>下一步计划</h3><div class="nextplan">${renderNotes(record.nextPlan.split('\n'))}</div>`)
+  }
+  if (record.provenance !== undefined) {
+    const p = record.provenance
+    parts.push('<h3>拟合记录（B1 复现凭据）</h3><dl class="kv">')
+    if (p.recordedAt !== undefined) parts.push(`<dt>记录时间</dt><dd>${escapeHtml(p.recordedAt)}</dd>`)
+    if (p.configMd5 !== undefined) parts.push(`<dt>config md5</dt><dd><code>${escapeHtml(p.configMd5)}</code></dd>`)
+    if (p.resonancesInclude !== undefined) {
+      parts.push(
+        `<dt>Resonances include</dt><dd><code>${escapeHtml(p.resonancesInclude.path)}</code>` +
+          `${p.resonancesInclude.md5 !== undefined ? ` md5 <code>${escapeHtml(p.resonancesInclude.md5)}</code>` : ''}</dd>`,
+      )
+    }
+    if (p.fitScript !== undefined) {
+      parts.push(`<dt>fit.py</dt><dd><code>${escapeHtml(p.fitScript)}</code>${p.fitScriptMd5 !== undefined ? ` md5 <code>${escapeHtml(p.fitScriptMd5)}</code>` : ''}</dd>`)
+    }
+    if (p.scriptArgs !== undefined) parts.push(`<dt>运行设置</dt><dd><code>${escapeHtml(p.scriptArgs.join(' '))}</code></dd>`)
+    if (p.init !== undefined) {
+      const init = p.init
+      const src = init.source === 'warm' ? `续算自 ${init.from ?? '?'}` : init.source === 'random' ? `随机初值${init.seed !== undefined ? ` (seed=${init.seed})` : ''}` : '未知'
+      parts.push(`<dt>初值来源</dt><dd>${escapeHtml([src, init.note].filter((x) => x !== undefined && x !== '').join(' — '))}</dd>`)
+    }
+    if (p.git !== undefined) {
+      const g = p.git
+      const dirty = g.dirty === true ? ' <span class="badge bad">有未提交改动</span>' : ' <span class="badge">已提交</span>'
+      const verified = p.gitVerified === true ? '（md5 与 commit 一致）' : p.gitVerified === false ? ' <span class="badge bad">HEAD 中无此配置</span>' : ''
+      parts.push(
+        `<dt>git</dt><dd><code>${escapeHtml(g.commit ?? '(无提交)')}</code>${dirty}${verified}` +
+          `${typeof g.untracked === 'number' && g.untracked > 0 ? ` 未跟踪 ${g.untracked}` : ''}</dd>`,
+      )
+    }
+    if (p.resonances !== undefined) {
+      parts.push(
+        `<dt>共振态(${p.resonances.length})</dt><dd>` +
+          p.resonances
+            .map((r) => `<code>${escapeHtml(r.name)}</code> ${escapeHtml(r.model)} ${escapeHtml(JSON.stringify(r.parameters))}${r.free !== undefined && r.free.length > 0 ? ` free=${escapeHtml(JSON.stringify(r.free))}` : ''}`)
+            .join('<br>') +
+          '</dd>',
+      )
+    }
+    parts.push('</dl>')
   }
   parts.push('<h3>笔记</h3>')
   parts.push(renderNotes(record.notes))

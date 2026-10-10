@@ -3,7 +3,10 @@
  * config. Errors block the edit; warnings inform the model's decision.
  *
  * Hard rules (errors):
- *   1. model is one of ctpwa's supported types (BWR/BW/ONE/Flatte)
+ *   1. model structural validity: a KNOWN model (BWR/BW/ONE/Flatte/GS/Interp/
+ *      Custom) gets its parameter arity enforced; an UNKNOWN model is a
+ *      warning only (the escape hatch for new ctpwa lineshapes — the run gate
+ *      then delegates the verdict to `ctpwa --validate-only`).
  *   2. PDG backing: BWR/BW/Flatte names must hit data/pdg.json.
  *      ONE (phase-space term) is exempt — its amplitude is the barrier
  *      factor only and the mass parameter is a placeholder (ctpwa
@@ -40,24 +43,34 @@ import type {
   PwaConfig,
   PwaConstraints,
   ResonanceDb,
-  ResonanceModel,
   ResonanceProposal,
   ValidationIssue,
   ValidationResult,
 } from './types.js'
 
-/** ctpwa's resonance model table (Resonance.cu: model -> ResModelType). */
-export const RESONANCE_MODELS: readonly ResonanceModel[] = ['BWR', 'BW', 'ONE', 'Flatte']
+/** ctpwa's resonance model table (Resonance.cu: model -> ResModelType).
+ *
+ * BWR/BW/ONE/Flatte/GS have a known parameter arity; Interp (external table)
+ * and Custom (DSL) carry their payload in `options`. A model outside this list
+ * is NOT rejected: it is a warning, and the authoritative verdict comes from
+ * `ctpwa --validate-only` at fit time (the run gate) — otherwise a new engine
+ * model could not be tried without a plugin release. */
+export const RESONANCE_MODELS: readonly string[] = ['BWR', 'BW', 'ONE', 'Flatte', 'GS', 'Interp', 'Custom']
 
-/** Models with a real propagator: must have PDG backing and kinematics checks. */
-const PARTICLE_MODELS: readonly ResonanceModel[] = ['BWR', 'BW', 'Flatte']
+/** Models asserting a specific PDG particle: must have PDG backing.
+ * Exported so the run-time gate (config-gate) uses the same table. */
+export const PARTICLE_MODELS: readonly string[] = ['BWR', 'BW', 'Flatte', 'GS']
 
-/** Parameter arity constraints per model (ctpwa Resonance constructor). */
-const PARAM_ARITY: Record<ResonanceModel, { min: number; max?: number }> = {
+/** Parameter arity constraints per model (ctpwa Resonance constructor).
+ * Interp/Custom take their payload from `options`, so 0 parameters is legal. */
+const PARAM_ARITY: Record<string, { min: number; max?: number }> = {
   BWR: { min: 2 }, // [mass, width(, r)]
   BW: { min: 2 }, // [mass, width]
-  ONE: { min: 1, max: 1 }, // [mass] placeholder
+  ONE: { min: 0, max: 1 }, // [mass] 占位；可省略（ctpwa: Bf 的 q0 取固定参考，占位值不进入振幅）
   Flatte: { min: 2 }, // [mass, g1, ...]
+  GS: { min: 2 }, // [mass, width]（Gounaris-Sakurai，ρ 专用）
+  Interp: { min: 0 }, // 外部插值表，见 options.file/method
+  Custom: { min: 0 }, // DSL 表达式，见 options
 }
 
 export interface ValidateOptions {
@@ -93,6 +106,44 @@ const err = (code: string, message: string): ValidationIssue => ({ code, message
 const warn = err
 
 /**
+ * Structural parameter check shared by the write gate (validateResonanceAddition)
+ * and the writer (applyResonanceAddition) — one source of truth, so the two can
+ * never drift. Returns an error message, or undefined when the structure is
+ * acceptable. A KNOWN model gets its arity enforced; an unknown model is not
+ * checked here (the run gate defers to `ctpwa --validate-only`).
+ */
+export function parameterStructureError(
+  model: string,
+  parameters: number[],
+  hasChannels: boolean,
+): ValidationIssue | undefined {
+  const issue = (message: string): ValidationIssue => err('invalid-parameters', message)
+  const known = RESONANCE_MODELS.includes(model)
+  const arity = PARAM_ARITY[model]
+  // ONE 的 mass 只是占位；Interp/Custom 的载荷在 options 里；未知模型不检查。
+  const massOptional =
+    !known || (parameters.length === 0 && (model === 'ONE' || (arity !== undefined && arity.min === 0)))
+  if (!massOptional && (!Number.isFinite(parameters[0]) || (parameters[0] as number) <= 0)) {
+    return issue('parameters[0] (mass) must be a positive number')
+  }
+  if (arity !== undefined) {
+    if (parameters.length < arity.min) {
+      return issue(`${model} needs >= ${arity.min} parameters, got ${parameters.length}`)
+    }
+    if (arity.max !== undefined && parameters.length > arity.max) {
+      return issue(`${model} takes at most ${arity.max} parameter(s), got ${parameters.length}`)
+    }
+  }
+  if (model === 'BWR' && parameters.length >= 2 && (parameters[1] as number) < 0) {
+    return issue('BWR width (parameters[1]) must be >= 0')
+  }
+  if (model === 'Flatte' && !hasChannels) {
+    return err('flatte-needs-channels', 'Flatte model requires the channels field')
+  }
+  return undefined
+}
+
+/**
  * Validate a model-proposed resonance addition against the PDG table and the
  * current config. `config` is the parsed config.yml (config-edit parseConfig).
  */
@@ -114,27 +165,41 @@ export function validateResonanceAddition(
   } = options
 
   // --- 1. model type -------------------------------------------------------
-  if (!RESONANCE_MODELS.includes(proposal.model)) {
-    errors.push(err('invalid-model', `model "${proposal.model}" is not supported (${RESONANCE_MODELS.join('/')})`))
-    return { ok: false, errors, warnings }
+  // Known models are checked structurally; an UNKNOWN model is a WARNING, not
+  // an error: the escape hatch lets a new/special ctpwa lineshape be tried
+  // without a plugin release, and the authoritative verdict is
+  // `ctpwa --validate-only` in the run gate.
+  const knownModel = RESONANCE_MODELS.includes(proposal.model)
+  if (!knownModel) {
+    warnings.push(
+      warn(
+        'unknown-model',
+        `model "${proposal.model}" is not in the plugin's known list (${RESONANCE_MODELS.join('/')}) — ` +
+          `PDG/mass/arity checks are skipped and the run gate delegates to ctpwa --validate-only. ` +
+          `If ctpwa rejects it, the fit will not start.`,
+      ),
+    )
   }
   const isParticle = PARTICLE_MODELS.includes(proposal.model)
-  const arity = PARAM_ARITY[proposal.model]
 
   // --- 7. parameter structure (early, cheap; blocks everything else) -------
-  if (!Number.isFinite(proposal.parameters[0]) || proposal.parameters[0] <= 0) {
-    errors.push(err('invalid-parameters', 'parameters[0] (mass) must be a positive number'))
+  // One shared structural check (parameterStructureError) so the gate and the
+  // writer cannot drift.
+  const structErr = parameterStructureError(proposal.model, proposal.parameters, proposal.channels !== undefined)
+  if (structErr !== undefined) {
+    errors.push(structErr)
   }
-  if (proposal.parameters.length < arity.min) {
-    errors.push(err('invalid-parameters', `${proposal.model} needs >= ${arity.min} parameters, got ${proposal.parameters.length}`))
-  } else if (arity.max !== undefined && proposal.parameters.length > arity.max) {
-    errors.push(err('invalid-parameters', `${proposal.model} takes exactly ${arity.max} parameter(s), got ${proposal.parameters.length}`))
+  // Model-specific payload (escape hatch): structural presence only — the
+  // engine owns the semantics, so these are warnings with an actionable hint.
+  if (proposal.model === 'Interp' && proposal.options?.file === undefined) {
+    warnings.push(
+      warn('interp-needs-file', 'Interp 模型通常需要 options.file（插值表路径）——缺表 ctpwa 会拒绝'),
+    )
   }
-  if (proposal.model === 'BWR' && proposal.parameters.length >= 2 && proposal.parameters[1] < 0) {
-    errors.push(err('invalid-parameters', 'BWR width (parameters[1]) must be >= 0'))
-  }
-  if (proposal.model === 'Flatte' && !proposal.channels) {
-    errors.push(err('flatte-needs-channels', 'Flatte model requires the channels field'))
+  if (proposal.model === 'Custom' && proposal.options === undefined) {
+    warnings.push(
+      warn('custom-needs-options', 'Custom 模型需要 options（DSL 载荷）——不写 ctpwa 会拒绝'),
+    )
   }
 
   // --- 9. free/free_range structure ----------------------------------------
@@ -445,21 +510,28 @@ export function validateResonanceAddition(
           )
         }
       }
-      // Rule 12: same-named daughters not declared identical -> engine will not symmetrize.
+      // Rule 12: daughters that are the SAME SPECIES must be declared in one
+      // Constraints.identical group, or ctpwa silently skips the Bose/Fermi
+      // symmetrisation. Name equality alone missed the pi01/pi02 case —
+      // distinct analysis names, same PDGID, no warning, no symmetrisation.
       for (const step of ana.decaySteps) {
-        if (step.daughters[0] === step.daughters[1]) {
-          const declared = identicalGroups?.some((g) => g.includes(step.daughters[0]))
-          if (!declared) {
-            warnings.push(
-              warn(
-                'identical-not-declared',
-                `step ${proposal.chain} -> ${step.daughters.join(' + ')} decays to the same particle twice but ` +
-                  `"${step.daughters[0]}" is not in any Constraints.identical group — ctpwa will NOT symmetrize; ` +
-                  `declare Constraints.identical to apply the Bose/Fermi selection rule`,
-              ),
-            )
-          }
-        }
+        const sameName = step.daughters[0] === step.daughters[1]
+        if (!sameName && !step.identicalDerived) continue
+        if (step.identical) continue // declared: the engine will symmetrise
+        const why = sameName
+          ? `decays to the same particle twice`
+          : `decays to two particles with the same PDGID (identical species)`
+        const extra = sameName
+          ? `"${step.daughters[0]}" is not in any Constraints.identical group`
+          : `"${step.daughters[0]}" and "${step.daughters[1]}" are not in one Constraints.identical group`
+        warnings.push(
+          warn(
+            'identical-not-declared',
+            `step ${proposal.chain} -> ${step.daughters.join(' + ')} ${why} but ${extra} — ` +
+              `ctpwa will NOT symmetrize; declare Constraints.identical: [${JSON.stringify(step.daughters)}] ` +
+              `to apply the Bose/Fermi selection rule`,
+          ),
+        )
       }
     }
   }

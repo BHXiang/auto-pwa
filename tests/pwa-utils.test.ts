@@ -51,7 +51,10 @@ describe('createUsageTracker', () => {
 describe('maybeSpill', () => {
   const smallCtx = (spillStore?: Context['spillStore']): Context =>
     ({ spillStore }) as unknown as Context
-  const exec = { agent: { sessionId: 'sess-1' }, rootCallId: 'call-1' }
+  // The real DSH Agent exposes `id`; the old `{ sessionId }` shape (from the
+  // wrong vendored stub) silently disabled spilling. Both are covered.
+  const exec = { agent: { id: 'sess-1' }, rootCallId: 'call-1' }
+  const legacyExec = { agent: { sessionId: 'sess-legacy' }, rootCallId: 'call-1' }
 
   it('keeps small outputs inline', async () => {
     const saved: unknown[] = []
@@ -79,6 +82,17 @@ describe('maybeSpill', () => {
     expect(out.summary).toEqual({ summary: 1 })
   })
 
+  it('still spills for a legacy-shaped agent and tolerates a missing exec', async () => {
+    const big = 'x'.repeat(SPILL_THRESHOLD_BYTES + 1)
+    const saved: { owner?: { sessionId?: string } }[] = []
+    const ctx = smallCtx({ saveText: async (input) => { saved.push(input as { owner?: { sessionId?: string } }); return { locator: '/x', bytes: 1, retrievalHint: 'r' } } })
+    const out = (await maybeSpill(ctx, legacyExec, 't', big, { s: 1 })) as { spilled?: boolean }
+    expect(out.spilled).toBe(true)
+    expect(saved[0]?.owner?.sessionId).toBe('sess-legacy')
+    // No execution context at all: keep inline instead of throwing.
+    expect(await maybeSpill(ctx, undefined, 't', big, 'fallback')).toBe('fallback')
+  })
+
   it('degrades to inline when spillStore is absent or save fails', async () => {
     const big = 'x'.repeat(SPILL_THRESHOLD_BYTES + 1)
     expect(await maybeSpill(smallCtx(undefined), exec, 't', big, 'fallback')).toBe('fallback')
@@ -92,28 +106,39 @@ describe('maybeSpill', () => {
 // guard
 // ---------------------------------------------------------------------------
 
-describe('configWriteGuard (monotonic deny)', () => {
+describe('configWriteGuard (monotonic deny: init_config.yml only)', () => {
   const exec = (name: string, args: Record<string, unknown>): ToolExecution =>
     ({ name, arguments: args, signal: new AbortController().signal }) as ToolExecution
 
-  it('denies write/edit of any config.yml/config.yaml', () => {
-    expect(configWriteGuard(exec('write', { file_path: '/home/w/pwa/iter-001/config.yml', content: 'x' }))).toBe(GUARD_WRITE_REASON)
-    expect(configWriteGuard(exec('edit', { file_path: '/pwa/config.yaml' }))).toBe(GUARD_WRITE_REASON)
-    expect(configWriteGuard(exec('write', { file_path: 'config.yml' }))).toBe(GUARD_WRITE_REASON)
+  it('ALLOWS write/edit of config.yml (run-time gate replaced the write gate)', () => {
+    expect(configWriteGuard(exec('write', { file_path: '/home/w/pwa/iter-001/config.yml', content: 'x' }))).toBeUndefined()
+    expect(configWriteGuard(exec('edit', { file_path: '/pwa/config.yaml' }))).toBeUndefined()
+    expect(configWriteGuard(exec('write', { file_path: 'config.yml' }))).toBeUndefined()
+    // Variant configs were always outside the old guard; they stay free.
+    expect(configWriteGuard(exec('write', { file_path: '/pwa/variant_broad.yml', content: 'x' }))).toBeUndefined()
   })
 
-  it('denies bash writes via redirect / tee / sed -i', () => {
-    expect(configWriteGuard(exec('bash', { command: 'echo "x" > /pwa/config.yml' }))).toBe(GUARD_BASH_REASON)
-    expect(configWriteGuard(exec('bash', { command: 'printf "y" >> /pwa/iter/config.yml && ls' }))).toBe(GUARD_BASH_REASON)
-    expect(configWriteGuard(exec('bash', { command: 'cat /tmp/new | tee /pwa/config.yml' }))).toBe(GUARD_BASH_REASON)
-    expect(configWriteGuard(exec('bash', { command: 'sed -i "s/1/2/" /pwa/config.yml' }))).toBe(GUARD_BASH_REASON)
+  it('allows bash writes to config.yml (validated at fit time, not write time)', () => {
+    expect(configWriteGuard(exec('bash', { command: 'echo "x" > /pwa/config.yml' }))).toBeUndefined()
+    expect(configWriteGuard(exec('bash', { command: 'sed -i "s/1/2/" /pwa/iter/config.yml' }))).toBeUndefined()
+  })
+
+  it('still denies init_config.yml (the from-scratch path must go through the tool)', () => {
+    expect(configWriteGuard(exec('write', { file_path: '/pwa/init_config.yml', content: 'x' }))).toBe(GUARD_WRITE_REASON)
+    expect(configWriteGuard(exec('edit', { file_path: '/pwa/init_config.yaml' }))).toBe(GUARD_WRITE_REASON)
+    expect(configWriteGuard(exec('bash', { command: 'echo "x" > /pwa/init_config.yml' }))).toBe(GUARD_BASH_REASON)
+    expect(configWriteGuard(exec('bash', { command: 'sed -i "s/a/b/" /pwa/init_config.yml' }))).toBe(GUARD_BASH_REASON)
+    expect(configWriteGuard(exec('bash', { command: 'printf "y" >> /pwa/iter/init_config.yml && ls' }))).toBe(GUARD_BASH_REASON)
+    expect(configWriteGuard(exec('bash', { command: 'cat /tmp/new | tee /pwa/init_config.yml' }))).toBe(GUARD_BASH_REASON)
   })
 
   it('allows reads, other files, and unrelated commands', () => {
     expect(configWriteGuard(exec('read', { file_path: '/pwa/config.yml', offset: 1 }))).toBeUndefined()
     expect(configWriteGuard(exec('write', { file_path: '/pwa/note.md', content: 'x' }))).toBeUndefined()
+    expect(configWriteGuard(exec('write', { file_path: '/pwa/my_config_notes.yml', content: 'x' }))).toBeUndefined()
     expect(configWriteGuard(exec('bash', { command: 'grep -n "phi" /pwa/config.yml' }))).toBeUndefined()
     expect(configWriteGuard(exec('bash', { command: 'ls /pwa' }))).toBeUndefined()
     expect(configWriteGuard(exec('auto_pwa_edit_config', { configPath: '/pwa/config.yml' }))).toBeUndefined()
+    expect(configWriteGuard(exec('auto_pwa_init_config', { dir: '/pwa' }))).toBeUndefined()
   })
 })

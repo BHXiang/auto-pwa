@@ -7,19 +7,33 @@ package — the same information a physicist reads off the plots, quantified.
 
 Outputs:
   out_dir/evaluate.json   numeric diagnostics (the AI's primary channel)
-  out_dir/pull_<name>.png pull distributions (data-fit)/sigma per 1D plot
-  out_dir/fit_<name>.png  data vs fit vs background overlay
+  out_dir/pull_<name>.png pull distributions per 1D plot (residual data-(fit+bkg))
+  out_dir/fit_<name>.png  data vs (fit+bkg) vs background overlay
 
 Diagnostics per 1D distribution (mass/cosbeta):
-  - pull per bin: (N_data - N_fit) / sqrt(N_data)  (Poisson data error)
-  - chi2 = sum pull^2, ndf = nbins-1, chi2/ndf
+  - model per bin = hfit + hbkg  (hbkg absent/zero -> model = hfit)
+  - pull per bin: (N_data - model) / sqrt(model)   [Pearson; matches ctpwa
+    example/plot.py, i.e. the residual is data-(fit+bkg), NOT data-fit]
+  - chi2 = sum (N_data - model)^2 / model over bins with model > 0,
+    ndf = nbins-1, chi2/ndf
+  - Poisson deviance (likelihood-ratio / G-test), the low-count complement to
+    Pearson chi2: dev = 2 * sum [model - N + N * ln(N / model)] over bins with
+    model > 0 (N = 0 -> 2*model), also per ndf. Because it is a log-likelihood
+    ratio it behaves better than chi2 when many bins have a handful of events,
+    and `poisson_deviance_top_bins` localizes where the mismatch sits.
   - max |pull| and bins exceeding 3sigma/5sigma (the "where it is wrong" answer)
   - per-wave fractions: integral of each h_* vs hfit (which waves matter)
 Requires the ctpwa env:  <ctpwa env>/bin/python scripts/auto_pwa_evaluate.py ...
+
+NOTE on the background: ctpwa writes hfit = signal-only model and hbkg = the
+background template separately (Analysis.cu), so the physics residual against
+the data is data - (hfit + hbkg). When the config has no background, hbkg is
+absent and this reduces to data - hfit.
 """
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -40,12 +54,118 @@ def _plt():
     return plt
 
 
-def pull_bins(data: np.ndarray, fit: np.ndarray) -> np.ndarray:
-    """(data - fit)/sqrt(data); bins with data==0 contribute 0."""
-    denom = np.sqrt(np.maximum(data, 0))
+def pull_bins(data: np.ndarray, fit: np.ndarray,
+              bkg: np.ndarray | None = None) -> np.ndarray:
+    """(data - model)/sqrt(model), model = fit (+ bkg when given).
+
+    The fitted model for bin i is hfit + hbkg (Pearson residual against the
+    Poisson mean); bins with model <= 0 contribute 0. Without background this
+    is the historical data-fit case.
+    """
+    data = np.asarray(data, dtype=float)
+    model = np.asarray(fit, dtype=float)
+    if bkg is not None:
+        model = model + np.asarray(bkg, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
-        pull = np.where(denom > 0, (data - fit) / np.where(denom > 0, denom, 1), 0.0)
+        pull = np.where(model > 0, (data - model) / np.sqrt(np.where(model > 0, model, 1.0)), 0.0)
     return np.asarray(pull, dtype=float)
+
+
+def chi2_bins(data: np.ndarray, fit: np.ndarray,
+              bkg: np.ndarray | None = None) -> float:
+    """Pearson chi2 = sum (data - model)^2 / model over bins with model > 0."""
+    data = np.asarray(data, dtype=float)
+    model = np.asarray(fit, dtype=float)
+    if bkg is not None:
+        model = model + np.asarray(bkg, dtype=float)
+    mask = model > 0
+    if not np.any(mask):
+        return float("nan")
+    return float(np.sum((data[mask] - model[mask]) ** 2 / model[mask]))
+
+
+def poisson_deviance_bins(data: np.ndarray, fit: np.ndarray,
+                          bkg: np.ndarray | None = None) -> np.ndarray:
+    """Per-bin Poisson deviance (likelihood-ratio / G-test) 2*log(L_ratio).
+
+    Model per bin = hfit + hbkg (same convention as `pull_bins` / `chi2_bins`;
+    hbkg absent => model = fit). For model > 0:
+
+        data > 0 : dev_i = 2 * (model - data + data * ln(data / model))
+        data == 0: dev_i = 2 * model            (the N*ln(N/model) -> 0 limit)
+        model <= 0: dev_i = 0.0                 (not evaluable; caller counts)
+
+    Negative data counts never occur for a real histogram; should one appear it
+    falls back to the data == 0 branch. Unlike Pearson chi2 the deviance is a
+    sum of log-likelihood ratios, so it stays well behaved in the low-count
+    bins where chi2/ndf is inflated by small model values. Bins follow the same
+    convention as the rest of the module (`hist_to_arrays` -> TH1.values(),
+    i.e. no under/overflow bins).
+    """
+    data = np.asarray(data, dtype=float)
+    model = np.asarray(fit, dtype=float)
+    if bkg is not None:
+        model = model + np.asarray(bkg, dtype=float)
+    dev = np.zeros(model.shape, dtype=float)
+    mask = model > 0
+    if not np.any(mask):
+        return dev
+    m = model[mask]
+    n = data[mask]
+    out = np.empty_like(m)
+    positive = n > 0
+    out[~positive] = 2.0 * m[~positive]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out[positive] = 2.0 * (m[positive] - n[positive]
+                               + n[positive] * np.log(n[positive] / m[positive]))
+    dev[mask] = out
+    return dev
+
+
+def rank_worst(dists: dict, top: int = 6) -> list[dict]:
+    """Top-`top` 1D distributions by max|pull|.
+
+    2D-moments records carry no `max_abs_pull` (they are not binned pulls) and
+    are filtered out — indexing them blindly KeyError-ed the whole evaluation
+    on any config with a 2D Plot entry.
+    """
+    ranked = sorted(
+        ((n, s) for n, s in dists.items() if isinstance(s.get("max_abs_pull"), (int, float))),
+        key=lambda kv: -kv[1]["max_abs_pull"],
+    )
+    return [
+        {"name": n, "max_abs_pull": s["max_abs_pull"], "chi2_ndf": s.get("chi2_ndf"),
+         "bins_over_5sigma": s.get("bins_over_5sigma", 0), "meta": s.get("meta")}
+        for n, s in ranked[:top]
+    ]
+
+
+def poisson_deviance_total(dists: dict) -> dict | None:
+    """Sum the per-bin Poisson deviance over all 1D distributions.
+
+    Complements `rank_worst`: the per-distribution numbers say *where* the
+    shape is off, the total says *how much* overall (deviance/ndf over all
+    bins). 2D-moments records carry no `poisson_deviance` and are skipped;
+    returns None when no distribution contributed.
+    """
+    dev = 0.0
+    ndf = 0
+    n = 0
+    for s in dists.values():
+        d = s.get("poisson_deviance")
+        if not isinstance(d, (int, float)):
+            continue
+        dev += float(d)
+        ndf += int(s.get("ndf") or 0)
+        n += 1
+    if n == 0 or ndf <= 0:
+        return None
+    return {
+        "poisson_deviance": round(dev, 1),
+        "ndf": ndf,
+        "poisson_deviance_ndf": round(dev / ndf, 3),
+        "n_distributions": n,
+    }
 
 
 def hist_to_arrays(h) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -124,8 +244,28 @@ def analyze_1d(prefix: str, d: uproot.ReadOnlyDirectory, out: dict,
         return None  # 2D dalitz plots are skipped for pull stats
     centers, data, _ = hist_to_arrays(hdata)
     _, fit, _ = hist_to_arrays(d["hfit"])
-    pull = pull_bins(data, fit)
-    chi2 = float(np.sum(pull**2))
+    bkg = np.asarray(d["hbkg"].values(), dtype=float) if "hbkg" in d else None
+    # Physics model = signal fit + background template (data-(fit+bkg)).
+    model = fit + bkg if bkg is not None else fit
+    pull = pull_bins(data, fit, bkg)
+    chi2 = chi2_bins(data, fit, bkg)
+    # Poisson deviance (likelihood-ratio) alongside Pearson chi2: same model
+    # and same bins, but the better "how unlike is this shape" measure in the
+    # low-count regime. ndf is the same nbins-1 (zero-model bins included).
+    dev = poisson_deviance_bins(data, fit, bkg)
+    has_model = bool(np.any(model > 0))
+    dev_total = float(np.sum(dev))
+    dev_zero_model = int(np.count_nonzero(model <= 0))
+    dev_top = None
+    if dev.size:
+        order = np.argsort(-dev)[:3]
+        dev_top = [
+            {"center": round(float(centers[int(i)]), 3),
+             "deviance": round(float(dev[int(i)]), 2),
+             "data": round(float(data[int(i)]), 3),
+             "model": round(float(model[int(i)]), 3)}
+            for i in order
+        ]
     ndf = int(len(data) - 1)
     over3 = np.where(np.abs(pull) > 3)[0]
     over5 = np.where(np.abs(pull) > 5)[0]
@@ -146,7 +286,7 @@ def analyze_1d(prefix: str, d: uproot.ReadOnlyDirectory, out: dict,
     moments: dict = {}
     if is_angular:
         moments = legendre_moments(centers, data)
-        fit_moments = legendre_moments(centers, fit)
+        fit_moments = legendre_moments(centers, model)
         for L in list(moments):
             moments[L] = {
                 "data": moments[L],
@@ -154,9 +294,15 @@ def analyze_1d(prefix: str, d: uproot.ReadOnlyDirectory, out: dict,
                 "delta": round(moments[L] - fit_moments.get(L, moments[L]), 4),
             }
     stat = {
-        "chi2": round(chi2, 1),
+        "chi2": (round(chi2, 1) if math.isfinite(chi2) else None),
         "ndf": ndf,
-        "chi2_ndf": round(chi2 / ndf, 3) if ndf > 0 else None,
+        "chi2_ndf": (round(chi2 / ndf, 3) if (ndf > 0 and math.isfinite(chi2)) else None),
+        "poisson_deviance": (round(dev_total, 1) if has_model else None),
+        "poisson_deviance_ndf": (round(dev_total / ndf, 3) if (ndf > 0 and has_model) else None),
+        "poisson_deviance_top_bins": dev_top,
+        "poisson_deviance_zero_model_bins": dev_zero_model,
+        "has_background": bkg is not None,
+        "residual": "data-(fit+bkg)" if bkg is not None else "data-fit",
         "max_abs_pull": round(float(np.max(np.abs(pull))), 2),
         "bins_over_3sigma": len(over3),
         "bins_over_5sigma": len(over5),
@@ -193,7 +339,8 @@ def wave_fractions(d: uproot.ReadOnlyDirectory) -> dict:
 def plot_pull(prefix: str, d: uproot.ReadOnlyDirectory, out_dir: Path) -> None:
     centers, data, _ = hist_to_arrays(d["hdata"])
     _, fit, _ = hist_to_arrays(d["hfit"])
-    pull = pull_bins(data, fit)
+    bkg = np.asarray(d["hbkg"].values(), dtype=float) if "hbkg" in d else None
+    pull = pull_bins(data, fit, bkg)
     plt = _plt()
     fig, ax = plt.subplots(figsize=(7, 3))
     ax.bar(centers, pull, width=centers[1] - centers[0], color="#1a6e5c", alpha=0.75)
@@ -203,7 +350,7 @@ def plot_pull(prefix: str, d: uproot.ReadOnlyDirectory, out_dir: Path) -> None:
         ax.axhline(-s, color=c, ls="--", lw=0.8)
     ax.set_title(f"pull: {prefix}")
     ax.set_xlabel("x")
-    ax.set_ylabel("(data-fit)/sqrt(data)")
+    ax.set_ylabel("(data-(fit+bkg))/sqrt(fit+bkg)" if bkg is not None else "(data-fit)/sqrt(fit)")
     ax.set_ylim(-8, 8)
     fig.tight_layout()
     fig.savefig(out_dir / f"pull_{prefix}.png", dpi=110)
@@ -215,12 +362,15 @@ def plot_fit(prefix: str, d: uproot.ReadOnlyDirectory, out_dir: Path) -> None:
     _, fit, _ = hist_to_arrays(d["hfit"])
     has_bkg = "hbkg" in d
     bkg = np.asarray(d["hbkg"].values(), dtype=float) if has_bkg else None
+    model = fit + bkg if bkg is not None else fit
     plt = _plt()
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.errorbar(centers, data, yerr=derr, fmt="o", ms=3, lw=1, color="#1c1c1a", label="data")
-    ax.plot(centers, fit, "-", color="#1a6e5c", lw=1.5, label="fit")
+    ax.plot(centers, model, "-", color="#1a6e5c", lw=1.5,
+            label="fit+bkg" if has_bkg else "fit")
     if bkg is not None:
         ax.plot(centers, bkg, "--", color="#a05a12", lw=1.2, label="bkg")
+        ax.plot(centers, fit, ":", color="#1a6e5c", lw=1.2, label="fit (signal)")
     ax.set_title(f"data vs fit: {prefix}")
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -250,7 +400,14 @@ def main() -> int:
         "distributions": {},
         "waves": {},
         "notes": [
+            "residual: 每个 bin 的物理模型 = hfit + hbkg（无 hbkg 时 = hfit）；"
+            "pull = (data-(fit+bkg))/sqrt(fit+bkg)（Pearson，与 ctpwa example/plot.py 一致）",
             "chi2_ndf: 全局拟合质量（≈1 理想；>2 明显偏差）",
+            "poisson_deviance_ndf: 泊松偏差（似然比 / G-test）版的全局质量，低计数 bin 比 "
+            "chi2 更可靠（≈1 理想；它比 chi2 更集中地惩罚形状差异）",
+            "poisson_deviance_top_bins: 贡献最大的最多 3 个 bin（center/deviance/data/model）；"
+            "看偏差是集中在一个区域还是各处摊开",
+            "poisson_deviance_zero_model_bins: model<=0 无法评估而贡献记 0 的 bin 数（仍计入 ndf）",
             "bins_over_5sigma: 严重偏差 bin 数（>0 需要关注对应区域）",
             "pull_regions_over_3sigma: 偏差所在质量/角度区间",
             "waves: 各分波占总拟合的份额（h_* 积分 / hfit 积分），按 |份额| 降序",
@@ -276,14 +433,10 @@ def main() -> int:
         if "hdata" in obj:
             result["waves"][name] = wave_fractions(obj)
 
-    # Summarize the worst distributions.
-    dists = result["distributions"]
-    ranked = sorted(dists.items(), key=lambda kv: -(kv[1].get("max_abs_pull") if kv[1].get("max_abs_pull") is not None else 0))
-    result["worst_distributions"] = [
-        {"name": n, "max_abs_pull": s["max_abs_pull"], "chi2_ndf": s["chi2_ndf"], "bins_over_5sigma": s["bins_over_5sigma"],
-         "meta": s.get("meta")}
-        for n, s in ranked[:6]
-    ]
+    # Summarize the worst 1D distributions (2D-moments records have no pull).
+    result["worst_distributions"] = rank_worst(result["distributions"])
+    # 所有 1D 分布的泊松偏差合计（rank_worst 说"哪里偏"，合计说"总体偏多少"）。
+    result["poisson_deviance_total"] = poisson_deviance_total(result["distributions"])
 
     (out_dir / "evaluate.json").write_text(json.dumps(result, indent=1, ensure_ascii=False))
     print(f"[auto_pwa_evaluate] wrote {out_dir / 'evaluate.json'} + PNGs "

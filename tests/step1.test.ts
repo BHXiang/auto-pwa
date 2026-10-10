@@ -383,6 +383,19 @@ describe('suggestFree', () => {
     expect(s.free).toBeUndefined()
     expect(s.rationale).toMatch(/narrow/)
   })
+
+  it('returns a no-op suggestion for parameter-less models (Interp/Custom)', () => {
+    const s = suggestFree(undefined, { model: 'Interp', parameters: [], name: 'K1_interp' })
+    expect(s.free).toBeUndefined()
+    expect(s.rationale).toMatch(/options/)
+  })
+
+  it('still suggests a mass window when PDG has no entry (custom name)', () => {
+    const s = suggestFree(undefined, { model: 'BWR', parameters: [1.75, 0.08], name: 'X1750' })
+    expect(s.free).toEqual([0])
+    expect(s.freeRange![0][0]).toBeLessThan(1.75)
+    expect(s.freeRange![0][1]).toBeGreaterThan(1.75)
+  })
 })
 
 describe('attach already-defined resonance', () => {

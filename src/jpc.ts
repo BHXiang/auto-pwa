@@ -13,10 +13,15 @@
  *                         half-integer spin.
  *
  * C-parity of a pair is only computed when it is well-defined and safe:
- *   - particle-antiparticle pairs from the CONJUGATE_PAIRS table:
+ *   - particle-antiparticle pairs: identified by PDGID when the config gives
+ *     one (PDGID(B) === -PDGID(A)), else by the CONJUGATE_PAIRS name table:
  *     C = (-1)^(L+S)  (spin-0 meson pairs reduce to (-1)^L);
  *   - identical groups: C = (-1)^(L+S) fixed to +1 (bosons) / -1 (fermions),
- *     which IS the identical selection rule.
+ *     which IS the identical selection rule — and, matching the engine, only
+ *     a DECLARED Constraints.identical group counts (the engine's ComSL sees
+ *     only identical_group tags; the PDGID derivation lives in
+ *     particle-info.ts / validation and never silently changes what the
+ *     engine computes).
  * Everything else (charged pairs like K+ eta, pi+ pi0, non-C-eigenstate
  * pairs) is treated as C-undefined and falls back to J^P-only checks — a
  * missing C is safer than a wrong C.
@@ -24,6 +29,7 @@
  * Pure functions; no I/O.
  */
 import { allowedIntermediateJP } from './decay-check.js'
+import { classifyPairPhysics, conjugateOf, particleKey, resolveC } from './particle-info.js'
 import type {
   AllowedJP,
   IsobarCheck,
@@ -31,8 +37,13 @@ import type {
   JPC,
   JPCWave,
   Particle,
+  ResonanceDb,
   SL,
 } from './types.js'
+
+/** The antiparticle name table is owned by particle-info; re-exported here
+ * because it historically lived in this module (jpc consumers / tests). */
+export { CONJUGATE_PAIRS, conjugateOf } from './particle-info.js'
 
 /** Half-integer spin -> fermion (mirrors ctpwa Particle::is_fermion). */
 export function isFermion(j: number): boolean {
@@ -55,78 +66,6 @@ export function explicitJp(spec: { j?: number; p?: 1 | -1 }): JP | undefined {
   return spec.j !== undefined && spec.p !== undefined ? { j: spec.j, p: spec.p } : undefined
 }
 
-/**
- * Name key for pair classification: like normalizeName, but keeps the
- * antiparticle mark: '~' -> 'bar' and charge signs after a name character
- * -> 'p'/'m'. This avoids the normalizeName collision where "K0" and "K~0"
- * both collapse to "k0".
- */
-function particleKey(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/~/g, 'bar')
-    .replace(/(?<=[a-z0-9])[+-]/g, (c) => (c === '+' ? 'p' : 'm'))
-    .replace(/[^a-z0-9]/g, '')
-}
-
-/**
- * Particle-antiparticle name pairs (raw names as used in configs / the PDG
- * table). Charge conjugation of a pair is enabled ONLY for members of this
- * table; any other name combination is C-undefined (conservative). Self-
- * conjugate particles (pi0, eta, ...) intentionally have NO entry here —
- * two identical self-conjugate daughters must be handled via a
- * Constraints.identical group, which applies the Bose/Fermi selection rule.
- */
-export const CONJUGATE_PAIRS: readonly (readonly [string, string])[] = [
-  ['K+', 'K-'],
-  ['K0', 'K~0'],
-  ['pi+', 'pi-'],
-  ['p', 'pbar'],
-  ['n', 'nbar'],
-  ['Lambda', 'Lambdabar'],
-  ['Sigma+', 'Sigma-'],
-  ['Xi-', 'Xi+'],
-  ['Xi0', 'Xi~0'],
-  ['Omega-', 'Omega+'],
-  ['D+', 'D-'],
-  ['D0', 'D~0'],
-  ['Ds+', 'Ds-'],
-  ['B+', 'B-'],
-  ['B0', 'B~0'],
-  ['Bs0', 'Bs~0'],
-  ['Bc+', 'Bc-'],
-  ['tau+', 'tau-'],
-  ['mu+', 'mu-'],
-  ['e+', 'e-'],
-  ['K*(892)+', 'K*(892)-'],
-  ['D*(2010)+', 'D*(2010)-'],
-  ['B*+', 'B*-'],
-]
-
-/** normalized key -> normalized partner key (from CONJUGATE_PAIRS). */
-const CONJUGATE_KEYS: ReadonlyMap<string, string> = (() => {
-  const m = new Map<string, string>()
-  for (const [a, b] of CONJUGATE_PAIRS) {
-    const ka = particleKey(a)
-    const kb = particleKey(b)
-    if (ka === kb) continue // degenerate pair; ignore
-    m.set(ka, kb)
-    m.set(kb, ka)
-  }
-  return m
-})()
-
-/** The antiparticle of `name`, if it has one in the conjugate-pair table. */
-export function conjugateOf(name: string): string | undefined {
-  const key = CONJUGATE_KEYS.get(particleKey(name))
-  if (key === undefined) return undefined
-  for (const [a, b] of CONJUGATE_PAIRS) {
-    if (particleKey(a) === key) return a
-    if (particleKey(b) === key) return b
-  }
-  return undefined
-}
-
 export type PairKind = 'identical-boson' | 'identical-fermion' | 'pair-anti' | 'distinct'
 
 export interface PairKindResult {
@@ -135,15 +74,37 @@ export interface PairKindResult {
   cDefined: boolean
 }
 
+/** Daughter reference accepted by pairKind / pairJPC. */
+export interface DaughterRef {
+  name?: string
+  j: number
+  p?: 1 | -1
+  /**
+   * PDGID when the config declares one. Only used to identify conjugate
+   * pairs (C = (-1)^(L+S)) beyond the name table; identical detection stays
+   * engine-faithful (declared Constraints.identical groups only).
+   */
+  pdgid?: number
+}
+
 /**
- * Classify a daughter pair of a two-body step. Identical detection matches
- * the engine: both members in the same Constraints.identical group. Only the
- * conjugate-pair table (and identical groups) enable C.
+ * Classify a daughter pair of a two-body step.
+ *
+ * `identical` mirrors the ENGINE exactly: both members in the same declared
+ * Constraints.identical group (Analysis.cu compares identical_group tags).
+ * A PDGID-equal pair that is NOT declared identical is deliberately reported
+ * as `distinct` here — the engine would not symmetrise it — and the missing
+ * declaration is raised as a validation warning instead (see
+ * resonance-validate / config-edit deriveIdenticalGroups).
+ *
+ * `pair-anti` (which enables C) uses the PDGID table when a `db` is given,
+ * and the historical name table otherwise.
  */
 export function pairKind(
-  d1: { name?: string; j: number },
-  d2: { name?: string; j: number },
+  d1: DaughterRef,
+  d2: DaughterRef,
   identicalGroups?: readonly (readonly string[])[],
+  db?: ResonanceDb,
 ): PairKindResult {
   if (d1.name !== undefined && d2.name !== undefined) {
     const group = identicalGroups?.find((g) => g.includes(d1.name!) && g.includes(d2.name!))
@@ -153,13 +114,15 @@ export function pairKind(
         cDefined: true,
       }
     }
-    if (d1.name !== d2.name) {
-      const partner = CONJUGATE_KEYS.get(particleKey(d1.name))
-      if (partner !== undefined && partner === particleKey(d2.name)) {
-        return { kind: 'pair-anti', cDefined: true }
-      }
-    }
   }
+  const conjugate =
+    db !== undefined
+      ? classifyPairPhysics(db, d1, d2).conjugate
+      : d1.name !== undefined &&
+        d2.name !== undefined &&
+        d1.name !== d2.name &&
+        particleKey(conjugateOf(d1.name) ?? '') === particleKey(d2.name)
+  if (conjugate) return { kind: 'pair-anti', cDefined: true }
   return { kind: 'distinct', cDefined: false }
 }
 
@@ -230,6 +193,8 @@ export interface PairJPCOptions {
   identicalGroups?: readonly (readonly string[])[]
   /** (2S+1, L) whitelist of this decay step (per-step `sl` opts). */
   slFilter?: readonly (readonly [number, number])[]
+  /** PDG particle table: enables PDGID-based conjugate-pair detection. */
+  db?: ResonanceDb
 }
 
 /**
@@ -238,12 +203,12 @@ export interface PairJPCOptions {
  * per pair kind). `jpc.c` is undefined when C is not defined for the pair.
  */
 export function pairJPC(
-  d1: { name?: string; j: number; p: 1 | -1 },
-  d2: { name?: string; j: number; p: 1 | -1 },
+  d1: DaughterRef & { p: 1 | -1 },
+  d2: DaughterRef & { p: 1 | -1 },
   options: PairJPCOptions = {},
 ): JPCWave[] {
-  const { maxL = 4, identicalGroups, slFilter } = options
-  const { kind, cDefined } = pairKind(d1, d2, identicalGroups)
+  const { maxL = 4, identicalGroups, slFilter, db } = options
+  const { kind, cDefined } = pairKind(d1, d2, identicalGroups, db)
   const twoJ2 = Math.round(d1.j * 2)
   const twoJ3 = Math.round(d2.j * 2)
   const byJpc = new Map<string, JPCWave>()
@@ -299,6 +264,8 @@ export interface IsobarOptions {
   identicalGroups?: readonly (readonly string[])[]
   /** Intermediate name for the result (e.g. "R_KK"). */
   isobarName?: string
+  /** PDG particle table: enables PDGID-based C and conjugate detection. */
+  db?: ResonanceDb
 }
 
 /**
@@ -309,12 +276,12 @@ export interface IsobarOptions {
  */
 export function allowedIsobarJPC(
   mother: Particle,
-  d1: { name?: string; j: number; p: 1 | -1; c?: 1 | -1 },
-  d2: { name?: string; j: number; p: 1 | -1; c?: 1 | -1 },
-  d3: { name?: string; j: number; p: 1 | -1; c?: 1 | -1 },
+  d1: { name?: string; j: number; p: 1 | -1; c?: 1 | -1; pdgid?: number },
+  d2: { name?: string; j: number; p: 1 | -1; c?: 1 | -1; pdgid?: number },
+  d3: { name?: string; j: number; p: 1 | -1; c?: 1 | -1; pdgid?: number },
   options: IsobarOptions = {},
 ): IsobarCheck[] {
-  const { maxL = 4, identicalGroups, isobarName = '' } = options
+  const { maxL = 4, identicalGroups, isobarName = '', db } = options
   const nameOf = (p: { name?: string }): string => p.name ?? '?'
   const triples: { pi: typeof d1; pj: typeof d2; pk: typeof d3; pair: [string, string] }[] = [
     { pi: d1, pj: d2, pk: d3, pair: [nameOf(d1), nameOf(d2)] },
@@ -325,10 +292,14 @@ export function allowedIsobarJPC(
     a.j === b.j && a.p === b.p
   const results: IsobarCheck[] = []
   for (const { pi, pj, pk, pair } of triples) {
-    const decay = pairJPC(pi, pj, { maxL, identicalGroups })
+    const decay = pairJPC(pi, pj, { maxL, identicalGroups, db })
     const production = allowedIntermediateJP(mother, pk as Particle, maxL)
+    const cMother = db !== undefined ? resolveC(db, mother) : mother.c
+    const cSpectator = db !== undefined ? resolveC(db, pk) : pk.c
     const cRequired =
-      mother.c !== undefined && pk.c !== undefined ? ((mother.c * pk.c) as 1 | -1) : undefined
+      cMother !== undefined && cSpectator !== undefined
+        ? ((cMother * cSpectator) as 1 | -1)
+        : undefined
     const prodHas = (jpc: JPC): boolean => production.some((p) => sameJp(p.jp, jpc))
     const allowed: JPCWave[] = []
     const cBlocked: JPCWave[] = []
@@ -343,8 +314,8 @@ export function allowedIsobarJPC(
     results.push({
       isobarName,
       pair,
-      identical: pairKind(pi, pj, identicalGroups).kind.startsWith('identical'),
-      cDefined: pairKind(pi, pj, identicalGroups).cDefined,
+      identical: pairKind(pi, pj, identicalGroups, db).kind.startsWith('identical'),
+      cDefined: pairKind(pi, pj, identicalGroups, db).cDefined,
       decayVertex: decay,
       production,
       cRequired,

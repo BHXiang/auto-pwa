@@ -79,6 +79,66 @@ Data:
     expect(out).toContain('# my config')
     rmSync(root, { recursive: true, force: true })
   })
+
+  it('also handles block style and unquoted paths (AI-written configs)', () => {
+    const root = tempIterations()
+    const base = join(root, 'solve1')
+    const { mkdirSync } = require('node:fs') as typeof import('node:fs')
+    mkdirSync(base)
+    const cfg = join(base, 'config.yml')
+    writeFileSync(cfg, `Data:
+  order: [Kp, Km, eta]
+  data:
+    - dat
+    - ./data.dat
+  phsp:
+    - dat
+    - ../root/phsp.dat
+  bkg: [dat, /abs/bkg.dat]
+`)
+    const stat = absolutizeDataPaths(cfg, base)
+    expect(stat).toEqual({ found: 3, rewritten: 2, unresolved: 0 })
+    const out = readFileSync(cfg, 'utf8')
+    expect(out).toContain(resolve(base, './data.dat'))
+    expect(out).toContain(resolve(base, '../root/phsp.dat'))
+    expect(out).toContain('/abs/bkg.dat')
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('flags a malformed sample instead of silently keeping a relative path', () => {
+    const root = tempIterations()
+    const base = join(root, 'solve1')
+    const { mkdirSync } = require('node:fs') as typeof import('node:fs')
+    mkdirSync(base)
+    const cfg = join(base, 'config.yml')
+    writeFileSync(cfg, `Data:
+  order: [Kp, Km, eta]
+  data: [dat]
+`)
+    const stat = absolutizeDataPaths(cfg, base)
+    expect(stat.found).toBe(1)
+    expect(stat.unresolved).toBe(1)
+    expect(stat.rewritten).toBe(0)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('leaves an all-absolute config byte-identical', () => {
+    const root = tempIterations()
+    const base = join(root, 'solve1')
+    const { mkdirSync } = require('node:fs') as typeof import('node:fs')
+    mkdirSync(base)
+    const cfg = join(base, 'config.yml')
+    const text = `# untouched
+Data:
+  order: [Kp, Km, eta]
+  data: [dat, "/abs/data.dat"]
+`
+    writeFileSync(cfg, text)
+    const stat = absolutizeDataPaths(cfg, base)
+    expect(stat).toEqual({ found: 1, rewritten: 0, unresolved: 0 })
+    expect(readFileSync(cfg, 'utf8')).toBe(text)
+    rmSync(root, { recursive: true, force: true })
+  })
 })
 
 describe('startIteration', () => {

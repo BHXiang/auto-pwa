@@ -1,13 +1,40 @@
 /**
  * Vendored minimal type surface + runtime stub for `@deepseek-ai/dsh-jobs`.
- * Mirrors the real package's public vocabulary (jobs/src/types.ts) at the
- * level the pwa-fit-local provider consumes: kind map (declaration-merge
- * extensible), JobStart/JobHooks/JobOutcome, snapshots, and the JobRegistry
- * service surface. The stub declares `ctpwa` in the kind map directly so
- * both the provider and its tests typecheck without the augmentation;
- * pwa-fit-local still performs the canonical `declare module` merge so the
- * REAL registry accepts the kind at runtime.
+ * Mirrors the real package's public vocabulary at the level the pwa-fit-local
+ * provider consumes: kind map (declaration-merge extensible), JobStart/
+ * JobHooks/JobOutcome, snapshots, and the JobRegistry service surface. The
+ * stub declares `ctpwa` in the kind map directly so both the provider and its
+ * tests typecheck without the augmentation; pwa-fit-local still performs the
+ * canonical `declare module` merge so the REAL registry accepts the kind.
  */
+/**
+ * Job identity. The registry contract changed between DSH releases and this
+ * stub must model BOTH, because the plugin runs against whichever harness the
+ * user has installed:
+ *
+ *   - current DSH (dsh-jobs 0.1.5-rc.1): a job's owner AND every read/kill
+ *     caller is the live **Agent** (`Agent.id` is the SessionId; the Agent also
+ *     carries the context used for scope routing). The registry exposes
+ *     `onJobDone`.
+ *   - released DSH 0.2.0-rc.2 and earlier: owner and caller are the bare
+ *     **SessionId string**; the registry exposes `readAt`/`remove`.
+ *
+ * Getting this wrong does NOT throw in the current generation — the job is
+ * silently created UNOWNED, and `dsh-tool-jobs` then returns early
+ * (`event.job.owner === undefined`) so no completion notice is ever delivered.
+ * That is precisely the "fit submitted, agent never wakes up" failure, which
+ * is why pwa-fit-local adapts at runtime instead of trusting one shape.
+ */
+export interface JobAgent {
+  /** Session id of the live agent (the registry's authorization key). */
+  readonly id: string
+  /** Agent context — used by the registry's scope routing. */
+  readonly ctx?: unknown
+}
+
+/** Owner / caller identity accepted by the running registry generation. */
+export type JobIdentity = JobAgent | string
+
 export interface JobKindMap {
   bash: 'bash'
   subagent: 'subagent'
@@ -37,6 +64,11 @@ export interface JobHooks {
   readOutput?(): string
 }
 
+/** Owner of a job: the live Agent (current DSH) or the SessionId (released). */
+export type JobOwner = JobIdentity
+/** Read/kill caller: same union as the owner (see {@link JobIdentity}). */
+export type JobCaller = JobIdentity
+
 /** Producer declaration passed to JobRegistry.start. */
 export interface JobStart {
   /** Producer kind — also the id prefix ('ctpwa', ...). */
@@ -46,7 +78,7 @@ export interface JobStart {
   /** Optional UTF-8 byte cap for model-facing completion notices / reads. */
   outputLimitBytes?: number
   /** Owning live agent (session fence + owner cleanup); undefined = unowned. */
-  owner?: { sessionId: string }
+  owner?: JobOwner
   /** Start the work after preflight and synchronously return its hooks. */
   run(): JobHooks
 }
@@ -74,18 +106,22 @@ export interface JobRead {
 /** Completion callback with the exact owner supplied at start. */
 export type JobDoneListener = (
   snapshot: JobSnapshot,
-  owner: { sessionId: string } | undefined,
+  owner: JobOwner | undefined,
 ) => void | PromiseLike<void>
 
 /** The abstract background job registry exposed as ctx.jobs. */
 export interface JobRegistry {
   start(spec: JobStart): string
-  list(caller?: { sessionId: string }): JobSnapshot[]
-  get(id: string, caller?: { sessionId: string }): JobSnapshot
-  read(id: string, caller?: { sessionId: string }): JobRead
-  kill(id: string, caller?: { sessionId: string }, reason?: string): 'requested' | 'already-finished'
-  wait(id: string, timeoutMs: number, caller?: { sessionId: string }, signal?: AbortSignal): Promise<JobSnapshot>
-  onJobDone(listener: JobDoneListener): () => void
+  list(caller?: JobCaller): JobSnapshot[]
+  get(id: string, caller?: JobCaller): JobSnapshot
+  read(id: string, caller?: JobCaller): JobRead
+  kill(id: string, caller?: JobCaller, reason?: string): 'requested' | 'already-finished'
+  wait(id: string, timeoutMs: number, caller?: JobCaller, signal?: AbortSignal): Promise<JobSnapshot>
+  /** Current DSH: done-listener registration (its presence identifies the Agent-identity generation). */
+  onJobDone?(listener: JobDoneListener): () => void
+  /** Released DSH: incremental read (its presence identifies the SessionId generation). */
+  readAt?(id: string, from: number, caller?: JobCaller): { text: string; snapshot: JobSnapshot }
+  remove?(id: string, caller?: JobCaller): void
   attachController?(name: string): void
 }
 

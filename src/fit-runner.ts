@@ -31,6 +31,30 @@ export interface FitRunnerConfig {
 
 export type FitState = 'running' | 'done' | 'failed' | 'canceled'
 
+/**
+ * `--config <path>` / `--config=<path>` from a driver's argument list, if
+ * present. Variant experiments run any config file through it, so both the
+ * local and the SLURM launcher must honor it (the latter also for its
+ * existence check).
+ */
+export function configPathFromArgs(scriptArgs: string[] | undefined): string | undefined {
+  const args = scriptArgs ?? []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!
+    if (a === '--config') return args[i + 1]
+    if (a.startsWith('--config=')) return a.slice('--config='.length)
+  }
+  return undefined
+}
+
+/** Ensure `--config <config>` is present (variant runs); never duplicates it. */
+export function withConfigArg(scriptArgs: string[] | undefined, config: string | undefined): string[] | undefined {
+  if (config === undefined) return scriptArgs
+  const args = scriptArgs ?? []
+  if (configPathFromArgs(args) !== undefined) return args
+  return ['--config', config, ...args]
+}
+
 export interface FitStatus {
   jobId: string
   iterDir: string

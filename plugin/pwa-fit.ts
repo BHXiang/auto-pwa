@@ -38,8 +38,26 @@ export interface FitStatusView {
   logTail: string
 }
 
-/** 最小 owner 形状（真实 DSH 传 Agent，结构上有 sessionId）。 */
-export type FitOwner = { sessionId: string }
+/**
+ * Fit-job identity. DSH's job registry changed generations (see the vendored
+ * dsh-jobs header), so this carries BOTH handles rather than one guessed shape:
+ *   - `id`    — the SessionId string: always available; what released DSH
+ *               (0.2.0-rc.2) wants for owner and caller, and what every
+ *               generation accepts as the caller.
+ *   - `agent` — the live Agent: what current DSH wants for owner and caller
+ *               (its `.id` is the SessionId, and it carries the scope context).
+ *
+ * Historically this type was `{ sessionId: string }`, copied from a wrong
+ * vendored stub: the real Agent exposes `id` (no `sessionId`), so every fit
+ * job was registered UNOWNED and dsh-tool-jobs therefore never delivered the
+ * completion notice — the "submitted, then silence" bug.
+ */
+export interface FitOwner {
+  /** Session id (registry authorization key in every generation). */
+  readonly id: string
+  /** The live Agent (owner/caller identity in current DSH). */
+  readonly agent?: { readonly id?: string; readonly ctx?: unknown }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

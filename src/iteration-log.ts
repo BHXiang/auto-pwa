@@ -16,6 +16,7 @@
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { parseConfig, dumpConfig } from './config-edit.js'
+import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import { renderIndex, renderReport, type IterationRecord } from './report.js'
 
 export interface IterationLogOptions {
@@ -119,10 +120,10 @@ export function startIteration(options: {
   // would resolve wrongly, so absolutize them against the base dir.
   const pathStat = absolutizeDataPaths(target, dirname(options.baseConfigPath))
   changed.push(`config.yml <- ${options.baseConfigPath} (Data 路径已绝对化)` + (options.baseConfigPath === target ? '' : ''))
-  if (pathStat.found > pathStat.rewritten) {
+  if (pathStat.unresolved > 0) {
     warnings.push(
-      `Data 路径绝对化：${pathStat.rewritten}/${pathStat.found} 行匹配（${pathStat.found - pathStat.rewritten} 行未匹配，` +
-        `相对路径可能仍指向错误位置）— 请检查 config.yml 的 data/phsp/bkg 行格式`,
+      `Data 路径绝对化：${pathStat.unresolved}/${pathStat.found} 个样本的路径无法读取` +
+        `（${pathStat.rewritten} 个相对路径已绝对化）— 请检查 config.yml 的 data/phsp/bkg 样本格式`,
     )
   }
 
@@ -200,9 +201,10 @@ export function createTrialDir(options: {
   copyFileSync(options.baseConfigPath, target)
   const pathStat = absolutizeDataPaths(target, dirname(options.baseConfigPath))
   changed.push(`config.yml <- ${options.baseConfigPath} (Data 路径已绝对化)`)
-  if (pathStat.found > pathStat.rewritten) {
+  if (pathStat.unresolved > 0) {
     warnings.push(
-      `Data 路径绝对化：${pathStat.rewritten}/${pathStat.found} 行匹配 — 相对路径可能仍指向错误位置`,
+      `Data 路径绝对化：${pathStat.unresolved}/${pathStat.found} 个样本的路径无法读取` +
+        `（${pathStat.rewritten} 个相对路径已绝对化）— 相对路径可能仍指向错误位置`,
     )
   }
   if (options.fitScriptPath !== undefined) {
@@ -230,26 +232,57 @@ export function iterationsRootOf(iterDir: string): string {
  * absolute. ctpwa reads config paths relative to its cwd, so iteration dirs
  * need absolute paths to stay correct.
  *
- * Text-level replacement (comments preserved): matches lines like
- *   data: [dat, "../root/cut_data.root"]
- *   phsp: [ROOT, "../root/cut_phsp.root", "OmegaKsKs", ...]
+ * YAML-aware (parseDocument → mutate the path scalar → String), so it is
+ * format-agnostic: flow (`data: [dat, "./x"]`), block sequences, quoted or
+ * unquoted paths all work. Comments and the surrounding formatting are
+ * preserved, and the file is only rewritten when something actually changed.
+ * (The previous regex required the quoted-flow spelling, so a config written
+ * in block style — e.g. one produced by auto_pwa_init_config — silently kept
+ * its relative paths and broke at fit time.)
  *
- * @returns how many data/phsp/bkg lines were found and how many rewritten
- * (a found > rewritten mismatch means the config uses an unsupported layout
- * and relative paths may silently stay wrong).
+ * The path is always element 1 of the sample list: `[dat, path]` and
+ * `[ROOT, path, TTree, ...]` alike.
+ *
+ * @returns `found` samples seen, `rewritten` relative paths made absolute,
+ * and `unresolved` samples whose path could not be read (malformed list) —
+ * the caller warns on `unresolved`, not on "already absolute".
  */
-export function absolutizeDataPaths(configPath: string, baseDir: string): { found: number; rewritten: number } {
+export function absolutizeDataPaths(
+  configPath: string,
+  baseDir: string,
+): { found: number; rewritten: number; unresolved: number } {
   const text = readFileSync(configPath, 'utf8')
-  const found = (text.match(/^\s*(?:data|phsp|bkg|bkg_weights)\s*:/gm) ?? []).length
+  let doc: ReturnType<typeof parseDocument>
+  try {
+    doc = parseDocument(text)
+  } catch {
+    return { found: 0, rewritten: 0, unresolved: 0 }
+  }
+  const dataNode = doc.get('Data') ?? doc.get('data')
+  if (!isMap(dataNode)) return { found: 0, rewritten: 0, unresolved: 0 }
+
+  let found = 0
   let rewritten = 0
-  const out = text.replace(
-    /(^\s*(?:data|phsp|bkg|bkg_weights)\s*:\s*\[\s*(?:dat|ROOT)\s*,\s*")([^"]+)("\s*)/gm,
-    (m, pre: string, p: string, post: string) => {
-      if (isAbsolute(p)) return m
-      rewritten += 1
-      return pre + resolve(baseDir, p) + post
-    },
-  )
-  if (out !== text) writeFileSync(configPath, out)
-  return { found, rewritten }
+  let unresolved = 0
+  for (const key of ['data', 'phsp', 'phsp_truth', 'bkg', 'bkg_weights']) {
+    const sample = dataNode.get(key)
+    if (sample === undefined) continue
+    found += 1
+    if (!isSeq(sample) || sample.items.length < 2) {
+      unresolved += 1
+      continue
+    }
+    const pathNode = sample.items[1]
+    if (!isScalar(pathNode) || typeof pathNode.value !== 'string') {
+      unresolved += 1
+      continue
+    }
+    const p = pathNode.value
+    if (p === '' || isAbsolute(p)) continue
+    // Mutate the scalar's value in place so its quote style survives.
+    pathNode.value = resolve(baseDir, p)
+    rewritten += 1
+  }
+  if (rewritten > 0) writeFileSync(configPath, doc.toString({ lineWidth: 0, flowCollectionPadding: false }))
+  return { found, rewritten, unresolved }
 }
