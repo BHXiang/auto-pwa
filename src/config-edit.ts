@@ -709,8 +709,13 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
       return false
     })
   if (existingGroup_) {
-    errors.push({ code: 'duplicate', message: `"${proposal.name}" is already in ${proposal.chain} [${proposal.jpGroup.j}${proposal.jpGroup.p > 0 ? '+' : '-'}]` })
-    return { config, changed, errors }
+    if (proposal.update !== true) {
+      errors.push({ code: 'duplicate', message: `"${proposal.name}" is already in ${proposal.chain} [${proposal.jpGroup.j}${proposal.jpGroup.p > 0 ? '+' : '-'}]` })
+      return { config, changed, errors }
+    }
+    // update: true on an already-attached state — the "float this one" case.
+    // Membership is a no-op (the group loop below skips a name already listed)
+    // and the definition is replaced further down.
   }
   const alreadyDefined = config.resonances[proposal.name] !== undefined
   if (!alreadyDefined && Object.keys(config.resonances).some((n) => normalizeName(n) === normalizeName(proposal.name))) {
@@ -799,6 +804,12 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
       const jp = decodeJpKey(key)
       if (jp && jp.j === proposal.jpGroup.j && jp.p === proposal.jpGroup.p) {
         const names = asArr(namesRaw) ?? []
+        if (names.includes(proposal.name)) {
+          // Already listed (update: true on an attached state) — pushing again
+          // would list the same resonance twice in the group.
+          applied++
+          break
+        }
         names.push(proposal.name)
         groupMap.set(key, names)
         applied++

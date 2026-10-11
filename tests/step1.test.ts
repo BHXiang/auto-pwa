@@ -593,3 +593,62 @@ describe('update: true redefines an already-defined resonance', () => {
     expect(w.message).toContain('REDEFINES')
   })
 })
+
+describe('update: true on an already-ATTACHED resonance（放开某个态）', () => {
+  // 迭代里最常见的操作：把已经挂上链的某个态的 mass/width 放开（或改 free_range）。
+  // 它必须走 update: true —— 而 gate 的 duplicate 检查此前无条件拒绝"重新提案一个
+  // 已在组里的名字"，于是这条操作根本做不了（只能绕过工具手改 YAML / free_params.py）。
+  const cfg = () => parseConfig(CONFIG_TEXT)
+  const floatPhi = (update: boolean): ResonanceProposal => ({
+    name: 'phi1020',
+    chain: 'R_KK',
+    jpGroup: { j: 1, p: -1 },
+    model: 'BWR',
+    parameters: [1.0195, 0.0045],
+    free: [0, 1],
+    freeRange: [
+      [1.0, 1.04],
+      [0.002, 0.008],
+    ],
+    ...(update ? { update: true } : {}),
+  })
+
+  it('gate：普通重提是 duplicate，update: true 放行', () => {
+    const c = cfg()
+    expect(validateResonanceAddition(defaultDb, c, floatPhi(false)).errors.map((e) => e.code)).toContain('duplicate')
+    const ok = validateResonanceAddition(defaultDb, c, floatPhi(true))
+    expect(ok.errors).toEqual([])
+    expect(ok.ok).toBe(true)
+  })
+
+  it('写回：放开成功，且组里不会出现两次', () => {
+    const ap = applyResonanceAddition(cfg(), floatPhi(true))
+    expect(ap.errors).toEqual([])
+    expect(ap.config.resonances.phi1020!.free).toEqual([0, 1])
+    expect(ap.config.resonances.phi1020!.freeRange).toEqual([
+      [1.0, 1.04],
+      [0.002, 0.008],
+    ])
+    // 关键：组内成员只能有一份（否则振幅块里同一态被算两次）
+    expect(ap.config.decayChains.decay1.intermediates.R_KK.groups[0]!.names).toEqual(['phi1020'])
+    // 写回文本再解析也一致
+    const again = parseConfig(dumpConfig(ap.config))
+    expect(again.resonances.phi1020!.free).toEqual([0, 1])
+    expect(again.decayChains.decay1.intermediates.R_KK.groups[0]!.names).toEqual(['phi1020'])
+  })
+
+  it('同一次调用里既改参数又放开（P1-4 + 本次修复的组合）', () => {
+    const ap = applyResonanceAddition(cfg(), {
+      ...floatPhi(true),
+      parameters: [1.024, 0.006],
+      freeRange: [
+        [1.0, 1.05],
+        [0.003, 0.01],
+      ],
+    })
+    expect(ap.errors).toEqual([])
+    expect(ap.config.resonances.phi1020!.parameters).toEqual([1.024, 0.006])
+    expect(ap.config.resonances.phi1020!.free).toEqual([0, 1])
+    expect(ap.config.decayChains.decay1.intermediates.R_KK.groups[0]!.names).toEqual(['phi1020'])
+  })
+})

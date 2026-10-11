@@ -369,8 +369,13 @@ export function validateResonanceAddition(
   }
 
   // --- 5. duplicate / attach-already-defined ------------------------------
+  // Re-proposing a state that is ALREADY in this group is a duplicate — unless
+  // `update: true`, which is the documented way to change an existing
+  // definition. "Float this state" / "widen its free_range" is the most common
+  // iteration there is; without this exemption the gate rejected it outright and
+  // callers had to bypass the tool by editing YAML.
   const chainGroup_ = findGroup(config, proposal.chain, proposal.jpGroup)
-  if (chainGroup_ && chainGroup_.names.includes(proposal.name)) {
+  if (chainGroup_ && chainGroup_.names.includes(proposal.name) && proposal.update !== true) {
     errors.push(err('duplicate', `"${proposal.name}" is already in ${proposal.chain} [${jpLabel(proposal.jpGroup)}]`))
   }
   const existing = config.resonances[proposal.name]
