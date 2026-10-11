@@ -1992,6 +1992,12 @@ export function apply(ctx: Context) {
         if (value.floatSuggestion) {
           lines.push(`float 建议: free=${JSON.stringify(value.floatSuggestion.free ?? [])} range=${JSON.stringify(value.floatSuggestion.freeRange ?? [])}`)
           lines.push(`  ${value.floatSuggestion.rationale}`)
+          // 落地方式必须写出来：改一个**已定义/已挂链**的态（把参数放开、改 free_range）
+          // 只能带 proposal.update=true —— 否则会被 duplicate/param-conflict 拦下。
+          lines.push(
+            '  落地：edit_config 带同样的 proposal 再加 update=true（+free/freeRange）；' +
+              '只对**新建**的态才不需要 update。',
+          )
         }
         return text(lines.join('\n'))
       },

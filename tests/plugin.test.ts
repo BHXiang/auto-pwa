@@ -1606,3 +1606,25 @@ describe('auto_pwa_init_config (from-scratch config authoring)', () => {
     expect(out.errors.map((e) => e.code)).toContain('invalid-spec')
   })
 })
+
+describe('auto_pwa_validate_add 的 float 建议附带落地方式', () => {
+  it('提示要带 proposal.update=true（改已定义/已挂链的态只能这么走）', () => {
+    const def = collectDefinitions().find((d) => d.name === 'auto_pwa_validate_add')!
+    const out = {
+      ok: false,
+      errors: [],
+      warnings: [],
+      floatSuggestion: {
+        free: [0, 1],
+        freeRange: [
+          [1.0, 1.04],
+          [0.002, 0.008],
+        ],
+        rationale: '宽且靠阈值',
+      },
+    }
+    const rendered = (def.output as { render: (a: unknown, v: unknown) => { text: string }[] }).render({}, out)
+    expect(rendered[0]!.text).toContain('float 建议')
+    expect(rendered[0]!.text).toContain('update=true')
+  })
+})
