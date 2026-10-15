@@ -196,6 +196,12 @@ export function scoreOne(probe: Probe, answer: AnswerRecord, rejectedNames?: Set
       return { ...base, correct: ok, detail: `aliasOf=${String(probe.truth.aliasOf)} want=${String(probe.truth.verdict)}` }
     }
     case 'tried-before': {
+      // 宽容口径：日记里"被回退撤销"的态没有显式 `-=`，结构化证据判不出"是否仍在模型里"
+      // → 题面允许的两种判定都接受（truth.tolerantVerdicts 由 probe-gen 标注）
+      const tol = probe.truth.tolerantVerdicts as string[] | undefined
+      if (tol !== undefined && tol.some((v) => text.includes(v))) {
+        return { ...base, correct: true, detail: `宽容判定（证据不足）：${tol.join('|')}` }
+      }
       const ok = text.includes(String(probe.truth.verdict))
       return { ...base, correct: ok, detail: `want=${probe.truth.verdict as string}` }
     }

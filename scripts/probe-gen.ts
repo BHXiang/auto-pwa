@@ -269,7 +269,13 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
         `${a.name} 分析里试过 ${tl.name} 吗？结果如何？` +
         '（判定按**最终状态**：当前仍在模型里 = touched；曾加入但已被移除 = added-then-removed；从未加入 = never）',
       answer: t.verdict,
-      truth: { verdict: t.verdict, iters: tl.events.map((e) => e.iter), ops: tl.events.map((e) => `${e.op}@${e.iter}`) },
+      truth: {
+        verdict: t.verdict,
+        iters: tl.events.map((e) => e.iter),
+        ops: tl.events.map((e) => `${e.op}@${e.iter}`),
+        // 证据不足（有回退轮但无显式 `-=`）→ touched 与 added-then-removed 都算对
+        ...(t.rollbackRisk ? { tolerantVerdicts: ['touched', 'added-then-removed'] } : {}),
+      },
       judge: 'code',
     })
     if (tl.newlyAt.length >= 2) {

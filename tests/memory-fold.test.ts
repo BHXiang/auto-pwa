@@ -194,3 +194,17 @@ describe('因果守卫：丢掉"未来引用"', () => {
     expect(modelBaselineFold(recs, 8).baseIter).toBe(4)
   })
 })
+
+describe('回滚风险：结构化证据判不出"是否仍在模型里"', () => {
+  it('add 之后有 kind=removed 的回退轮 → rollbackRisk=true（两种判定都该被接受）', () => {
+    const recs: IterationRecord[] = [
+      { iter: 1, kind: 'added', title: '加 X2200', changes: ['R_ppbar [0-] += X2200'] },
+      { iter: 2, kind: 'removed', title: 'X2200 被拒 → 回退 iter-001', changes: [] },
+    ]
+    const t = triedBefore(recs, 'X2200')
+    expect(t.verdict).toBe('touched') // 没有显式 -=
+    expect(t.rollbackRisk).toBe(true)
+    // 没有回退轮时不该标风险
+    expect(triedBefore([recs[0]!], 'X2200').rollbackRisk).toBe(false)
+  })
+})

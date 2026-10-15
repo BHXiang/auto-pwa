@@ -268,12 +268,21 @@ export function triedBefore(
   records: IterationRecord[],
   name: string,
   opts: { includeProse?: boolean } = {},
-): { verdict: 'never' | 'touched' | 'added-then-removed'; events: TouchEvent[] } {
+): { verdict: 'never' | 'touched' | 'added-then-removed'; events: TouchEvent[]; rollbackRisk: boolean } {
   const tl = touchTimeline(records, opts).find((t) => t.name === name)
-  if (tl === undefined) return { verdict: 'never', events: [] }
+  if (tl === undefined) return { verdict: 'never', events: [], rollbackRisk: false }
   const firstAdd = tl.events.find((e) => e.op === 'add')
   const laterRemove = firstAdd !== undefined && tl.events.some((e) => e.op === 'remove' && e.iter > firstAdd.iter)
-  return { verdict: laterRemove ? 'added-then-removed' : 'touched', events: tl.events }
+  // **回滚风险**：日记里"回退到上一轮"撤销的态**不会**留下 `-=` 记录（实测 X2200/X2450/N1440…），
+  // 所以"是否仍在模型里"用结构化事件**判不出来**。此时 `touched` 与 `added-then-removed`
+  // 都有道理 → 由调用方把两种判定都接受，而不是硬按一种真值评分。
+  const rollbackRisk =
+    firstAdd !== undefined && records.some((r) => r.kind === 'removed' && r.iter > firstAdd.iter)
+  return {
+    verdict: laterRemove ? 'added-then-removed' : 'touched',
+    events: tl.events,
+    rollbackRisk,
+  }
 }
 
 /**
