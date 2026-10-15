@@ -256,36 +256,50 @@ describe('git coexistence probe (S0)', () => {
 // S1：结构化提交标注（trailer）
 // ---------------------------------------------------------------------------
 describe('commit trailers (S1)', () => {
-  it('round-trips structured trailers and drops malformed keys', () => {
-    expect(commitPaths(analysis, ['config.yml'], 'iter-000 plain').committed).toBe(true)
-    writeFileSync(join(analysis, 'config.yml'), 'Particles: {a: 1}\n')
-    expect(
-      commitPaths(analysis, ['config.yml'], 'iter-007 result', {
-        'Pwa-Kind': 'result',
-        'Pwa-Iter': 7,
-        'Pwa-NLL': (-18685.8).toFixed(2),
-        'Pwa-Hessian-PD': true,
-        'pwa-lowercase': 'dropped', // 前缀不合规
-        'Pwa-Bad Key': 'dropped', // 键名非法（含空格）
-        'Pwa-Multi': 'a\nb', // 多行值压成一行
-      }).committed,
-    ).toBe(true)
+  it('round-trips structured trailers, always carries Pwa-Engine, drops malformed keys', () => {
+    process.env.PWA_ENGINE = 'test@deadbee' // 固定引擎：不依赖本机 ctpwa 是否可探测
+    resetGitProbe()
+    try {
+      expect(commitPaths(analysis, ['config.yml'], 'iter-000 plain').committed).toBe(true)
+      writeFileSync(join(analysis, 'config.yml'), 'Particles: {a: 1}\n')
+      expect(
+        commitPaths(analysis, ['config.yml'], 'iter-007 result', {
+          'Pwa-Kind': 'result',
+          'Pwa-Iter': 7,
+          'Pwa-NLL': (-18685.8).toFixed(2),
+          'Pwa-Hessian-PD': true,
+          'pwa-lowercase': 'dropped', // 前缀不合规
+          'Pwa-Bad Key': 'dropped', // 键名非法（含空格）
+          'Pwa-Multi': 'a\nb', // 多行值压成一行
+        }).committed,
+      ).toBe(true)
 
-    const [head, plain] = gitLog(analysis, 5)
-    expect(head!.subject).toBe('iter-007 result')
-    expect(head!.trailers).toMatchObject({
-      'Pwa-Kind': 'result',
-      'Pwa-Iter': '7',
-      'Pwa-NLL': '-18685.80',
-      'Pwa-Hessian-PD': 'true',
-    })
-    expect(head!.trailers!['Pwa-Multi']).toBe('a b')
-    expect(head!.trailers!['pwa-lowercase']).toBeUndefined()
-    expect(Object.keys(head!.trailers!).some((k) => k.includes(' '))).toBe(false)
-    // 普通提交没有 trailer（向后兼容：老提交照旧可读）
-    expect(plain!.subject).toBe('iter-000 plain')
-    expect(plain!.trailers).toBeUndefined()
+      const [head, plain] = gitLog(analysis, 5)
+      expect(head!.subject).toBe('iter-007 result')
+      expect(head!.trailers).toMatchObject({
+        'Pwa-Kind': 'result',
+        'Pwa-Iter': '7',
+        'Pwa-NLL': '-18685.80',
+        'Pwa-Hessian-PD': 'true',
+        'Pwa-Engine': 'test@deadbee',
+      })
+      expect(head!.trailers!['Pwa-Multi']).toBe('a b')
+      expect(head!.trailers!['pwa-lowercase']).toBeUndefined()
+      expect(Object.keys(head!.trailers!).some((k) => k.includes(' '))).toBe(false)
+      // 没有任何决策字段的提交也带引擎兜底（来源单一：commitPaths 内部）
+      expect(plain!.subject).toBe('iter-000 plain')
+      expect(plain!.trailers).toEqual({ 'Pwa-Engine': 'test@deadbee' })
+      // 调用方显式给引擎 → 覆盖默认值
+      writeFileSync(join(analysis, 'config.yml'), 'Particles: {b: 2}\n')
+      commitPaths(analysis, ['config.yml'], 'iter-008', { 'Pwa-Engine': 'override@0000000' })
+      expect(gitLog(analysis, 1)[0]!.trailers!['Pwa-Engine']).toBe('override@0000000')
+    } finally {
+      delete process.env.PWA_ENGINE
+      resetGitProbe()
+    }
   })
+})
+
 // ---------------------------------------------------------------------------
 // 引擎指纹（Pwa-Engine 的数据源）
 // ---------------------------------------------------------------------------
@@ -336,6 +350,4 @@ describe('engineFingerprint（自动探测，宁缺毋滥）', () => {
     expect(findRepoRoot(deep)).toBe(repo)
     expect(findRepoRoot(join(root, 'elsewhere'))).toBeUndefined()
   })
-})
-
 })

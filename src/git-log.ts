@@ -485,7 +485,11 @@ export function commitPaths(analysisDir: string, paths: string[], message: strin
     const warnings = coexistenceWarnings(analysisDir)
     return { committed: false, reason: 'nothing-to-commit', ...(warnings.length > 0 ? { warnings } : {}) }
   }
-  const commit = run(analysisDir, ['commit', '--quiet', '-m', `${message}${trailerBlock(trailers)}`])
+  // 引擎指纹在**这一层**兜底：任何走 commitPaths 的提交都会带上它（调用方给了就优先）。
+  // 放在插件层会让不经插件的调用漏掉——e2e 检查就是这么发现的。
+  const engine = engineFingerprint()
+  const merged: Trailers = { ...(engine !== undefined ? { 'Pwa-Engine': engine } : {}), ...trailers }
+  const commit = run(analysisDir, ['commit', '--quiet', '-m', `${message}${trailerBlock(merged)}`])
   if (!commit.ok) return { committed: false, reason: 'commit-failed', error: commit.error }
   const head = run(analysisDir, ['rev-parse', '--short', 'HEAD'])
   const warnings = coexistenceWarnings(analysisDir)

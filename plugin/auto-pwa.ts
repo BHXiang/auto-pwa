@@ -90,7 +90,6 @@ import {
   analysisRootOf,
   blobMd5,
   commitPaths,
-  engineFingerprint,
   gitAvailable,
   gitDisabled,
   gitLog,
@@ -486,7 +485,8 @@ function gitRecord(
   if (gitDisabled()) return { warnings: [] }
   const analysisDir = analysisRootOf(anchorPath)
   noteAnalysisRoot(analysisDir)
-  const res = commitPaths(analysisDir, paths, message, withEngine(trailers))
+  // 引擎指纹由 commitPaths 统一兜底（单一来源），这里不再重复添加
+  const res = commitPaths(analysisDir, paths, message, trailers)
   if (res.committed) {
     const short = res.sha ?? '?'
     return { commit: short, changed: `git ${short}: ${message}`, warnings: res.warnings ?? [] }
@@ -500,16 +500,6 @@ function gitRecord(
       { code: 'git-record-failed', message: `本地 git 记录失败（${res.reason ?? 'unknown'}）：${res.error ?? ''}` },
     ],
   }
-}
-
-/**
- * S1：每次提交都带引擎指纹。NLL 只在**同一引擎**内可比——`chicj2KKeta` iter-014
- * 的事故是"同一 config 换引擎后 NLL 差 60.3"，所以版本必须随提交落盘。
- */
-function withEngine(trailers: Trailers | undefined): Trailers | undefined {
-  const engine = engineFingerprint()
-  if (engine === undefined) return trailers
-  return { 'Pwa-Engine': engine, ...trailers }
 }
 
 /** S1：提案/删除类提交的 trailer（键落在"链/态"这一层，供按键查询与 fold 用）。 */
