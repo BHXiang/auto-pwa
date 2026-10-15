@@ -73,6 +73,8 @@ import {
   type VerificationResult,
 } from '../src/loop-state.js'
 import type { IterationRecord } from '../src/report.js'
+import { modelBaselineFold, naiveAnswers } from '../src/memory-fold.js'
+import { buildStateDigest, type DigestLoopState } from '../src/state-digest.js'
 import { spawnSync } from 'node:child_process'
 import type {
   InitialConfigResult,
@@ -94,6 +96,7 @@ import {
   gitProvenance,
   gitSearch,
   gitShow,
+  PWA_GIT_DIRNAME,
   relInside,
   repoCoexistence,
   repoStatus,
@@ -481,6 +484,7 @@ function gitRecord(
 ): { commit?: string; changed?: string; warnings: { code: string; message: string }[] } {
   if (gitDisabled()) return { warnings: [] }
   const analysisDir = analysisRootOf(anchorPath)
+  noteAnalysisRoot(analysisDir)
   const res = commitPaths(analysisDir, paths, message, withEngine(trailers))
   if (res.committed) {
     const short = res.sha ?? '?'
@@ -754,6 +758,91 @@ const gateOutputFields = {
   },
 } as const
 
+// ---------------------------------------------------------------------------
+// P1b：当前状态摘要（runtime context）的运行期状态
+// ---------------------------------------------------------------------------
+
+/** 插件"见过"的分析目录（任何工具解析出它就会记下）。 */
+let activeAnalysisRoot: string | undefined
+
+/** 记下当前分析目录（所有写路径都经 gitRecord，覆盖面足够）。 */
+function noteAnalysisRoot(anchorPath: string): void {
+  try {
+    const root = analysisRootOf(anchorPath)
+    if (existsSync(root)) activeAnalysisRoot = root
+  } catch {
+    /* 尽力而为 */
+  }
+}
+
+/** 测试用：清掉"当前分析目录"的记忆。 */
+export function __resetActiveAnalysisRoot(): void {
+  activeAnalysisRoot = undefined
+}
+
+/**
+ * 解析要总结的分析目录：优先插件见过的；其次工作目录（= 在分析目录里启动的会话，
+ * resume 后无需任何工具调用就有状态）。两者都不像分析目录时返回 undefined。
+ */
+function resolveDigestRoot(): string | undefined {
+  if (activeAnalysisRoot !== undefined && existsSync(join(activeAnalysisRoot, 'iterations', 'SUMMARY.jsonl'))) {
+    return activeAnalysisRoot
+  }
+  try {
+    const cwd = process.cwd()
+    if (existsSync(join(cwd, 'iterations')) || existsSync(join(cwd, PWA_GIT_DIRNAME)) || existsSync(join(cwd, 'init_config.yml'))) {
+      return cwd
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined
+}
+
+/**
+ * sync provider：读日记 + 状态机 + 最近 fit.json，渲染注入文本。
+ * **任何异常都退化为空串**——注入是增强，绝不能让组装 prompt 失败。
+ */
+function stateDigestText(): string {
+  try {
+    const root = resolveDigestRoot()
+    if (root === undefined) return ''
+    const records = new IterationLog({ rootDir: join(root, 'iterations') }).readAll()
+    if (records.length === 0) return ''
+    let loopState: DigestLoopState | undefined
+    const statePath = join(root, 'iterations', '.loop-state.json')
+    if (existsSync(statePath)) {
+      try {
+        loopState = JSON.parse(readFileSync(statePath, 'utf8')) as DigestLoopState
+      } catch {
+        loopState = undefined
+      }
+    }
+    // 噪声地板：最近一个有 fit.json 的迭代目录的 per-run NLL 极差（P0 实测：
+    // 极差可达 8000，而"显著"判据是 |ΔNLL| ≥ 3 → 不提示就会拿噪声当信号）
+    let noise: { iter: number; nRuns: number; spread: number } | undefined
+    for (const d of [...listIterations(join(root, 'iterations'))].reverse()) {
+      const p = join(d, 'results', 'fit.json')
+      if (!existsSync(p)) continue
+      const view = parseFitJson(readFileSync(p, 'utf8'))
+      const nlls = (view.fit?.runSummaries ?? []).map((r) => r.nll).filter((n): n is number => typeof n === 'number')
+      if (nlls.length >= 2) {
+        const m = /iter-(\d+)/.exec(d)
+        noise = { iter: m === null ? 0 : Number(m[1]), nRuns: nlls.length, spread: Math.max(...nlls) - Math.min(...nlls) }
+      }
+      break
+    }
+    return buildStateDigest({
+      analysisRoot: root,
+      records,
+      ...(loopState !== undefined ? { loopState } : {}),
+      ...(noise !== undefined ? { noise } : {}),
+    })
+  } catch {
+    return ''
+  }
+}
+
 export function apply(ctx: Context) {
   // 自注册 skill（npm bundle 安装后零手动配置）：把包内 SKILL.md 作为
   // runtime skill 注册进当前 context 的 skills 层（project > runtime > user，
@@ -793,6 +882,28 @@ export function apply(ctx: Context) {
       }
     } catch {
       // skill 注册是增强，绝不阻断插件
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // P1b：当前状态摘要（runtime context）
+  //
+  // 把"代码 fold 出的当前状态"注册成 runtime context，每轮自动注入——模型不必
+  // （也不能）自己记当前基线/否决清单/未决预测。harness 只在文本变化时新增一条
+  // user 消息（dsh-agent-loop:334-349），所以天然去重、resume 不重复。
+  //
+  // 无 `systemPrompt` 服务时静默跳过（不写进 inject：避免因服务缺席让整个插件
+  // 加载失败——摘要是增强，不是依赖）。
+  // ---------------------------------------------------------------------
+  const systemPrompt = (ctx as { systemPrompt?: { context: (c: { name: string; order: number; text: () => string }) => () => void } }).systemPrompt
+  if (systemPrompt !== undefined) {
+    try {
+      // 先注册；`ctx.effect`（若存在）只负责在插件卸载时反注册——不能把注册本身
+      // 放进 effect 回调，否则没有 effect 服务的宿主上永远不会注册。
+      const unregister = systemPrompt.context({ name: 'auto-pwa:state', order: 150, text: () => stateDigestText() })
+      ctx.effect?.(() => unregister)
+    } catch {
+      // 注入是增强，绝不阻断插件
     }
   }
 
@@ -2933,9 +3044,14 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_history',
-    description: '读迭代日记全部记录（每轮决策/NLL/ΔNLL/结论/下一步/token 成本）。用：新一轮决策前恢复上下文。不要用：看配置文本差异（用 git_log）；看拟合细节（用 diagnose/evaluate）。',
+    description: '读迭代日记（每轮决策/NLL/ΔNLL/预测验证/结论/下一步/token），支持按键检索（needle/iter/kind/status）并给出代码折叠出的当前状态。用：新一轮决策前恢复上下文、问"这个态试过吗/当前基线是哪轮"。不要用：看配置文本差异（用 git_log）；看拟合细节（用 diagnose/evaluate）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
+      needle: { type: 'string', description: '按键检索：只保留标题/结论/下一步/变更里含该文本的记录（如共振态名 X1750）' },
+      iter: { type: 'integer', description: '只取这一轮（如 7 = iter-007）' },
+      kind: { type: 'string', description: '只取该决策类型（added/removed/float/converged/other）' },
+      status: { type: 'string', enum: ['all', 'rejected', 'verified', 'pending'] as const, description: 'rejected=被回退/否决的轮次；verified=带验证结果；pending=有预测但未验证' },
+      limit: { type: 'integer', description: '只返回最近 N 条（默认全部）' },
     },
     output: {
       schema: {
@@ -2959,33 +3075,172 @@ export function apply(ctx: Context) {
                 conclusion: { type: 'string' },
                 nextPlan: { type: 'string' },
                 evidence: { type: 'string' },
+                timestamp: { type: 'string' },
+                floatDecision: { type: 'string' },
+                notes: { type: 'array', items: { type: 'string' } },
+                warnings: { type: 'array', items: { type: 'string' } },
+                hypothesis: { type: 'string' },
+                prediction: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    metric: { type: 'string', required: true },
+                    threshold: { type: 'number', required: true },
+                    direction: { type: 'string', required: true },
+                    region: { type: 'array', items: { type: 'number' } },
+                  },
+                },
+                verification: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    passed: { type: 'boolean', required: true },
+                    actual: { type: 'number' },
+                    note: { type: 'string', required: true },
+                  },
+                },
                 tokens: { type: 'object', additionalProperties: false, properties: { input: { type: 'number' }, output: { type: 'number' }, cacheRead: { type: 'number' }, cacheWrite: { type: 'number' } } },
               },
             },
           },
           nextIter: { type: 'integer', required: true },
           iterDirs: { type: 'array', required: true, items: { type: 'string' } },
+          total: { type: 'integer', required: true },
+          state: {
+            type: 'object',
+            required: true,
+            additionalProperties: false,
+            properties: {
+              baseIter: { type: 'integer' },
+              rule: { type: 'string' },
+              confidence: { type: 'string', required: true },
+              naiveMaxIter: { type: 'integer' },
+              naiveAgrees: { type: 'boolean', required: true },
+              bestNllIter: { type: 'integer' },
+              rejected: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    iter: { type: 'integer', required: true },
+                    label: { type: 'string', required: true },
+                    deltaNll: { type: 'number' },
+                  },
+                },
+              },
+            },
+          },
         },
       },
       render: (_args, value: {
-        records: { iter: number; title: string; kind: string; nll?: number; deltaNll?: number; conclusion?: string; nextPlan?: string; tokens?: { input: number; output: number } }[]
+        records: {
+          iter: number
+          title: string
+          kind: string
+          nll?: number
+          deltaNll?: number
+          conclusion?: string
+          nextPlan?: string
+          tokens?: { input: number; output: number }
+          hypothesis?: string
+          verification?: { passed: boolean; actual?: number; note: string }
+          warnings?: string[]
+          notes?: string[]
+          floatDecision?: string
+        }[]
         nextIter: number
         iterDirs: string[]
+        total: number
+        state: {
+          baseIter?: number
+          rule?: string
+          confidence: string
+          naiveMaxIter?: number
+          naiveAgrees: boolean
+          bestNllIter?: number
+          rejected: { iter: number; label: string; deltaNll?: number }[]
+        }
       }) => {
-        if (value.records.length === 0) return text('（迭代日记为空）')
+        const pad = (n: number): string => String(n).padStart(3, '0')
+        const head: string[] = [`迭代历史（${value.records.length}/${value.total} 轮，下一轮 iter-${pad(value.nextIter)}）`]
+        const s = value.state
+        const base = s.baseIter === undefined ? '未知' : `iter-${pad(s.baseIter)}`
+        const disagree = s.naiveAgrees ? '' : ` ⚠️ 最后一条记录是 iter-${pad(s.naiveMaxIter ?? -1)}，"取最新一轮"会答错`
+        head.push(`  当前状态（代码 fold，非模型记忆）: ΔNLL 比对基线 ${base}（rule=${s.rule ?? 'n/a'}, confidence=${s.confidence}）${disagree}`)
+        if (s.bestNllIter !== undefined) head.push(`  目前 NLL 最低的一轮: iter-${pad(s.bestNllIter)}（≠ 比对基线时不要混用）`)
+        if (s.rejected.length > 0) {
+          head.push(
+            `  已否决/回退（${s.rejected.length}）: ${s.rejected
+              .map((r) => `iter-${pad(r.iter)} ${r.label}${r.deltaNll === undefined ? '' : ` ΔNLL=${r.deltaNll > 0 ? '+' : ''}${r.deltaNll.toFixed(1)}`}`)
+              .join('；')}`,
+          )
+        }
+        if (value.records.length === 0) return text([...head, '  （无匹配记录）'].join('\n'))
         const lines = value.records.map((r) => {
           const d = r.deltaNll === undefined ? '' : ` ΔNLL=${r.deltaNll > 0 ? '+' : ''}${r.deltaNll.toFixed(1)}`
           const t = r.tokens ? ` [tokens: ${r.tokens.input}+${r.tokens.output}]` : ''
           const c = r.conclusion ? ` | 结论: ${r.conclusion.slice(0, 120)}` : ''
           const p = r.nextPlan ? ` | 下一步: ${r.nextPlan.slice(0, 120)}` : ''
-          return `iter-${String(r.iter).padStart(3, '0')} ${r.title}${d}${t}${c}${p}`
+          const rows = [`iter-${pad(r.iter)} ${r.title}${d}${t}${c}${p}`]
+          if (r.hypothesis !== undefined) rows.push(`    ↳ 假设: ${r.hypothesis.slice(0, 140)}`)
+          if (r.verification !== undefined) {
+            const actual = r.verification.actual === undefined ? 'n/a' : String(r.verification.actual)
+            rows.push(`    ↳ 验证: ${r.verification.passed ? '成立' : '不成立'}（actual=${actual}）${r.verification.note.slice(0, 120)}`)
+          }
+          if (r.floatDecision !== undefined) rows.push(`    ↳ float: ${r.floatDecision.slice(0, 100)}`)
+          if (r.warnings !== undefined && r.warnings.length > 0) rows.push(`    ↳ 警告: ${r.warnings.slice(0, 3).join(' / ').slice(0, 160)}`)
+          if (r.notes !== undefined && r.notes.length > 0) rows.push(`    ↳ 笔记: ${r.notes.slice(0, 2).join(' / ').slice(0, 140)}`)
+          return rows.join('\n')
         })
-        return text(`迭代历史（${value.records.length} 轮，下一轮 iter-${String(value.nextIter).padStart(3, '0')}）:\n${lines.join('\n')}`)
+        return text([...head, ...lines].join('\n'))
       },
     },
-    async execute(args: { iterationsRoot: string }) {
+    async execute(args: { iterationsRoot: string; needle?: string; iter?: number; kind?: string; status?: string; limit?: number }) {
+      noteAnalysisRoot(args.iterationsRoot)
       const log = new IterationLog({ rootDir: args.iterationsRoot })
-      const records = log.readAll().map((r) => {
+      const all = log.readAll()
+      // "被否决"的文本信号**只看 title**：title 描述本轮结果，而 conclusion 常在叙述
+      // **别的**轮次（实测：iter-009 的结论在讲"iter-010 已证伪 → 回退"），用它会把
+      // 好轮次误标成被否。
+      const rejectedText = /回退|回滚|被拒|否决|被否|不采纳/
+      const isRejected = (r: IterationRecord): boolean => r.kind === 'removed' || rejectedText.test(r.title)
+      const matchesStatus = (r: IterationRecord): boolean => {
+        switch (args.status) {
+          case 'rejected':
+            return isRejected(r)
+          case 'verified':
+            return r.verification !== undefined
+          case 'pending':
+            return r.prediction !== undefined && r.verification === undefined
+          default:
+            return true
+        }
+      }
+      const needle = args.needle?.trim()
+      let kept = all.filter((r) => {
+        if (args.iter !== undefined && r.iter !== args.iter) return false
+        if (args.kind !== undefined && r.kind !== args.kind) return false
+        if (!matchesStatus(r)) return false
+        if (needle !== undefined && needle !== '') {
+          const blob = [r.title, r.conclusion ?? '', r.nextPlan ?? '', r.hypothesis ?? '', r.evidence ?? '', ...(r.changes ?? []), ...(r.warnings ?? []), ...(r.notes ?? [])].join(' ')
+          if (!blob.includes(needle)) return false
+        }
+        return true
+      })
+      if (args.limit !== undefined && args.limit > 0) kept = kept.slice(-args.limit)
+
+      const fold = modelBaselineFold(all)
+      const naive = naiveAnswers(all)
+      const bestNllIter = all.reduce<number | undefined>((best, r) => {
+        if (typeof r.nll !== 'number') return best
+        if (best === undefined) return r.iter
+        const bestRec = all.find((x) => x.iter === best)
+        return typeof bestRec?.nll === 'number' && bestRec.nll <= r.nll ? best : r.iter
+      }, undefined)
+
+      const records = kept.map((r) => {
         const out: {
           iter: number
           title: string
@@ -2997,6 +3252,13 @@ export function apply(ctx: Context) {
           conclusion?: string
           nextPlan?: string
           evidence?: string
+          timestamp?: string
+          floatDecision?: string
+          notes?: string[]
+          warnings?: string[]
+          hypothesis?: string
+          prediction?: IterationRecord['prediction']
+          verification?: { passed: boolean; note: string; actual?: number }
           tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
         } = { iter: r.iter, title: r.title, kind: r.kind }
         if (r.nll !== undefined) out.nll = r.nll
@@ -3006,10 +3268,47 @@ export function apply(ctx: Context) {
         if (r.conclusion !== undefined) out.conclusion = r.conclusion
         if (r.nextPlan !== undefined) out.nextPlan = r.nextPlan
         if (r.evidence !== undefined) out.evidence = r.evidence
+        if (r.timestamp !== undefined) out.timestamp = r.timestamp
+        if (r.floatDecision !== undefined) out.floatDecision = r.floatDecision
+        if (r.notes !== undefined) out.notes = r.notes
+        if (r.warnings !== undefined) out.warnings = r.warnings
+        if (r.hypothesis !== undefined) out.hypothesis = r.hypothesis
+        if (r.prediction !== undefined) out.prediction = r.prediction
+        if (r.verification !== undefined) {
+          // `actual` 在真实日记里可能是 null（无法判定）——schema 只声明 number，
+          // 所以这里**省略**而不是写 null，否则输出校验会失败。
+          out.verification = {
+            passed: r.verification.passed,
+            note: r.verification.note,
+            ...(typeof r.verification.actual === 'number' ? { actual: r.verification.actual } : {}),
+          }
+        }
         if (r.tokens !== undefined) out.tokens = r.tokens
         return out
       })
-      return { records, nextIter: log.nextIter(), iterDirs: listIterations(args.iterationsRoot) }
+      const rejected = all
+        .filter(isRejected)
+        .slice(-8)
+        .map((r) => ({
+          iter: r.iter,
+          label: r.title.slice(0, 60),
+          ...(r.deltaNll !== undefined ? { deltaNll: r.deltaNll } : {}),
+        }))
+      return {
+        records,
+        nextIter: log.nextIter(),
+        iterDirs: listIterations(args.iterationsRoot),
+        total: all.length,
+        state: {
+          ...(fold.baseIter !== null ? { baseIter: fold.baseIter } : {}),
+          ...(fold.rule !== undefined ? { rule: fold.rule } : {}),
+          confidence: fold.confidence,
+          ...(naive.maxIter !== null ? { naiveMaxIter: naive.maxIter } : {}),
+          naiveAgrees: naive.maxIter === fold.baseIter,
+          ...(bestNllIter !== undefined ? { bestNllIter } : {}),
+          rejected,
+        },
+      }
     },
   }))
 
@@ -4665,6 +4964,8 @@ export function apply(ctx: Context) {
       },
     },
     async execute(args: { iterationsRoot?: string; baseIterDir?: string; objective?: Partial<LoopObjective> }) {
+      if (args.iterationsRoot !== undefined) noteAnalysisRoot(args.iterationsRoot)
+      else if (args.baseIterDir !== undefined) noteAnalysisRoot(args.baseIterDir)
       try {
         let state: LoopState | undefined
         if (args.iterationsRoot !== undefined) state = loadLoopState(args.iterationsRoot)
@@ -4769,6 +5070,7 @@ export function apply(ctx: Context) {
         ),
     },
     async execute(args: { iterationsRoot: string }) {
+      noteAnalysisRoot(args.iterationsRoot)
       const state = loadLoopState(args.iterationsRoot)
       if (state === undefined) {
         return { ok: false, phase: 'none', iter: -1, iterDir: '', rounds: 0, error: 'no loop state — call auto_pwa_loop_next with baseIterDir to start' }

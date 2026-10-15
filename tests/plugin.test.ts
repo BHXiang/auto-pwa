@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync as readFileSyncSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { apply } from '../plugin/auto-pwa.js'
+import { apply, __resetActiveAnalysisRoot } from '../plugin/auto-pwa.js'
 import { apply as applyGuard } from '../plugin/pwa-guard.js'
 import { parseConfig } from '../src/config-edit.js'
 import { IterationLog } from '../src/iteration-log.js'
@@ -724,6 +724,7 @@ function harnessCtx() {
     },
     kill: () => 'requested' as const,
   }
+  const contexts: { name: string; order: number; text: string | (() => string) }[] = []
   const ctx = {
     tools: {
       register: (def: { name: string; output?: { schema?: unknown }; execute?: (args: never, exec: never) => Promise<unknown> }) => definitions.push(def),
@@ -735,11 +736,17 @@ function harnessCtx() {
     on: (event: string, handler: (...args: unknown[]) => void) => {
       eventHandlers[event] = handler
     },
+    systemPrompt: {
+      context: (c: { name: string; order: number; text: string | (() => string) }) => {
+        contexts.push(c)
+        return () => {}
+      },
+    },
     pwaFit,
   }
   apply(ctx as never)
   applyGuard(ctx as never) // pwa-guard registers the config.yml write gate
-  return { definitions, guards, eventHandlers, submits, statusCalls }
+  return { definitions, guards, eventHandlers, submits, statusCalls, contexts }
 }
 
 const run = async (h: ReturnType<typeof harnessCtx>, name: string, args: unknown, exec: unknown) => {
@@ -971,6 +978,135 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
     // No real results/ dir under the fake iterDir: empty summary, no NLL.
     expect((out as { summary: { bestNll?: number; files: string[] } }).summary.files).toEqual([])
     expect((out as { summary: { bestNll?: number } }).summary.bestNll).toBeUndefined()
+  })
+
+  it('auto_pwa_history：按键检索 + 补回被丢弃的字段 + fold 出的当前状态', async () => {
+    const h = harnessCtx()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-hist-'))
+    try {
+      const iterations = join(root, 'iterations')
+      for (const n of [1, 2, 3]) mkdirSync(join(iterations, `iter-00${n}`), { recursive: true })
+      const diary = [
+        {
+          iter: 1,
+          kind: 'added',
+          title: '加 X2200',
+          nll: -100,
+          deltaNll: -10,
+          changes: ['R_ppbar [0-] += X2200'],
+          hypothesis: 'X2200 吸收 0-+ 区',
+          prediction: { metric: 'maxPull', threshold: 3, direction: 'below' },
+        },
+        {
+          iter: 2,
+          kind: 'removed',
+          title: 'X2200 被拒：pull 未降',
+          nll: -95,
+          deltaNll: 5,
+          conclusion: 'pull 未降',
+          verification: { passed: false, actual: 5.4, note: 'maxPull 未降到 3 以下' },
+        },
+        { iter: 3, kind: 'added', title: '加 K1_1410', nll: -120, deltaNll: -25, changes: ['chain1.R_Reta [1-] += K1_1410'], notes: ['注意 C 守恒'] },
+      ]
+      writeFileSync(join(iterations, 'SUMMARY.jsonl'), diary.map((r) => JSON.stringify(r)).join('\n') + '\n')
+
+      const all = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations }, {})) as {
+        records: { iter: number; hypothesis?: string; verification?: { passed: boolean; actual?: number } }[]
+        total: number
+        state: { confidence: string; baseIter?: number; naiveAgrees: boolean; rejected: { iter: number }[] }
+      }
+      expect(all.records).toHaveLength(3)
+      expect(all.total).toBe(3)
+      // 这两个字段以前被输出 schema 丢弃 → 新会话看不到"为什么被证伪"
+      expect(all.records[0]!.hypothesis).toBe('X2200 吸收 0-+ 区')
+      expect(all.records[1]!.verification).toMatchObject({ passed: false, actual: 5.4 })
+      // 没有任何基线声明 → fold 不编答案
+      expect(all.state.confidence).toBe('none')
+
+      const byNeedle = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations, needle: 'X2200' }, {})) as { records: { iter: number }[] }
+      expect(byNeedle.records.map((r) => r.iter)).toEqual([1, 2])
+
+      const rejected = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations, status: 'rejected' }, {})) as { records: { iter: number }[] }
+      expect(rejected.records.map((r) => r.iter)).toEqual([2])
+      const verified = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations, status: 'verified' }, {})) as { records: { iter: number }[] }
+      expect(verified.records.map((r) => r.iter)).toEqual([2])
+      const pending = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations, status: 'pending' }, {})) as { records: { iter: number }[] }
+      expect(pending.records.map((r) => r.iter)).toEqual([1])
+      const limited = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations, limit: 1 }, {})) as { records: { iter: number }[] }
+      expect(limited.records.map((r) => r.iter)).toEqual([3])
+      const byKind = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations, kind: 'removed' }, {})) as { records: { iter: number }[] }
+      expect(byKind.records.map((r) => r.iter)).toEqual([2])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_history：状态行点出"取最新一轮会答错"（fold vs naive）', async () => {
+    const h = harnessCtx()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-histfold-'))
+    try {
+      const iterations = join(root, 'iterations')
+      for (const n of [9, 11]) mkdirSync(join(iterations, `iter-0${String(n).padStart(2, '0')}`), { recursive: true })
+      const diary = [
+        { iter: 9, kind: 'added', title: 'iter-009', conclusion: 'iter-010 已证伪 → 回退基线到 iter-009', nll: -1759.42 },
+        { iter: 11, kind: 'removed', title: 'iter-011：X2450 被数据拒绝 → 回退 iter-009', nll: -1432.39, deltaNll: 327.03 },
+      ]
+      writeFileSync(join(iterations, 'SUMMARY.jsonl'), diary.map((r) => JSON.stringify(r)).join('\n') + '\n')
+
+      const out = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations }, {})) as {
+        state: { baseIter?: number; rule?: string; naiveMaxIter?: number; naiveAgrees: boolean; rejected: { iter: number }[] }
+      }
+      expect(out.state.baseIter).toBe(9)
+      // 两个记录都指向 9：iter-009 的"回退基线到 iter-009"与 iter-011 的"回退 iter-009"；
+      // rule 记的是**最后一次**生效的规则。
+      expect(out.state.rule).toBe('rollback-bare')
+      expect(out.state.naiveMaxIter).toBe(11)
+      expect(out.state.naiveAgrees).toBe(false)
+      expect(out.state.rejected.map((r) => r.iter)).toEqual([11])
+
+      // 渲染文本必须把这条歧义说出来（否则模型仍会按"最新一轮"理解）
+      const def = h.definitions.find((d) => d.name === 'auto_pwa_history')!
+      const render = (def.output as unknown as { render: (a: unknown, v: unknown) => { text: string }[] }).render
+      const rendered = render({}, out)
+        .map((c) => c.text)
+        .join('')
+      expect(rendered).toContain('比对基线 iter-009')
+      expect(rendered).toContain('取最新一轮')
+      expect(rendered).toContain('已否决/回退')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_state：注册 runtime context，且"没有分析目录时不注入"', async () => {
+    const h = harnessCtx()
+    const provider = (): string => {
+      const c = h.contexts.find((x) => x.name === 'auto-pwa:state')!
+      return typeof c.text === 'function' ? c.text() : c.text
+    }
+    expect(h.contexts.map((c) => c.name)).toContain('auto-pwa:state')
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-digest-'))
+    try {
+      __resetActiveAnalysisRoot()
+      // 插件还没见过任何分析目录、且 cwd 不是分析目录 → 空串（合法结果：不注入）
+      expect(provider()).toBe('')
+
+      const iterations = join(root, 'iterations')
+      mkdirSync(join(iterations, 'iter-009'), { recursive: true })
+      writeFileSync(
+        join(iterations, 'SUMMARY.jsonl'),
+        JSON.stringify({ iter: 9, kind: 'added', title: 'iter-009', conclusion: '回退基线到 iter-009', nll: -1759.42, nextPlan: '试 X2200' }) + '\n',
+      )
+      // 让插件"见过"这个分析目录（history 是最自然的入口）
+      await run(h, 'auto_pwa_history', { iterationsRoot: iterations }, {})
+      const txt = provider()
+      expect(txt).toContain('<system-reminder>')
+      expect(txt).toContain('ΔNLL 比对基线: iter-009')
+      expect(txt).toContain('上轮计划: 试 X2200')
+    } finally {
+      __resetActiveAnalysisRoot()
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('auto_pwa_note includeTokens writes the per-round token delta', async () => {
