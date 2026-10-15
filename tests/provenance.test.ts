@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseConfig } from '../src/config-edit.js'
+import { resetGitProbe } from '../src/git-log.js'
 import { gateConfig } from '../src/config-gate.js'
 import { defaultDb } from '../src/db.js'
 import {
@@ -147,4 +148,35 @@ describe('provenance record (B1)', () => {
       expect(s.scriptArgs).toEqual(['--seed', '5'])
     })
   })
+  it('记录引擎指纹，并在引擎变化时报 engine-changed（§4.2a 的补丁）', () => {
+    withTmp((dir) => {
+      process.env.PWA_ENGINE = 'ctpwa@aaaaaaa'
+      resetGitProbe()
+      try {
+        const p = build(dir, CONFIG)
+        expect(p.engine).toBe('ctpwa@aaaaaaa')
+        writeProvenance(dir, p)
+        expect(checkProvenanceDrift(dir, CONFIG).drift.map((d) => d.code)).not.toContain('engine-changed')
+
+        // 引擎换了（不同 sha 或 +dirty）→ 必须警告"跨引擎 NLL 不可比"
+        process.env.PWA_ENGINE = 'ctpwa@bbbbbbb+dirty'
+        resetGitProbe()
+        const codes = checkProvenanceDrift(dir, CONFIG).drift.map((d) => d.code)
+        expect(codes).toContain('engine-changed')
+        const msg = checkProvenanceDrift(dir, CONFIG).drift.find((d) => d.code === 'engine-changed')!.message
+        expect(msg).toContain('60.3')
+
+        // 拿不到指纹时不报（覆盖缺口 ≠ 漂移）
+        delete process.env.PWA_ENGINE
+        process.env.PWA_CTPWA_PYTHON = '/bin/false'
+        resetGitProbe()
+        expect(checkProvenanceDrift(dir, CONFIG).drift.map((d) => d.code)).not.toContain('engine-changed')
+      } finally {
+        delete process.env.PWA_ENGINE
+        delete process.env.PWA_CTPWA_PYTHON
+        resetGitProbe()
+      }
+    })
+  })
+
 })

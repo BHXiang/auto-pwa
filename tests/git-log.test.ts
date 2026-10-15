@@ -12,6 +12,10 @@ import {
   gitProvenance,
   gitSearch,
   gitShow,
+  engineFingerprint,
+  engineFromPython,
+  engineFromRepo,
+  findRepoRoot,
   PWA_GIT_DIRNAME,
   repoCoexistence,
   repoStatus,
@@ -282,4 +286,56 @@ describe('commit trailers (S1)', () => {
     expect(plain!.subject).toBe('iter-000 plain')
     expect(plain!.trailers).toBeUndefined()
   })
+// ---------------------------------------------------------------------------
+// 引擎指纹（Pwa-Engine 的数据源）
+// ---------------------------------------------------------------------------
+describe('engineFingerprint（自动探测，宁缺毋滥）', () => {
+  const git = (dir: string, ...args: string[]): void => {
+    execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore' })
+  }
+  const initRepo = (dir: string): void => {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'a.txt'), 'x\n')
+    git(dir, 'init', '--quiet')
+    git(dir, 'config', 'user.email', 'e@localhost')
+    git(dir, 'config', 'user.name', 'e')
+    git(dir, 'add', 'a.txt')
+    git(dir, 'commit', '--quiet', '-m', 'init')
+  }
+
+  it('从仓库给出 <name>@<sha>，工作区脏时加 +dirty', () => {
+    const repo = join(root, 'ctpwa')
+    initRepo(repo)
+    expect(engineFromRepo(repo)).toMatch(/^ctpwa@[0-9a-f]{7,8}$/)
+    writeFileSync(join(repo, 'a.txt'), 'changed\n') // 已跟踪文件被改 → 引擎不再是那个 commit
+    expect(engineFromRepo(repo)).toMatch(/^ctpwa@[0-9a-f]{7,8}\+dirty$/)
+  })
+
+  it('优先级：PWA_ENGINE > PWA_CTPWA_REPO > 自动探测；探测失败就不编造', () => {
+    const repo = join(root, 'ctpwa')
+    initRepo(repo)
+    process.env.PWA_CTPWA_REPO = repo
+    resetGitProbe()
+    expect(engineFingerprint()).toMatch(/^ctpwa@[0-9a-f]{7,8}$/)
+    process.env.PWA_ENGINE = 'explicit@deadbee'
+    resetGitProbe()
+    expect(engineFingerprint()).toBe('explicit@deadbee')
+    delete process.env.PWA_ENGINE
+    delete process.env.PWA_CTPWA_REPO
+    resetGitProbe()
+    // 探测失败 = undefined（宁缺毋滥：编一个版本号比没有更糟）
+    expect(engineFromPython('/bin/false')).toBeUndefined()
+    expect(engineFromPython(join(root, 'no-such-python'))).toBeUndefined()
+  })
+
+  it('findRepoRoot 向上找 .git（最多 6 层）', () => {
+    const repo = join(root, 'eng')
+    const deep = join(repo, 'a', 'b', 'c')
+    mkdirSync(deep, { recursive: true })
+    git(repo, 'init', '--quiet')
+    expect(findRepoRoot(deep)).toBe(repo)
+    expect(findRepoRoot(join(root, 'elsewhere'))).toBeUndefined()
+  })
+})
+
 })

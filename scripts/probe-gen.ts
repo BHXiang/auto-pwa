@@ -280,6 +280,8 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
     if (p.configMd5 !== c.configMd5) reasons.push('config-changed')
     if ((p.scriptArgs ?? []).join(' ') !== (c.scriptArgs ?? []).join(' ')) reasons.push('run-settings-changed')
     if (p.init.source !== c.init.source || p.init.seed !== c.init.seed) reasons.push('init-source-changed')
+    // 引擎变了 → 跨引擎 NLL 不可比（Pwa-Engine 落地后才可能判；老记录两边都缺 → 不报）
+    if (p.engine !== undefined && c.engine !== undefined && p.engine !== c.engine) reasons.push('engine-changed')
     push({
       id: `${a.name}/comparability/iter-${String(cur.iter).padStart(3, '0')}`,
       analysis: a.name,
@@ -290,7 +292,7 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
         reasons,
         prev: { iter: a.iterDirs[i - 1]!.iter, md5: p.configMd5, args: p.scriptArgs ?? [], init: p.init.source, seed: p.init.seed ?? null },
         cur: { iter: cur.iter, md5: c.configMd5, args: c.scriptArgs ?? [], init: c.init.source, seed: c.init.seed ?? null },
-        engine: 'unknown —— provenance 尚无 engine 字段（S1 已能写 Pwa-Engine，待回填）',
+        engine: { prev: p.engine ?? null, cur: c.engine ?? null },
       },
       judge: 'code',
     })

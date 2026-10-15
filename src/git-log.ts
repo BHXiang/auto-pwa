@@ -26,6 +26,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { resolveEnv } from './config.js'
 
 /** 独立 git 目录名（放在分析目录内）。 */
 export const PWA_GIT_DIRNAME = '.pwa-git'
@@ -261,28 +262,79 @@ function parseTrailers(text: string): Record<string, string> | undefined {
 
 let engineCache: string | undefined | null = null
 
+/** 从某个目录向上找仓库根（≤6 层）。 */
+export function findRepoRoot(startDir: string): string | undefined {
+  let dir = startDir
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(join(dir, '.git'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return undefined
+}
+
 /**
- * 拟合引擎指纹（写进 `Pwa-Engine`，用于判"两次 NLL 能不能比"）。
- * 来源：`PWA_ENGINE` 环境变量 → `PWA_CTPWA_REPO` 指向的 checkout 的 HEAD。
- * 拿不到就返回 undefined——**不编造版本号**。
+ * 引擎指纹：`<repo名>@<短 sha>`，工作区有改动（含未跟踪）时加 `+dirty`。
+ *
+ * `+dirty` 不是装饰：`chicj2KKeta` iter-014 那次事故的形态正是"引擎偷偷变了、
+ * 谁都没记录"，而同一 config 换引擎后 NLL 差了 **60.3**。
+ */
+export function engineFromRepo(repoDir: string): string | undefined {
+  const head = runAmbient(repoDir, ['rev-parse', '--short', 'HEAD'])
+  if (!head.ok || head.stdout.trim() === '') return undefined
+  const status = runAmbient(repoDir, ['status', '--porcelain'])
+  const dirty = status.ok && status.stdout.trim() !== ''
+  const name = repoDir.split(/[\\/]/).filter((s) => s !== '').pop() ?? 'engine'
+  return `${name}@${head.stdout.trim()}${dirty ? '+dirty' : ''}`
+}
+
+/**
+ * 自动探测引擎：问 ctpwa 的 python `find_spec('ctpwa').origin`（**不导入扩展**，
+ * 因此不需要 ROOT/CUDA），从模块文件所在目录向上找 `.git`。
+ *
+ * 装成 wheel 的情况找不到 `.git` → 返回 undefined（**不编造版本号**）。
+ */
+export function engineFromPython(pythonPath: string): string | undefined {
+  try {
+    const probe =
+      "import importlib.util as u,sys; s=u.find_spec('ctpwa'); sys.stdout.write(s.origin if s and s.origin else '')"
+    const r = spawnSync(pythonPath, ['-c', probe], {
+      encoding: 'utf8',
+      timeout: 20_000,
+      env: ambientEnv(),
+      maxBuffer: 1024 * 1024,
+    })
+    if (r.status !== 0) return undefined
+    const origin = (r.stdout ?? '').trim()
+    if (origin === '') return undefined
+    const root = findRepoRoot(dirname(origin))
+    return root === undefined ? undefined : engineFromRepo(root)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 拟合引擎指纹（写进 `Pwa-Engine`，用于判"两次 NLL 能不能比"）。优先级：
+ *   ① `PWA_ENGINE` 显式覆盖
+ *   ② `PWA_CTPWA_REPO` 指向的 checkout
+ *   ③ **自动探测**：`PWA_CTPWA_PYTHON`（默认 `python`）里 ctpwa 模块所在的 checkout
+ * 全都拿不到 → undefined（宁缺毋滥：编一个版本号比没有更糟）。
  */
 export function engineFingerprint(): string | undefined {
   if (engineCache !== null) return engineCache
-  const explicit = process.env.PWA_ENGINE
-  if (explicit !== undefined && explicit.trim() !== '') {
-    engineCache = explicit.trim()
-    return engineCache
-  }
-  const repo = process.env.PWA_CTPWA_REPO
-  if (repo !== undefined && repo.trim() !== '' && existsSync(join(repo, '.git'))) {
-    const r = runAmbient(repo, ['rev-parse', '--short', 'HEAD'])
-    if (r.ok && r.stdout.trim() !== '') {
-      engineCache = `ctpwa@${r.stdout.trim()}`
-      return engineCache
+  engineCache = ((): string | undefined => {
+    const explicit = process.env.PWA_ENGINE
+    if (explicit !== undefined && explicit.trim() !== '') return explicit.trim()
+    const envRepo = process.env.PWA_CTPWA_REPO
+    if (envRepo !== undefined && envRepo.trim() !== '' && existsSync(join(envRepo, '.git'))) {
+      const fromRepo = engineFromRepo(envRepo)
+      if (fromRepo !== undefined) return fromRepo
     }
-  }
-  engineCache = undefined
-  return undefined
+    return engineFromPython(resolveEnv().ctpwaPython)
+  })()
+  return engineCache
 }
 
 /** git 可执行文件是否存在（缓存一次探测结果）。 */

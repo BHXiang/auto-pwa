@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { PwaConfig } from './types.js'
 import { md5, type GateResult, type GateStats } from './config-gate.js'
+import { engineFingerprint } from './git-log.js'
 import type { GitProvenance } from './git-log.js'
 
 export const PROVENANCE_SCHEMA_VERSION = 1
@@ -59,6 +60,14 @@ export interface Provenance {
   iterDir: string
   configPath: string
   configMd5: string
+  /**
+   * 拟合引擎指纹（`<repo>@<sha>[+dirty]`）。
+   *
+   * 为什么必须记：`chicj2KKeta` iter-014 的实测——同一 config、引擎升级后最佳
+   * NLL 从 -3944.90 变成 -3884.57（差 **60.3**），而当时没有任何字段记下引擎，
+   * 只能靠复拟合才发现"NLL 不可比"。缺省 = 拿不到指纹（不编造）。
+   */
+  engine?: string
   resonancesInclude?: ProvenanceInclude
   fitScript?: string
   fitScriptMd5?: string
@@ -171,6 +180,7 @@ export function buildProvenance(options: BuildProvenanceOptions): Provenance {
     iterDir: options.iterDir,
     configPath: options.configPath,
     configMd5: gate.configMd5,
+    ...(engineFingerprint() !== undefined ? { engine: engineFingerprint() } : {}),
     ...(include !== undefined ? { resonancesInclude: include } : {}),
     ...(options.fitScript !== undefined ? { fitScript: options.fitScript } : {}),
     ...(fitScriptMd5 !== undefined ? { fitScriptMd5 } : {}),
@@ -329,6 +339,18 @@ export function checkProvenanceDrift(
       code: 'fit-script-changed',
       severity: 'warning',
       message: `fit.py 与上次记录不同（${previous.fitScript} -> ${fitScript}）——确认这是有意的`,
+    })
+  }
+  // 引擎变了 = 跨引擎 NLL 不可比（§4.2a 实测：同 config 差 60.3）。两边都拿不到
+  // 指纹时**不报**：那是覆盖缺口，不是漂移。
+  const nowEngine = engineFingerprint()
+  if (previous.engine !== undefined && nowEngine !== undefined && previous.engine !== nowEngine) {
+    drift.push({
+      code: 'engine-changed',
+      severity: 'warning',
+      message:
+        `拟合引擎与上次记录不同（${previous.engine} -> ${nowEngine}）——**跨引擎 NLL 不可直接比 ΔNLL**：` +
+        `同一 config 换引擎实测差 60.3，需在新引擎下重拟合上一个基线`,
     })
   }
   return { previous, drift }
