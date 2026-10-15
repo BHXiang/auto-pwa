@@ -252,6 +252,9 @@ function cmdMerge(args: string[]): void {
   const manifestPath = resolve(argValue(args, '--manifest', 'probe-out/manifest.jsonl'))
   const outPath = resolve(argValue(args, '--out', 'probe-out/answers.jsonl'))
   const battery = argValue(args, '--battery', 'M')
+  // `--run <n>`：同一批材料跑多次时用不同 run 号，**不要互相覆盖**（pass^k 需要它）。
+  // 约定：driver 把答案写成 `<档位>-<分析>[-run<k>].json`，这里按文件数给 run 或不覆盖。
+  const run = Number(argValue(args, '--run', '0'))
   const manifest = readFileSync(manifestPath, 'utf8')
     .split('\n')
     .filter((l) => l.trim() !== '')
@@ -279,7 +282,7 @@ function cmdMerge(args: string[]): void {
       }
       seen.add(key)
       answered += 1
-      out.push(JSON.stringify({ id: it.id, arm, run: 0, answer: it.answer, tokensIn: cost.get(key) ?? 0 }))
+      out.push(JSON.stringify({ id: it.id, arm, run, answer: it.answer, tokensIn: cost.get(key) ?? 0 }))
     }
   }
   const missing = [...valid].filter((k) => !seen.has(k))
