@@ -17,6 +17,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, read
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { parseConfig, dumpConfig } from './config-edit.js'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
+import { canonicalDelta } from './memory-fold.js'
 import { renderIndex, renderReport, type IterationRecord } from './report.js'
 
 export interface IterationLogOptions {
@@ -72,6 +73,14 @@ export class IterationLog {
       ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
       ...(patch.changes !== undefined
         ? { changes: [...new Set([...(prev.changes ?? []), ...patch.changes])] }
+        : {}),
+      // 规范化 delta 同步并入（回退写下的 `-=` 必须对 reader 可见）
+      ...(patch.changes !== undefined
+        ? {
+            changesDelta: [
+              ...new Set([...(prev.changesDelta ?? []), ...canonicalDelta(patch.changes)]),
+            ],
+          }
         : {}),
       ...(patch.conclusion !== undefined ? { conclusion: patch.conclusion } : {}),
       // `nextPlan` **追加**而不是覆盖：原计划仍有历史价值，而"回退至 iter-N"

@@ -75,6 +75,7 @@ import {
 } from '../src/loop-state.js'
 import type { IterationRecord } from '../src/report.js'
 import { modelBaselineFold, naiveAnswers,
+  canonicalDelta,
   droppedByRollback,
   strictDeltaWarning,
 } from '../src/memory-fold.js'
@@ -2779,6 +2780,8 @@ export function apply(ctx: Context) {
       // **严格 delta 硬要求（告警级）**：`added`/`removed` 两类轮次若不写 `+=`/`-=`，
       // 后来的 tried 索引与"是否仍在模型中"就只能靠读散文猜（docs §8.6 缺陷 2）。
       const deltaWarn = strictDeltaWarning(args.kind, args.changes)
+      // 规范化 delta 一并落盘：reader 之后**不必再解析散文**（老记录没这个字段，照旧）
+      const canonDelta = canonicalDelta(args.changes)
       const noteWarnings = [...(args.warnings ?? []), ...(deltaWarn !== undefined ? [deltaWarn] : [])]
       const record: IterationRecord = {
         iter: Number(m[1]),
@@ -2792,6 +2795,7 @@ export function apply(ctx: Context) {
         hessianPositive: args.hessianPositive,
         changes: args.changes,
         ...(noteWarnings.length > 0 ? { warnings: noteWarnings } : {}),
+        ...(canonDelta.length > 0 ? { changesDelta: canonDelta } : {}),
         floatDecision: args.floatDecision,
         conclusion: args.conclusion,
         nextPlan: args.nextPlan,

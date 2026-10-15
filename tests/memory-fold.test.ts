@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canonicalDelta,
   droppedByRollback,
   modelBaselineFold,
   naiveAnswers,
@@ -241,5 +242,27 @@ describe('§8.6 根因修复：回退显式记录被撤销的态 + 严格 delta 
     // 'other' 类（如收敛轮）不要求
     expect(strictDeltaWarning('other', [])).toBeUndefined()
     expect(strictDeltaWarning('converged', undefined)).toBeUndefined()
+  })
+})
+
+describe('规范化 delta（changesDelta）：reader 不再依赖散文', () => {
+  it('canonicalDelta 抽取 += / -= 并去重', () => {
+    expect(canonicalDelta(['R_ppbar [0-] += X2200', 'R_ppbar [0-] -= X2200', '散文：X2200 被拒']))
+      .toEqual(['+= X2200', '-= X2200'])
+    expect(canonicalDelta(['只有散文，没有 delta'])).toEqual([])
+    expect(canonicalDelta(undefined)).toEqual([])
+  })
+
+  it('parseTouchEvents 有 changesDelta 时**只用它**（散文不再参与，避免歧义）', () => {
+    const rec: IterationRecord = {
+      iter: 5,
+      kind: 'added',
+      // 散文里出现了一个**不该**被算作动作的名字
+      changes: ['X2200 被拒 → 回退；顺手提了 N1700'],
+      changesDelta: ['-= X2200'],
+    }
+    const ev = parseTouchEvents(rec)
+    expect(ev.map((e) => `${e.op}:${e.name}`)).toEqual(['remove:X2200'])
+    expect(ev.every((e) => e.source === 'delta')).toBe(true)
   })
 })

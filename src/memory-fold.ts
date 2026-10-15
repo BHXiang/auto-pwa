@@ -69,8 +69,26 @@ const PROSE_STOPWORDS = /^(建议|回退|回滚|实验|定义|保留|区间|初�
  * `source:'prose'`——**低可信**，因为正则不可能穷尽写法。散文形态取"动作词之后
  * 第一个合法名字"；若之后没有（如 `… 定义删除`），退而取动作词之前最后一个。
  */
-export function parseTouchEvents(rec: Pick<IterationRecord, 'iter' | 'kind' | 'changes'>): TouchEvent[] {
+export function parseTouchEvents(
+  rec: Pick<IterationRecord, 'iter' | 'kind' | 'changes'> & { changesDelta?: string[] },
+): TouchEvent[] {
   const out: TouchEvent[] = []
+  const strictOf = (raw: string): TouchEvent[] => {
+    const got: TouchEvent[] = []
+    for (const m of raw.matchAll(/([+-])=\s*([A-Za-z][A-Za-z0-9_*()]*)/g)) {
+      const op: TouchOp = m[1] === '+' ? 'add' : 'remove'
+      const name = cleanName(m[2] ?? '')
+      if (name === '' || NOT_A_NAME.test(name)) continue
+      got.push({ iter: rec.iter, kind: rec.kind, op, name, source: 'delta', raw })
+    }
+    return got
+  }
+  // ① 规范化 delta（最可靠）：有它就**不再**解析散文（散文只作展示）
+  const canon = rec.changesDelta ?? []
+  if (canon.length > 0) {
+    for (const raw of canon) out.push(...strictOf(raw))
+    return out
+  }
   for (const raw of rec.changes ?? []) {
     let matchedDelta = false
     for (const m of raw.matchAll(/([+-])=\s*([A-Za-z][A-Za-z0-9_*()]*)/g)) {
@@ -285,6 +303,25 @@ export function triedBefore(
   }
 }
 
+
+/**
+ * 从 `changes` 里抽出**规范化 delta**（`+= 名字` / `-= 名字`），写 note 时调用。
+ *
+ * 顺带把"只写了散文"的情况暴露出来：返回空数组意味着这条记录**无法**被机器判定，
+ * 调用方应配合 `strictDeltaWarning` 告警（docs §8.6 缺陷 2）。
+ */
+export function canonicalDelta(changes: string[] | undefined): string[] {
+  const out: string[] = []
+  for (const raw of changes ?? []) {
+    for (const m of raw.matchAll(/([+-])=\s*([A-Za-z][A-Za-z0-9_*()]*)/g)) {
+      const name = cleanName(m[2] ?? '')
+      if (name === '' || NOT_A_NAME.test(name)) continue
+      const tok = `${m[1] === '+' ? '+=' : '-='} ${name}`
+      if (!out.includes(tok)) out.push(tok)
+    }
+  }
+  return out
+}
 
 /**
  * 回退时**被撤销的态**（= 被撤销轮次里"新增过"的名字）。

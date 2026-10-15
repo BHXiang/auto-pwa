@@ -29,6 +29,14 @@ export interface IterationRecord {
   iterDir?: string
   /** Structured change list (from auto_pwa_edit_config.changed). */
   changes?: string[]
+  /**
+   * **规范化 delta**（`+= 名字` / `-= 名字`）：由写 note 时从 `changes` 抽取，
+   * 供 reader 直接使用，**不必再解析散文**。
+   *
+   * 依据（docs §8.6）：本文档累积的 4 处缺陷都源自"散文不可解析"。这是**增量字段**，
+   * 老记录没有它时 reader 照旧走原来的路径（向后兼容），不改工具 schema（无需真机验证）。
+   */
+  changesDelta?: string[]
   /** Validation warnings seen before applying. */
   warnings?: string[]
   /** Free/float decision made this round. */
