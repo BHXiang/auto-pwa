@@ -176,6 +176,20 @@ const PROTOCOL = [
   'abstention → "没试过"；repeat → 整数；comparability → "可比"|"不可比（原因）"；next-step → ["add:名字","remove:名字"]。',
 ].join('\n')
 
+/**
+ * 去掉摘要里的"上轮计划"一行。
+ *
+ * 为什么：`next-step` 探针问"这一轮该动什么"，而摘要的 `上轮计划:` 字段**逐字写着**
+ * 下一步要加哪个态——实测 driver 在 R0 档只是把计划复述一遍（"上轮计划明写…"），
+ * 于是 E3 测的是**抄写**而不是决策。凡 askNextStep 的档位都先剥掉这一行。
+ */
+function stripNextPlan(text: string): string {
+  return text
+    .split('\n')
+    .filter((l) => !l.startsWith('上轮计划:'))
+    .join('\n')
+}
+
 function cmdManifest(args: string[]): void {
   const probesPath = resolve(argValue(args, '--probes', 'probe-out/probes.jsonl'))
   const outDir = resolve(argValue(args, '--out', 'probe-out'))
@@ -192,7 +206,8 @@ function cmdManifest(args: string[]): void {
   for (const p of probes) {
     const records = diaries.get(p.analysis) ?? []
     for (const arm of ARMS) {
-      const ctx = buildArmContext(arm, records, p.question, p.contextUpToIter)
+      const raw = buildArmContext(arm, records, p.question, p.contextUpToIter)
+      const ctx = p.category === 'next-step' ? { ...raw, text: stripNextPlan(raw.text) } : raw
       lines.push(
         JSON.stringify({
           probeId: p.id,
@@ -237,7 +252,10 @@ function cmdManifest(args: string[]): void {
             category: p.category,
             question: p.question,
             action,
-            context: buildReminderContext(level, records, p.question, p.contextUpToIter, action),
+            context: (() => {
+              const c = buildReminderContext(level, records, p.question, p.contextUpToIter, action)
+              return { ...c, text: stripNextPlan(c.text) }
+            })(),
             protocol: PROTOCOL,
           }),
         )
