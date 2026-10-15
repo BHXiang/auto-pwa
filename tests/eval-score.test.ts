@@ -234,3 +234,17 @@ describe('近名陷阱单列（词形混淆不混进记忆失败）', () => {
     expect(attributionMarkdown([m!])).toContain('近名陷阱')
   })
 })
+
+describe('记法变体（alias）类：真值是本体名的判定，不是"没试过"', () => {
+  it('K2*_1430 在日记里以 K2_1430 出现 → 真值 touched', () => {
+    const probe = p({
+      id: 'a/alias/K2*_1430',
+      category: 'alias',
+      answer: 'touched',
+      truth: { aliasOf: 'K2_1430', verdict: 'touched', note: '记法变体' },
+    })
+    expect(scoreOne(probe, { id: 'x', answer: 'touched' }).correct).toBe(true)
+    // 按"没试过"作答 = 错（这正是修掉的那个真值 bug）
+    expect(scoreOne(probe, { id: 'x', answer: '没试过' }).correct).toBe(false)
+  })
+})

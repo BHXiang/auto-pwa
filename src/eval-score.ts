@@ -190,6 +190,11 @@ export function scoreOne(probe: Probe, answer: AnswerRecord, rejectedNames?: Set
       const ok = want !== undefined && got === want
       return { ...base, correct: ok, detail: `want=${want ?? 'n/a'} got=${got ?? 'n/a'}` }
     }
+    case 'alias': {
+      // 记法变体：真值是本体名的判定（touched / added-then-removed），不是"没试过"
+      const ok = text.includes(String(probe.truth.verdict))
+      return { ...base, correct: ok, detail: `aliasOf=${String(probe.truth.aliasOf)} want=${String(probe.truth.verdict)}` }
+    }
     case 'tried-before': {
       const ok = text.includes(String(probe.truth.verdict))
       return { ...base, correct: ok, detail: `want=${probe.truth.verdict as string}` }

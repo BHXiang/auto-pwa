@@ -260,7 +260,9 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
       id: `${a.name}/tried-before/${tl.name}`,
       analysis: a.name,
       category: 'tried-before',
-      question: `${a.name} 分析里试过 ${tl.name} 吗？结果如何？`,
+      question:
+        `${a.name} 分析里试过 ${tl.name} 吗？结果如何？` +
+        '（判定按**最终状态**：当前仍在模型里 = touched；曾加入但已被移除 = added-then-removed；从未加入 = never）',
       answer: t.verdict,
       truth: { verdict: t.verdict, iters: tl.events.map((e) => e.iter), ops: tl.events.map((e) => `${e.op}@${e.iter}`) },
       judge: 'code',
@@ -290,17 +292,30 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
     if (!ownByNorm.has(k)) ownByNorm.set(k, n)
   }
   for (const name of [...foreignNames].filter((n) => !own.has(n)).sort().slice(0, 12)) {
+    const aliasOf = ownByNorm.get(norm(name))
+    if (aliasOf !== undefined) {
+      // **记法变体**（如 `K2*_1430` vs 日记里的 `K2*(1430)`）：这**不是**"没试过"，
+      // 而是同一个态被换了个写法。原先把它当 abstention 会让真值变错——实测由
+      // M1 的 driver 指出（"K2*_1430 在日记里以 K2*(1430) 出现过"）。单列一类，
+      // 真值取**本体名的判定**，用来测"记法鲁棒性"而不是记忆有无。
+      push({
+        id: `${a.name}/alias/${name}`,
+        analysis: a.name,
+        category: 'alias',
+        question: `${a.name} 分析里试过 ${name} 吗？（注意：本分析日记用 ${aliasOf} 这种写法）`,
+        answer: triedBefore(a.records, aliasOf).verdict,
+        truth: { aliasOf, verdict: triedBefore(a.records, aliasOf).verdict, note: '记法变体：真值取本体名的判定' },
+        judge: 'code',
+      })
+      continue
+    }
     push({
       id: `${a.name}/abstention/${name}`,
       analysis: a.name,
       category: 'abstention',
       question: `${a.name} 分析里试过 ${name} 吗？`,
       answer: '没试过',
-      truth: {
-        verdict: 'never',
-        note: '该名字出现在别的分析里 —— 正确行为是答"本分析没试过"，不是照搬',
-        ...(ownByNorm.get(norm(name)) !== undefined ? { aliasOf: ownByNorm.get(norm(name))! } : {}),
-      },
+      truth: { verdict: 'never', note: '该名字出现在别的分析里 —— 正确行为是答"本分析没试过"，不是照搬' },
       judge: 'code',
     })
   }
