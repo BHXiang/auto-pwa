@@ -123,9 +123,11 @@ type PArm = (typeof P_ARMS)[number]
 export function buildPlacementContext(arm: PArm, records: IterationRecord[], question: string, upToIter?: number): ArmContext {
   const seen = records.filter((r) => upToIter === undefined || r.iter <= upToIter)
   if (arm === 'P0') return buildArmContext('M1', records, question, upToIter)
-  if (arm === 'P1') return buildArmContext('M2', records, question, upToIter)
-  if (arm === 'P2') return buildArmContext('M3', records, question, upToIter)
-  const digest = buildArmContext('M2', records, question, upToIter)
+  // P1/P3 用**当前产品内容**（M2b：摘要 + tried 索引），只翻"放头/放尾"这一个开关；
+  // 放在 M2（无索引）上测位置会把两个变量混在一起。
+  if (arm === 'P1') return { ...buildArmContext('M2b', records, question, upToIter), placement: 'head' }
+  if (arm === 'P2') return { ...buildArmContext('M3', records, question, upToIter), placement: 'head' }
+  const digest = buildArmContext('M2b', records, question, upToIter)
   return { ...digest, placement: 'tail', note: 'recency 重锚：同一摘要放上下文末尾' }
 }
 
