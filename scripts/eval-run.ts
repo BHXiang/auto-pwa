@@ -207,7 +207,13 @@ function cmdManifest(args: string[]): void {
     const records = diaries.get(p.analysis) ?? []
     for (const arm of ARMS) {
       const raw = buildArmContext(arm, records, p.question, p.contextUpToIter)
-      const ctx = p.category === 'next-step' ? { ...raw, text: stripNextPlan(raw.text) } : raw
+      const ctx =
+        p.category === 'next-step'
+          ? (() => {
+              const t = stripNextPlan(raw.text)
+              return { ...raw, text: t, approxTokens: approxTokens(t) } // 剥离后要重算，否则成本虚高
+            })()
+          : raw
       lines.push(
         JSON.stringify({
           probeId: p.id,
@@ -254,7 +260,8 @@ function cmdManifest(args: string[]): void {
             action,
             context: (() => {
               const c = buildReminderContext(level, records, p.question, p.contextUpToIter, action)
-              return { ...c, text: stripNextPlan(c.text) }
+              const t = stripNextPlan(c.text)
+              return { ...c, text: t, approxTokens: approxTokens(t) }
             })(),
             protocol: PROTOCOL,
           }),
@@ -407,7 +414,9 @@ function cmdScore(args: string[]): void {
   const rejected = new Map<string, Set<string>>()
   for (const d of dirs) {
     const abs = resolve(d)
-    rejected.set(basename(abs), rejectedNamesOf(readDiary(abs)))
+    // 传**记录数组**（不是预计算集合）：scoreAll 会按每个探针的轮次裁剪，
+    // 避免把"探针之后才发生的否决"算进重复率（未来泄漏）。
+    rejected.set(basename(abs), readDiary(abs))
   }
   const { scores, metrics, markdown } = scoreAll(probes, answers, rejected)
   mkdirSync(outDir, { recursive: true })

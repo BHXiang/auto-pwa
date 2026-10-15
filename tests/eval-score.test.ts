@@ -248,3 +248,27 @@ describe('记法变体（alias）类：真值是本体名的判定，不是"没�
     expect(scoreOne(probe, { id: 'x', answer: '没试过' }).correct).toBe(false)
   })
 })
+
+describe('next-step 的"重复"只对 add 判定', () => {
+  it('remove 一个确实该移除的名字不算重复；re-add 已否决的名字才算', () => {
+    const probe = p({
+      id: 'a/next-step/iter-017',
+      category: 'next-step',
+      answer: ['remove:N1535w'],
+      truth: { moves: [{ op: 'remove', name: 'N1535w' }] },
+    })
+    const rejected = new Set(['N1535w', 'X2450'])
+    const rm = scoreOne(probe, { id: 'x', answer: ['remove:N1535w'] }, rejected)
+    expect(rm.repeated).toBe(false)
+    expect(rm.correct).toBe(true)
+
+    const readd = p({
+      id: 'a/next-step/iter-018',
+      category: 'next-step',
+      answer: [],
+      truth: { moves: [{ op: 'add', name: 'Z9999' }] },
+    })
+    const bad = scoreOne(readd, { id: 'x', answer: ['add:X2450'] }, rejected)
+    expect(bad.repeated).toBe(true)
+  })
+})

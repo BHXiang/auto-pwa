@@ -235,6 +235,9 @@ export function scoreOne(probe: Probe, answer: AnswerRecord, rejectedNames?: Set
       let repeated = false
       if (rejectedNames !== undefined) {
         for (const mv of got) {
+          // **只对 add 判"重复"**：`remove:X` 里 X 本就该出现在"已否决/已移除"集合中，
+          // 把它算成重复是错的（实测 E3 首读把 iter-017 正确的三处移除全判成了重复）。
+          if (!mv.startsWith('add:')) continue
           const name = mv.slice(mv.indexOf(':') + 1)
           if (rejectedNames.has(name)) repeated = true
         }
@@ -423,14 +426,25 @@ export function attributionMarkdown(metrics: Metrics[], title = '记忆档位 at
 export function scoreAll(
   probes: Probe[],
   answers: AnswerRecord[],
-  rejected: Map<string, Set<string>> = new Map(),
+  rejected: Map<string, Set<string>> | Map<string, IterationRecord[]> = new Map(),
 ): { scores: ProbeScore[]; metrics: Metrics[]; markdown: string } {
   const byId = new Map(probes.map((p) => [p.id, p]))
   const scores: ProbeScore[] = []
   for (const a of answers) {
     const p = byId.get(a.id)
     if (p === undefined) continue // 未知探针 id：忽略（不猜）
-    scores.push(scoreOne(p, a, rejected.get(p.analysis)))
+    const entry = rejected.get(p.analysis)
+    let names: Set<string> | undefined
+    if (entry instanceof Set) {
+      names = entry
+    } else if (entry !== undefined) {
+      // **按探针轮次裁剪**：一次真实循环里，决策者只知道**当时已经发生**的否决。
+      // 用整份日记算"已否决集"会把未来信息算进重复率（实测 E3 首读因此虚高）。
+      const cutoff = p.contextUpToIter
+      const known = cutoff === undefined ? entry : entry.filter((r) => r.iter <= cutoff)
+      names = rejectedNamesOf(known)
+    }
+    scores.push(scoreOne(p, a, names))
   }
   const metrics = aggregate(scores, answers)
   return { scores, metrics, markdown: attributionMarkdown(metrics) }
