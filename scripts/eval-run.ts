@@ -14,7 +14,7 @@
  * 为什么要有 manifest：E1b/E2 的对照必须**同起点、同问题、只换记忆档位**；把注入文本
  * 固化下来（而不是每次让 driver 自己拼）才能保证"只翻一个开关"。
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { touchTimeline } from '../src/memory-fold.js'
 import { rejectedNamesOf, scoreAll, type AnswerRecord, type Probe } from '../src/eval-score.js'
@@ -365,6 +365,18 @@ function cmdScore(args: string[]): void {
   const probesPath = resolve(argValue(args, '--probes', 'probe-out/probes.jsonl'))
   const answersPath = resolve(argValue(args, '--answers', 'probe-out/answers.jsonl'))
   const outDir = resolve(argValue(args, '--out', 'probe-out'))
+  // **过期派生文件告警**：实测踩过一次——probe-gen 改了真值/题面之后，用旧的
+  // probes-clean.jsonl 打分，得出"结论不受影响"的错误判断。派生文件必须晚于母文件。
+  const master = resolve('probe-out/probes.jsonl')
+  if (probesPath !== master && existsSync(master) && existsSync(probesPath)) {
+    const dt = statSync(master).mtimeMs - statSync(probesPath).mtimeMs
+    if (dt > 0) {
+      console.warn(
+        `  ⚠️ 探针文件可能过期：${probesPath.split('/').pop()} 比 probes.jsonl 旧 ${(dt / 1000).toFixed(0)} 秒` +
+          ` —— 真值/题面改动后请重新派生，否则会用旧真值打分`,
+      )
+    }
+  }
   const dirs = args.filter((a, i) => !a.startsWith('--') && !['--probes', '--answers', '--out', '--dir'].includes(args[i - 1] ?? ''))
   const probes = readFileSync(probesPath, 'utf8')
     .split('\n')
