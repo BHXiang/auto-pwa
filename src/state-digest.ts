@@ -107,13 +107,33 @@ export function buildStateDigest(input: DigestInput): string {
     // 实测发现"被回退到上一轮"撤销的态不会留下 `-=` 记录（X2200/X2450/N1440/X2300_2m…），
     // 所以 "+=" 侧**不代表仍在模型中**——若写成"仍在模型中"就是往上下文里注入错误陈述，
     // 比指标偏差更危险（模型会因此不再尝试某个其实已被否的态）。
-    const lastOp = new Map<string, { op: TouchOp; iter: number }>()
-    for (const rec of sorted) for (const e of parseTouchEvents(rec)) lastOp.set(e.name, { op: e.op, iter: e.iter })
+    // **记法变体要合并**：`K2*_1430` / `K2_1430` / `K2(1430)` 是同一个态的不同写法。
+    // 依据：alias 探针实测 driver 会在两种写法间混淆（docs §8.5.1b 的残余错题之一就是它）。
+    // 合并后取**最近一次出现的写法**作为显示名，其余写成别名。
+    const normKey = (x: string): string => x.toLowerCase().replace(/[*_()\s]/g, '')
+    const groups = new Map<string, { display: string; aliases: Set<string>; op: TouchOp; iter: number }>()
+    for (const rec of sorted) {
+      for (const e of parseTouchEvents(rec)) {
+        const k = normKey(e.name)
+        const g = groups.get(k)
+        if (g === undefined) {
+          groups.set(k, { display: e.name, aliases: new Set([e.name]), op: e.op, iter: e.iter })
+        } else {
+          g.aliases.add(e.name)
+          if (e.iter >= g.iter) {
+            g.display = e.name
+            g.op = e.op
+            g.iter = e.iter
+          }
+        }
+      }
+    }
     const added: string[] = []
     const removed: string[] = []
-    for (const [name, v] of [...lastOp.entries()].sort((a, b) => a[1].iter - b[1].iter)) {
-      const tag = `${name}(i${v.iter})`
-      if (v.op === 'add') added.push(tag)
+    for (const [, g] of [...groups.entries()].sort((a, b) => a[1].iter - b[1].iter)) {
+      const others = [...g.aliases].filter((x) => x !== g.display)
+      const tag = `${g.display}${others.length > 0 ? `(= ${others.join(' / ')})` : ''}(i${g.iter})`
+      if (g.op === 'add') added.push(tag)
       else removed.push(tag)
     }
     const join = (xs: string[]): string => {

@@ -93,3 +93,18 @@ describe('M2b：tried 索引（只陈述证据，不断言结论）', () => {
     expect(txt).toContain('不代表')
   })
 })
+
+describe('tried 索引：记法变体合并（alias 探针的教训）', () => {
+  it('K2*_1430 与 K2_1430 合并成一条，并标注别名', () => {
+    const recs = [
+      { iter: 1, kind: 'added' as const, title: 'i1', changes: ['R_Keta [2+] += K2_1430'] },
+      { iter: 2, kind: 'added' as const, title: 'i2', changes: ['R_KK [0+] += f0_1500'] },
+      { iter: 3, kind: 'added' as const, title: 'i3', changes: ['R_Keta [2+] += K2*_1430'] },
+    ]
+    const txt = buildStateDigest({ analysisRoot: '/x', records: recs })
+    // 合并后 += 侧只有 2 个条目（K2 系一条 + f0_1500），而不是 3 个
+    expect(txt).toContain('+= 过（2）')
+    // 显示名取**最近一次**的写法，另一种写法作为别名出现
+    expect(txt).toContain('K2*_1430(= K2_1430)(i3)')
+  })
+})
