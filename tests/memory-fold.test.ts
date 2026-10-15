@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { modelBaselineFold, naiveAnswers, parseTouchEvents, touchTimeline, triedBefore } from '../src/memory-fold.js'
+import {
+  droppedByRollback,
+  modelBaselineFold,
+  naiveAnswers,
+  parseTouchEvents,
+  strictDeltaWarning,
+  touchTimeline,
+  triedBefore,
+} from '../src/memory-fold.js'
 import type { IterationRecord } from '../src/report.js'
 
 /** 真实日记片段（chic2ppeta）——模型基线是 iter-009，但"基座 iter-016" 出现在 iter-017 的结论里。 */
@@ -206,5 +214,32 @@ describe('回滚风险：结构化证据判不出"是否仍在模型里"', () =>
     expect(t.rollbackRisk).toBe(true)
     // 没有回退轮时不该标风险
     expect(triedBefore([recs[0]!], 'X2200').rollbackRisk).toBe(false)
+  })
+})
+
+describe('§8.6 根因修复：回退显式记录被撤销的态 + 严格 delta 告警', () => {
+  const recs: IterationRecord[] = [
+    { iter: 3, kind: 'added', title: 'iter-003', changes: ['R_ppbar [1-] += N1700'] },
+    // 第 4 轮新增了 X2200（这一轮随后被回退）
+    { iter: 4, kind: 'added', title: 'iter-004 加 X2200', changes: ['R_ppbar [0-] += X2200'] },
+    // 回退时**同一 iter** 追加的记录：显式写 -=（这正是本次修复要产生的形态）
+    { iter: 4, kind: 'removed', title: '回滚 iter-004：X2200 变差', changes: ['-= X2200'] },
+  ]
+
+  it('droppedByRollback 列出被撤销轮次里新增过的名字（只算 add、去重）', () => {
+    // 从 iter-4 回退 → 只撤销第 4 轮的 X2200（第 3 轮的 N1700 不受影响）
+    expect(droppedByRollback(recs, 4)).toEqual(['X2200'])
+    expect(droppedByRollback(recs, 3)).toEqual(['N1700', 'X2200'])
+    expect(droppedByRollback(recs, 9)).toEqual([])
+  })
+
+  it('strictDeltaWarning：added/removed 缺严格 delta 要告警，其它 kind 不管', () => {
+    expect(strictDeltaWarning('added', ['R_ppbar [0-] += X2200'])).toBeUndefined()
+    expect(strictDeltaWarning('removed', ['R_ppbar [0-] -= X2200'])).toBeUndefined()
+    expect(strictDeltaWarning('added', ['X2200 被拒 → 回退'])).toContain('严格 delta')
+    expect(strictDeltaWarning('added', undefined)).toContain('严格 delta')
+    // 'other' 类（如收敛轮）不要求
+    expect(strictDeltaWarning('other', [])).toBeUndefined()
+    expect(strictDeltaWarning('converged', undefined)).toBeUndefined()
   })
 })

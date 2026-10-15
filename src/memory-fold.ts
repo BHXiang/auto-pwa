@@ -285,6 +285,37 @@ export function triedBefore(
   }
 }
 
+
+/**
+ * 回退时**被撤销的态**（= 被撤销轮次里"新增过"的名字）。
+ *
+ * 为什么需要它：日记里"回退到上一轮"原先**不留任何结构化痕迹**（只写在结论散文里），
+ * 于是这些态在后来的"是否仍在模型中"判定里**彻底消失**——实测 `X2200/X2450/N1440/X2300_2m`
+ * 都是这样消失的（docs §8.6 缺陷 1）。回退时把它们显式记成 `-= 名字`，
+ * 后来的 tried 索引与判定才能从结构化数据算出来，而不必读散文。
+ */
+export function droppedByRollback(records: IterationRecord[], fromIter: number): string[] {
+  const undone = records.filter((r) => r.iter >= fromIter)
+  return [...new Set(undone.flatMap((r) => parseTouchEvents(r)).filter((e) => e.op === 'add').map((e) => e.name))]
+}
+
+/**
+ * `added`/`removed` 轮次若 `changes` 里没有严格 delta（`+= 名字` / `-= 名字`），
+ * 返回一条**告警**文案（否则 undefined）。
+ *
+ * 为什么要管：tried 索引与"是否仍在模型中"都依赖严格 delta；只写散文（"X2200 被拒"）
+ * 时机器读不出来，只能靠正则猜（docs §8.6 缺陷 2）。
+ */
+export function strictDeltaWarning(kind: string | undefined, changes: string[] | undefined): string | undefined {
+  if (kind !== 'added' && kind !== 'removed') return undefined
+  const has = (changes ?? []).some((c) => /[+-]=\s*[A-Za-z]/.test(c))
+  if (has) return undefined
+  return (
+    `changes 里没有严格 delta（\`+= 名字\` / \`-= 名字\`）：kind=${kind} 的轮次请补上，` +
+    `否则"试过哪些态 / 是否仍在模型中"无法从结构化数据判定，只能读散文（易错）`
+  )
+}
+
 /**
  * 两种 **naive 启发式**的答案，用来量化"不做 fold 会错多少"：
  *  - `lastRecordWithNll`：最后一条带 NLL 的记录所对应的迭代号（"取最后一条记录"）

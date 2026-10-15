@@ -51,6 +51,46 @@ export class IterationLog {
   }
 
   /** Append one record (validates `iter` monotonicity) and re-render HTML. */
+  /**
+   * 给**已存在**的那一轮追加/覆盖字段（回退专用）：把被撤销的态写成 `-= 名字`、
+   * 把该轮标成 `removed`、补上回退结论。
+   *
+   * 为什么需要它：`append` 对重复 iter 会抛错，而回退恰恰发生在该轮**已经被 note 记过**
+   * 之后 → 原来的"回退时 append 一条记录"在真实流程里**永远不会落地**（连回退结论一起丢），
+   * 端到端测试抓到了这一点。没有对应轮次时返回 undefined（不新建轮次，避免伪造历史）。
+   */
+  annotate(
+    iter: number,
+    patch: { changes?: string[]; kind?: IterationRecord['kind']; conclusion?: string; nextPlan?: string },
+  ): IterationRecord | undefined {
+    const all = this.readAll()
+    const idx = all.findIndex((r) => r.iter === iter)
+    if (idx < 0) return undefined
+    const prev = all[idx]!
+    const merged: IterationRecord = {
+      ...prev,
+      ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
+      ...(patch.changes !== undefined
+        ? { changes: [...new Set([...(prev.changes ?? []), ...patch.changes])] }
+        : {}),
+      ...(patch.conclusion !== undefined ? { conclusion: patch.conclusion } : {}),
+      // `nextPlan` **追加**而不是覆盖：原计划仍有历史价值，而"回退至 iter-N"
+      // 必须被记录下来（fold 的 rollback-target 规则读它）
+      ...(patch.nextPlan !== undefined
+        ? {
+            nextPlan:
+              prev.nextPlan !== undefined && prev.nextPlan.trim() !== '' && !prev.nextPlan.includes(patch.nextPlan)
+                ? `${prev.nextPlan} ｜ ${patch.nextPlan}`
+                : patch.nextPlan,
+          }
+        : {}),
+    }
+    all[idx] = merged
+    writeFileSync(this.summaryPath, `${all.map((r) => JSON.stringify(r)).join('\n')}\n`)
+    this.renderDiary()
+    return merged
+  }
+
   append(record: IterationRecord): IterationRecord {
     mkdirSync(this.rootDir, { recursive: true })
     const existing = this.readAll()

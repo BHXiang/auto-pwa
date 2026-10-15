@@ -74,7 +74,10 @@ import {
   type VerificationResult,
 } from '../src/loop-state.js'
 import type { IterationRecord } from '../src/report.js'
-import { modelBaselineFold, naiveAnswers } from '../src/memory-fold.js'
+import { modelBaselineFold, naiveAnswers,
+  droppedByRollback,
+  strictDeltaWarning,
+} from '../src/memory-fold.js'
 import { buildStateDigest, type DigestLoopState } from '../src/state-digest.js'
 import { spawnSync } from 'node:child_process'
 import type {
@@ -2773,6 +2776,10 @@ export function apply(ctx: Context) {
       const m = /iter-(\d+)/.exec(args.iterDir)
       if (!m) return { ok: false, iter: -1, summaryPath: '', records: 0, error: `iterDir 不含 iter-N: ${args.iterDir}` }
       const log = new IterationLog({ rootDir: root })
+      // **严格 delta 硬要求（告警级）**：`added`/`removed` 两类轮次若不写 `+=`/`-=`，
+      // 后来的 tried 索引与"是否仍在模型中"就只能靠读散文猜（docs §8.6 缺陷 2）。
+      const deltaWarn = strictDeltaWarning(args.kind, args.changes)
+      const noteWarnings = [...(args.warnings ?? []), ...(deltaWarn !== undefined ? [deltaWarn] : [])]
       const record: IterationRecord = {
         iter: Number(m[1]),
         timestamp: new Date().toISOString(),
@@ -2784,7 +2791,7 @@ export function apply(ctx: Context) {
         deltaNll: args.deltaNll,
         hessianPositive: args.hessianPositive,
         changes: args.changes,
-        warnings: args.warnings,
+        ...(noteWarnings.length > 0 ? { warnings: noteWarnings } : {}),
         floatDecision: args.floatDecision,
         conclusion: args.conclusion,
         nextPlan: args.nextPlan,
@@ -5300,16 +5307,32 @@ export function apply(ctx: Context) {
           const m = /iter-(\d+)/.exec(prev)
           try {
             const log = new IterationLog({ rootDir: state.iterationsRoot })
-            log.append({
-              iter: state.iter,
-              timestamp: new Date().toISOString(),
-              title: `回滚 iter-${String(state.iter).padStart(3, '0')}：${args.reason ?? '拟合退化'}`,
-              kind: 'other',
-              configPath: `${state.currentIterDir}/config.yml`,
-              iterDir: state.currentIterDir,
-              conclusion: args.reason ?? '拟合退化（Hessian 不正定 / 撞边界 / 显著变差），已回退到上一轮',
+            // **回退必须显式写 `-=`**：被撤销轮次里"新增的态"原先**不留任何痕迹**
+            // （只写在结论散文里），导致后来的"是否仍在模型中"根本无法从结构化数据判定
+            // —— 实测 X2200/X2450/N1440/X2300_2m 都是这样消失的（docs §8.6 缺陷 1）。
+            const all = log.readAll()
+            const dropped = droppedByRollback(all, state.iter)
+            const rollbackConclusion =
+              args.reason ?? '拟合退化（Hessian 不正定 / 撞边界 / 显著变差），已回退到上一轮'
+            const patch = {
+              // 回退 = 一轮被否掉的实验（原来是 'other'，会让"已否决/回退"清单漏掉它）
+              kind: 'removed' as const,
+              ...(dropped.length > 0 ? { changes: dropped.map((n) => `-= ${n}`) } : {}),
+              conclusion: rollbackConclusion,
               nextPlan: `回退至 iter-${String(Number(m?.[1] ?? -1)).padStart(3, '0')}`,
-            })
+            }
+            // 该轮已被 note 记过 → **标注**它（append 会因重复 iter 抛错、信息全丢）；
+            // 只有从未记录过才新建一条。
+            if (log.annotate(state.iter, patch) === undefined) {
+              log.append({
+                iter: state.iter,
+                timestamp: new Date().toISOString(),
+                title: `回滚 iter-${String(state.iter).padStart(3, '0')}：${args.reason ?? '拟合退化'}`,
+                configPath: `${state.currentIterDir}/config.yml`,
+                iterDir: state.currentIterDir,
+                ...patch,
+              })
+            }
           } catch {
             // duplicate-iter guard
           }

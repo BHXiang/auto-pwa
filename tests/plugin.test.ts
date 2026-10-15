@@ -1458,6 +1458,59 @@ Resonances:
       return false
     }
   }
+
+  it('§8.6 根因修复：回退时把被撤销的态显式写成 `-= 名字`（并标成 removed 轮次）', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-rollback-'))
+    try {
+      const iterationsRoot = join(dir, 'iterations')
+      const iter0 = join(iterationsRoot, 'iter-000')
+      const iter1 = join(iterationsRoot, 'iter-001')
+      for (const d of [iter0, iter1]) {
+        mkdirSync(join(d, 'results'), { recursive: true })
+        writeFileSync(join(d, 'config.yml'), LOOP_CONFIG)
+        writeFileSync(join(d, 'results', 'fit.json'), fitJson(d === iter1 ? 120 : 100))
+      }
+      const log = new IterationLog({ rootDir: iterationsRoot })
+      log.append({
+        iter: 0,
+        timestamp: new Date().toISOString(),
+        title: '基线',
+        kind: 'other',
+        configPath: join(iter0, 'config.yml'),
+        iterDir: iter0,
+        nll: 100,
+        conclusion: 'baseline',
+      })
+      log.append({
+        iter: 1,
+        timestamp: new Date().toISOString(),
+        title: 'iter-001 加 X2200',
+        kind: 'added',
+        configPath: join(iter1, 'config.yml'),
+        iterDir: iter1,
+        nll: 120,
+        changes: ['R_ppbar [0-] += X2200'],
+        conclusion: 'NLL 变差',
+      })
+      await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter1 }, { agent: { id: 'sess-rb' } })
+      await run(
+        h,
+        'auto_pwa_loop_decide',
+        { iterationsRoot, action: 'rollback', reason: 'X2200 使 NLL 变差 +20' },
+        { agent: { id: 'sess-rb' } },
+      )
+      const rb = log.readAll().find((r) => r.iter === 1 && r.kind === 'removed')
+      expect(rb).toBeDefined()
+      // 关键：被撤销的态必须**结构化**可见（以前只写在散文里，谁都看不见）；
+      // 原有的变更记录保留，回退只是**追加**显式 `-=`
+      expect(rb!.changes).toContain('-= X2200')
+      expect(rb!.changes).toContain('R_ppbar [0-] += X2200')
+      expect(rb!.nextPlan).toContain('iter-000')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
