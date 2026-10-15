@@ -155,11 +155,12 @@ function buildLadderContext(
   upToIter: number | undefined,
   foreign: IterationRecord[],
   scale: number,
+  padNote = '无关历史',
 ): ArmContext {
   const base = buildArmContext(arm, records, question, upToIter)
   const pad = foreign.slice(0, Math.max(0, scale - records.length))
   if (pad.length === 0) return { ...base, note: `scale=${scale}（无关轮次不足，未加满）` }
-  const text = `${base.text}\n无关历史（evidence-preserving 追加，${pad.length} 轮；用于测规模退化与串味）:\n${pad.map(line).join('\n')}`
+  const text = `${base.text}\n${padNote}（evidence-preserving 追加，${pad.length} 轮）:\n${pad.map(line).join('\n')}`
   return { text, placement: 'head', approxTokens: approxTokens(text), note: `scale=${scale}` }
 }
 
@@ -346,7 +347,7 @@ function cmdLadder(args: string[]): void {
   const probesPath = resolve(argValue(args, '--probes', 'probe-out/probes.jsonl'))
   const outDir = resolve(argValue(args, '--out', 'probe-out'))
   const scales = argValue(args, '--scales', '0,5,50,200').split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x))
-  const dirs = args.filter((a, i) => !a.startsWith('--') && !['--probes', '--out', '--scales'].includes(args[i - 1] ?? ''))
+  const dirs = args.filter((a, i) => !a.startsWith('--') && !['--probes', '--out', '--scales', '--pad-mode'].includes(args[i - 1] ?? ''))
   const probes = readFileSync(probesPath, 'utf8')
     .split('\n')
     .filter((l) => l.trim() !== '')
@@ -355,18 +356,45 @@ function cmdLadder(args: string[]): void {
   const diaries = new Map<string, IterationRecord[]>()
   for (const d of dirs) diaries.set(basename(resolve(d)), readDiary(resolve(d)))
   const allForeign = [...diaries.entries()].flatMap(([name, recs]) => recs.map((r) => ({ name, r })))
+  // **硬版（decoy）**：填充源改成"与本题分析**最相似**的兄弟分析"——名字重叠最多者。
+  // 依据：软版用不相干的异分析（KsKs 填 ppbar 的题），模型只需注意"这些名字与我无关"；
+  // 硬版用**同族**历史（同一批 K*/f 共振、不同轮次），才真正测"串味"。
+  const padMode = argValue(args, '--pad-mode', 'foreign')
+  const namesOf = (recs: IterationRecord[]): Set<string> =>
+    new Set(touchTimeline(recs, { includeProse: true }).map((t) => t.name))
+  const similar = new Map<string, IterationRecord[]>()
+  if (padMode === 'decoy') {
+    for (const [name, recs] of diaries) {
+      // **实测发现**：这 5 份真实分析的状态名**零重叠**（不同衰变道：ppbar η / K K̄ / Kη / ωK_SK_S），
+      // 所以"最相似兄弟分析"这条路**没有材料可走**（先按名字重叠挑，全部 score=0）。
+      // 硬版改为：用**本分析自己的记录**、轮次整体 +100、并明确标注 —— 制造"同名态、不同轮次、
+      // 且自带另一套基线声明"的**冲突材料**，这才真正测"摘要里的显式字段能不能压过相似的干扰历史"。
+      similar.set(
+        name,
+        recs.map((r) => ({ ...r, iter: r.iter + 100 })),
+      )
+      console.log(`  decoy: ${name} ← 自身记录（轮次 +100，共 ${recs.length} 轮）`)
+    }
+  }
 
   const lines: string[] = []
   const cost = new Map<string, number>()
   for (const p of probes) {
     const own = diaries.get(p.analysis) ?? []
-    // 无关历史 = 别的分析的记录（确定性顺序），排除本分析的
-    const foreign = allForeign.filter((x) => x.name !== p.analysis).map((x) => x.r)
+    // 无关历史：软版 = 别的分析的记录；硬版（decoy）= 最相似兄弟分析的记录
+    const foreign =
+      padMode === 'decoy'
+        ? (similar.get(p.analysis) ?? [])
+        : allForeign.filter((x) => x.name !== p.analysis).map((x) => x.r)
+    const padNote =
+      padMode === 'decoy'
+        ? '**同一分析**的历史片段（轮次已整体重编号，另有一套基线声明；仅用于干扰测试）'
+        : '无关历史'
     // 用**产品内容**（M2b）对全量日记：规模梯要回答的是"上下文变长时，
     // 产品注入的方案还稳不稳"，不是"某个历史档位稳不稳"。
     for (const arm of ['M1', 'M2b'] as const) {
       for (const scale of scales) {
-        const ctx = buildLadderContext(arm, own, p.question, p.contextUpToIter, foreign, scale)
+        const ctx = buildLadderContext(arm, own, p.question, p.contextUpToIter, foreign, scale, padNote)
         lines.push(
           JSON.stringify({ probeId: p.id, battery: 'L', arm, scale, analysis: p.analysis, category: p.category, question: p.question, context: ctx, protocol: PROTOCOL }),
         )
