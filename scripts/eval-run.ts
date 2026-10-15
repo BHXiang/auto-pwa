@@ -46,11 +46,22 @@ function readDiary(analysisDir: string): IterationRecord[] {
 
 const approxTokens = (s: string): number => Math.ceil(s.length / 3)
 
-/** 记录 → 一行摘要（M1 用全量、M2+ 用摘要/检索子集）。 */
+/**
+ * 记录 → 文本（M1 用**完整**记录、M3/M4 用检索子集）。
+ *
+ * ⚠️ 曾经这里把 `conclusion` 截到 160 字、且**丢掉 `nextPlan`** → 让 "M1 = 日记全文"
+ * 这个档只剩 ~1.4k tokens/题（全量日记是 4.7–6.9k），而基线声明/折叠规则恰恰写在
+ * 被截掉的部分里——这是**控制变量错误**（driver 也指出了"材料被截断"）。
+ * 现在输出完整字段；M1 的注入成本随之回到"全量日记"的真实量级。
+ */
 function line(r: IterationRecord): string {
   const d = typeof r.deltaNll === 'number' ? ` ΔNLL=${r.deltaNll > 0 ? '+' : ''}${r.deltaNll.toFixed(2)}` : ''
   const n = typeof r.nll === 'number' ? ` NLL=${r.nll.toFixed(2)}` : ''
-  return `iter-${String(r.iter).padStart(3, '0')} [${r.kind}] ${r.title}${n}${d}${r.conclusion !== undefined ? ` | 结论: ${r.conclusion.slice(0, 160)}` : ''}`
+  const parts = [`iter-${String(r.iter).padStart(3, '0')} [${r.kind}] ${r.title}${n}${d}`]
+  if (r.conclusion !== undefined && r.conclusion.trim() !== '') parts.push(`结论: ${r.conclusion}`)
+  if (r.nextPlan !== undefined && r.nextPlan.trim() !== '') parts.push(`计划: ${r.nextPlan}`)
+  if (r.changes !== undefined && r.changes.length > 0) parts.push(`变更: ${r.changes.join('；')}`)
+  return parts.join(' | ')
 }
 
 /** 关键词相似度（M4 的 proxy 检索）：问句里的名字 token 出现在记录文本里。 */
