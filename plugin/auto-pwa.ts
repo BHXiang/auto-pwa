@@ -5176,6 +5176,9 @@ export function apply(ctx: Context) {
           jobId: { type: 'string' },
           phase: { type: 'string', required: true },
           changed: { type: 'array', items: { type: 'string' } },
+          // 回退时把"被撤销的态"直接送回上下文（§8.6 缺陷 1 的最后一环）
+          dropped: { type: 'array', items: { type: 'string' } },
+          note: { type: 'string' },
           errors: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } } },
           reportPath: { type: 'string' },
           error: { type: 'string' },
@@ -5309,13 +5312,14 @@ export function apply(ctx: Context) {
             return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: '没有更早的迭代可回退' }
           }
           const m = /iter-(\d+)/.exec(prev)
+          let dropped: string[] = []
           try {
             const log = new IterationLog({ rootDir: state.iterationsRoot })
             // **回退必须显式写 `-=`**：被撤销轮次里"新增的态"原先**不留任何痕迹**
             // （只写在结论散文里），导致后来的"是否仍在模型中"根本无法从结构化数据判定
             // —— 实测 X2200/X2450/N1440/X2300_2m 都是这样消失的（docs §8.6 缺陷 1）。
             const all = log.readAll()
-            const dropped = droppedByRollback(all, state.iter)
+            dropped = droppedByRollback(all, state.iter)
             const rollbackConclusion =
               args.reason ?? '拟合退化（Hessian 不正定 / 撞边界 / 显著变差），已回退到上一轮'
             const patch = {
@@ -5345,7 +5349,21 @@ export function apply(ctx: Context) {
           state.iter = m !== null ? Number(m[1]) : state.iter - 1
           state.phase = 'propose'
           saveLoopState(state)
-          return { ok: true, action: args.action, iter: state.iter, iterDir: prev, phase: state.phase }
+          // 把"本次回退撤销了哪些态"直接写进工具结果：模型当轮就能看到，
+          // 不必去日记里翻（§8.6 缺陷 1 的最后一环——结构化记录了，也要**送到**上下文里）
+          return {
+            ok: true,
+            action: args.action,
+            iter: state.iter,
+            iterDir: prev,
+            phase: state.phase,
+            ...(dropped.length > 0
+              ? {
+                  dropped,
+                  note: `本次回退撤销了 ${dropped.length} 个态（已记进日记为 \`-= 名字\`）：${dropped.join(', ')}`,
+                }
+              : {}),
+          }
         }
         // converge (force finalization)
         const reason = args.reason ?? 'AI 判定收敛'

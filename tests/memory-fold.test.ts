@@ -257,6 +257,7 @@ describe('规范化 delta（changesDelta）：reader 不再依赖散文', () => 
     const rec: IterationRecord = {
       iter: 5,
       kind: 'added',
+      title: 'iter-005',
       // 散文里出现了一个**不该**被算作动作的名字
       changes: ['X2200 被拒 → 回退；顺手提了 N1700'],
       changesDelta: ['-= X2200'],
