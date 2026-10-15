@@ -63,7 +63,8 @@
     "demo": "tsx scripts/demo.ts",
     "demo:step1": "tsx scripts/demo-step1.ts",
     "demo:report": "tsx scripts/demo-report.ts",
-    "fetch:pdg": "python scripts/fetch_pdg.py"
+    "fetch:pdg": "python scripts/fetch_pdg.py",
+    "check:build": "node scripts/check-build.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
