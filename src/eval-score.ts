@@ -38,6 +38,10 @@ export interface AnswerRecord {
   tokensIn?: number
   tokensOut?: number
   latencyMs?: number
+  /** E4：这次作答用掉的 memory 调用次数（查历史/检索的次数）→ Pass@B 与 P90R。 */
+  memoryCalls?: number
+  /** E4：规模梯的档位（注入的无关轮次数）。 */
+  scale?: number
 }
 
 export interface ProbeScore {
@@ -47,6 +51,16 @@ export interface ProbeScore {
   arm: string
   run: number
   correct: boolean
+  /**
+   * 答案的**实验条件直接带在分数上**（不做 (arm,id,run) join）。
+   *
+   * 为什么：E4 的规模梯会对**同一探针、同一档位**多次作答，只差 `scale`——
+   * 用 join 会 key 撞车、只认最后一条（实测踩过：onset 从 50 变成 200）。
+   */
+  scale?: number
+  memoryCalls?: number
+  tokensIn?: number
+  tokensOut?: number
   /** next-step 专用：与真值的集合重合度（Jaccard）。 */
   overlap?: number
   /** next-step 专用：所选动作是否落在"已否决集"里（重复率分子）。 */
@@ -72,6 +86,32 @@ export interface Metrics {
   meanTokensIn?: number
   byCategory: Record<string, { n: number; correct: number }>
   byAnalysis: Record<string, { n: number; correct: number }>
+  // ---- E4 诊断量（Scale-Conditioned Eval 的四个量）----
+  /** 预算 B（默认 2）。 */
+  budgetB?: number
+  /** 正确 **且** memory 调用 ≤ B 的比例。 */
+  passAtB?: number
+  /** memory 调用数的第 90 百分位（尾部长尾负担）。 */
+  p90R?: number
+  /** 预算内答错的比例。 */
+  pWrong?: number
+  /** 超预算的比例。 */
+  pExh?: number
+  /** 按规模档位分组的准确率（evidence-preserving 梯）。 */
+  byScale?: Record<string, { n: number; correct: number; accuracy: number }>
+  /** 可靠性首次跌破阈值的规模档（无则 undefined = 未观测到崩塌）。 */
+  breakdownOnset?: number
+}
+
+/** 分位数（线性插值，与 numpy 默认一致）。 */
+export function percentile(xs: number[], q: number): number | undefined {
+  if (xs.length === 0) return undefined
+  const s = [...xs].sort((a, b) => a - b)
+  if (s.length === 1) return s[0]
+  const pos = (s.length - 1) * q
+  const lo = Math.floor(pos)
+  const hi = Math.ceil(pos)
+  return s[lo]! + (s[hi]! - s[lo]!) * (pos - lo)
 }
 
 const asText = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v ?? ''))
@@ -124,6 +164,10 @@ export function scoreOne(probe: Probe, answer: AnswerRecord, rejectedNames?: Set
     arm: answer.arm ?? 'default',
     run: answer.run ?? 0,
     correct: false,
+    ...(answer.scale !== undefined ? { scale: answer.scale } : {}),
+    ...(answer.memoryCalls !== undefined ? { memoryCalls: answer.memoryCalls } : {}),
+    ...(answer.tokensIn !== undefined ? { tokensIn: answer.tokensIn } : {}),
+    ...(answer.tokensOut !== undefined ? { tokensOut: answer.tokensOut } : {}),
   }
   switch (probe.category) {
     case 'current-state': {
@@ -180,16 +224,20 @@ export function rejectedNamesOf(records: IterationRecord[]): Set<string> {
   return out
 }
 
-/** 聚合指标。 */
-export function aggregate(scores: ProbeScore[], answers: AnswerRecord[]): Metrics[] {
+/** 聚合指标。`budgetB` 默认 2（Scale-Conditioned Eval 的主结果）；`onsetThreshold` 默认 0.7。 */
+export function aggregate(
+  scores: ProbeScore[],
+  _answers: AnswerRecord[],
+  opts: { budgetB?: number; onsetThreshold?: number } = {},
+): Metrics[] {
+  const budgetB = opts.budgetB ?? 2
+  const onsetThreshold = opts.onsetThreshold ?? 0.7
   const byArm = new Map<string, ProbeScore[]>()
   for (const s of scores) {
     const list = byArm.get(s.arm) ?? []
     list.push(s)
     byArm.set(s.arm, list)
   }
-  const tokenOf = new Map<string, AnswerRecord>()
-  for (const a of answers) tokenOf.set(`${a.arm ?? 'default'}|${a.id}|${a.run ?? 0}`, a)
 
   const out: Metrics[] = []
   for (const [arm, list] of [...byArm.entries()].sort()) {
@@ -222,10 +270,35 @@ export function aggregate(scores: ProbeScore[], answers: AnswerRecord[]): Metric
     const overlaps = nextStep.map((s) => s.overlap).filter((x): x is number => typeof x === 'number')
     let tokensInTotal = 0
     let tokensOutTotal = 0
+    const calls: number[] = []
+    let within = 0
+    let passB = 0
+    let wrongInBudget = 0
+    const byScale = new Map<number, { n: number; correct: number }>()
     for (const s of list) {
-      const a = tokenOf.get(`${s.arm}|${s.id}|${s.run}`)
-      tokensInTotal += a?.tokensIn ?? 0
-      tokensOutTotal += a?.tokensOut ?? 0
+      tokensInTotal += s.tokensIn ?? 0
+      tokensOutTotal += s.tokensOut ?? 0
+      if (typeof s.memoryCalls === 'number') {
+        calls.push(s.memoryCalls)
+        if (s.memoryCalls <= budgetB) {
+          within += 1
+          if (s.correct) passB += 1
+          else wrongInBudget += 1
+        }
+      }
+      if (typeof s.scale === 'number') {
+        const cur = byScale.get(s.scale) ?? { n: 0, correct: 0 }
+        cur.n += 1
+        if (s.correct) cur.correct += 1
+        byScale.set(s.scale, cur)
+      }
+    }
+    let breakdownOnset: number | undefined
+    const scaleOut: Record<string, { n: number; correct: number; accuracy: number }> = {}
+    for (const [sc, v] of [...byScale.entries()].sort((x, y) => x[0] - y[0])) {
+      const accuracy = v.n === 0 ? 0 : v.correct / v.n
+      scaleOut[String(sc)] = { n: v.n, correct: v.correct, accuracy }
+      if (breakdownOnset === undefined && accuracy < onsetThreshold) breakdownOnset = sc
     }
     out.push({
       arm,
@@ -240,6 +313,17 @@ export function aggregate(scores: ProbeScore[], answers: AnswerRecord[]): Metric
       ...(list.length > 0 ? { meanTokensIn: tokensInTotal / list.length } : {}),
       byCategory,
       byAnalysis,
+      ...(calls.length > 0
+        ? {
+            budgetB,
+            passAtB: passB / calls.length,
+            p90R: percentile(calls, 0.9),
+            pWrong: wrongInBudget / calls.length,
+            pExh: (calls.length - within) / calls.length,
+          }
+        : {}),
+      ...(Object.keys(scaleOut).length > 0 ? { byScale: scaleOut } : {}),
+      ...(breakdownOnset !== undefined ? { breakdownOnset } : {}),
     })
   }
   return out
@@ -251,13 +335,23 @@ export function attributionMarkdown(metrics: Metrics[], title = '记忆档位 at
   const lines = [
     `# ${title}`,
     '',
-    '| 档位 | n | 准确率 | pass^k | 重复率 | 平均重合 | 注入 tokens/条 | 输出 tokens |',
-    '|---|---|---|---|---|---|---|---|',
+    '| 档位 | n | 准确率 | pass^k | 重复率 | 平均重合 | Pass@B | P90R | p_wrong | p_exh | onset | 注入 tokens/条 |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|',
   ]
+  const num = (x: number | undefined, d = 2): string => (x === undefined ? '—' : x.toFixed(d))
   for (const m of metrics) {
     lines.push(
-      `| ${m.arm} | ${m.n} | ${pct(m.accuracy)} | ${m.passK === undefined ? '—' : `${pct(m.passK)} (k=${m.passKValue ?? '?'})`} | ${pct(m.repeatRate)} | ${m.meanOverlap === undefined ? '—' : m.meanOverlap.toFixed(2)} | ${m.meanTokensIn === undefined ? '—' : Math.round(m.meanTokensIn)} | ${m.tokensOutTotal} |`,
+      `| ${m.arm} | ${m.n} | ${pct(m.accuracy)} | ${m.passK === undefined ? '—' : `${pct(m.passK)} (k=${m.passKValue ?? '?'})`} | ${pct(m.repeatRate)} | ${m.meanOverlap === undefined ? '—' : m.meanOverlap.toFixed(2)} | ${pct(m.passAtB)}${m.budgetB === undefined ? '' : ` (B=${m.budgetB})`} | ${num(m.p90R, 1)} | ${pct(m.pWrong)} | ${pct(m.pExh)} | ${m.breakdownOnset ?? '—'} | ${m.meanTokensIn === undefined ? '—' : Math.round(m.meanTokensIn)} |`,
     )
+  }
+  const withScale = metrics.filter((m) => m.byScale !== undefined)
+  if (withScale.length > 0) {
+    lines.push('', '规模梯（evidence-preserving：只加无关历史）：', '', '| 档位 | 规模 | n | 准确率 |', '|---|---|---|---|')
+    for (const m of withScale) {
+      for (const [sc, v] of Object.entries(m.byScale!).sort((a, b) => Number(a[0]) - Number(b[0]))) {
+        lines.push(`| ${m.arm} | ${sc} | ${v.n} | ${pct(v.accuracy)} |`)
+      }
+    }
   }
   lines.push('', '分类别准确率：', '', '| 档位 | 类别 | n | 准确率 |', '|---|---|---|---|')
   for (const m of metrics) {

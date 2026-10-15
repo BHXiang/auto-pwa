@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aggregate, parseMoves, rejectedNamesOf, scoreAll, scoreOne, type AnswerRecord, type Probe } from '../src/eval-score.js'
+import { aggregate, attributionMarkdown, parseMoves, rejectedNamesOf, scoreAll, scoreOne, type AnswerRecord, type Probe } from '../src/eval-score.js'
 import type { IterationRecord } from '../src/report.js'
 
 const p = (over: Partial<Probe>): Probe => ({
@@ -120,5 +120,57 @@ describe('scoreAll：上下界', () => {
     expect(naiveM.accuracy).toBe(0)
     expect(markdown).toContain('| truth |')
     expect(markdown).toContain('current-state')
+  })
+})
+
+describe('E4 诊断量：Pass@B / P90R / p_wrong·p_exh / breakdown onset', () => {
+  const probes = [p({}), p({ id: 'a/current-state/iter-011', truth: { baseIter: 9, naive: { maxIter: 11 }, naiveAgrees: false } })]
+
+  it('按预算 B 判 Pass@B，并把失败分成 p_wrong 与 p_exh', () => {
+    const answers: AnswerRecord[] = [
+      { id: probes[0]!.id, arm: 'M2', answer: 'iter-009', memoryCalls: 1 }, // 对，预算内
+      { id: probes[1]!.id, arm: 'M2', answer: 'iter-011', memoryCalls: 1 }, // 错，预算内
+      { id: probes[1]!.id, arm: 'M2', answer: 'iter-009', memoryCalls: 5 }, // 对，超预算
+    ]
+    const scores = answers.map((a) => scoreOne(probes.find((x) => x.id === a.id)!, a))
+    const [m] = aggregate(scores, answers, { budgetB: 2 })
+    expect(m!.budgetB).toBe(2)
+    expect(m!.passAtB).toBeCloseTo(1 / 3) // 只有第一条同时满足"对 + 预算内"
+    expect(m!.pWrong).toBeCloseTo(1 / 3)
+    expect(m!.pExh).toBeCloseTo(1 / 3)
+    // 3 个样本 [1,1,5] 的线性插值 P90 = 4.2（不是 max；这正是「看尾部」的含义）
+    expect(m!.p90R).toBeCloseTo(4.2)
+  })
+
+  it('规模梯：准确率跌破阈值时给出 breakdown onset', () => {
+    const answers: AnswerRecord[] = []
+    for (const sc of [0, 5, 50, 200]) {
+      answers.push({ id: probes[0]!.id, arm: 'M2', scale: sc, answer: sc <= 5 ? 'iter-009' : 'iter-017' })
+    }
+    const scores = answers.map((a) => scoreOne(probes[0]!, a))
+    const [m] = aggregate(scores, answers, { onsetThreshold: 0.7 })
+    expect(m!.breakdownOnset).toBe(50)
+    expect(m!.byScale!['5']!.accuracy).toBe(1)
+    expect(m!.byScale!['200']!.accuracy).toBe(0)
+  })
+
+  it('attribution 表带规模梯子表', () => {
+    const md = attributionMarkdown([
+      {
+        arm: 'M2',
+        n: 2,
+        correct: 1,
+        accuracy: 0.5,
+        tokensInTotal: 0,
+        tokensOutTotal: 0,
+        byCategory: {},
+        byAnalysis: {},
+        byScale: { '0': { n: 1, correct: 1, accuracy: 1 }, '50': { n: 1, correct: 0, accuracy: 0 } },
+        breakdownOnset: 50,
+      },
+    ])
+    expect(md).toContain('规模梯')
+    expect(md).toContain('Pass@B')
+    expect(md).toContain('| M2 | 50 | 1 | 0.0% |')
   })
 })

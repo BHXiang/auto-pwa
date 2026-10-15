@@ -19,6 +19,7 @@ import { basename, join, resolve } from 'node:path'
 import { touchTimeline } from '../src/memory-fold.js'
 import { rejectedNamesOf, scoreAll, type AnswerRecord, type Probe } from '../src/eval-score.js'
 import { buildStateDigest } from '../src/state-digest.js'
+import { buildReminders, type ActionKind } from '../src/reminder-set.js'
 import type { IterationRecord } from '../src/report.js'
 
 /** 记忆档位（§5.2 E2）。M4 是**负对照**：离线没有向量库，用"关键词相似度"
@@ -97,6 +98,58 @@ export function buildArmContext(arm: Arm, records: IterationRecord[], question: 
   return { text, placement: 'tail', approxTokens: approxTokens(text), note: '负对照；proxy 实现，结论里必须标注' }
 }
 
+/** E1b：注入策略/位置档（P0–P3）。与 M 档的区别是**显式记录 placement**，
+ *  用于验证"关键状态放头/尾都比放中间好"（Lost-in-the-Middle 的领域版）。 */
+const P_ARMS = ['P0', 'P1', 'P2', 'P3'] as const
+type PArm = (typeof P_ARMS)[number]
+
+export function buildPlacementContext(arm: PArm, records: IterationRecord[], question: string, upToIter?: number): ArmContext {
+  const seen = records.filter((r) => upToIter === undefined || r.iter <= upToIter)
+  if (arm === 'P0') return buildArmContext('M1', records, question, upToIter)
+  if (arm === 'P1') return buildArmContext('M2', records, question, upToIter)
+  if (arm === 'P2') return buildArmContext('M3', records, question, upToIter)
+  const digest = buildArmContext('M2', records, question, upToIter)
+  return { ...digest, placement: 'tail', note: 'recency 重锚：同一摘要放上下文末尾' }
+}
+
+/** E3：提醒档（R0/R1/R2）。记忆固定在 M2 摘要，只翻提醒这一个开关。 */
+const R_LEVELS = ['R0', 'R1', 'R2'] as const
+
+function buildReminderContext(
+  level: (typeof R_LEVELS)[number],
+  records: IterationRecord[],
+  question: string,
+  upToIter: number | undefined,
+  action: ActionKind,
+): ArmContext {
+  const digest = buildArmContext('M2', records, question, upToIter)
+  const block = buildReminders(level, action)
+  const text = [digest.text, block.text].filter((s) => s !== '').join('\n\n')
+  return { text, placement: 'head', approxTokens: approxTokens(text), ...(block.ids.length > 0 ? { note: `reminders=${block.ids.join(',')}` } : {}) }
+}
+
+/** E4：evidence-preserving 规模梯——保留本题证据，只追加**别的分析**的无关记录。 */
+function buildLadderContext(
+  arm: Arm,
+  records: IterationRecord[],
+  question: string,
+  upToIter: number | undefined,
+  foreign: IterationRecord[],
+  scale: number,
+): ArmContext {
+  const base = buildArmContext(arm, records, question, upToIter)
+  const pad = foreign.slice(0, Math.max(0, scale - records.length))
+  if (pad.length === 0) return { ...base, note: `scale=${scale}（无关轮次不足，未加满）` }
+  const text = `${base.text}\n无关历史（evidence-preserving 追加，${pad.length} 轮；用于测规模退化与串味）:\n${pad.map(line).join('\n')}`
+  return { text, placement: 'head', approxTokens: approxTokens(text), note: `scale=${scale}` }
+}
+
+/** 取 `--flag value`（缺省时回退，避免 indexOf(-1)+1 把别的参数当值）。 */
+function argValue(args: string[], flag: string, fallback: string): string {
+  const i = args.indexOf(flag)
+  return i >= 0 && args[i + 1] !== undefined ? args[i + 1]! : fallback
+}
+
 const PROTOCOL = [
   '只输出一行 JSON，不要解释：',
   '{"answer": <你的答案>}',
@@ -105,9 +158,9 @@ const PROTOCOL = [
 ].join('\n')
 
 function cmdManifest(args: string[]): void {
-  const probesPath = resolve(args[args.indexOf('--probes') + 1] ?? 'probe-out/probes.jsonl')
-  const outDir = resolve(args[args.indexOf('--out') + 1] ?? 'probe-out')
-  const dirs = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--probes' && args[i - 1] !== '--out' && args[i - 1] !== '--dir' && args[i - 1] !== '--answers')
+  const probesPath = resolve(argValue(args, '--probes', 'probe-out/probes.jsonl'))
+  const outDir = resolve(argValue(args, '--out', 'probe-out'))
+  const dirs = args.filter((a, i) => !a.startsWith('--') && !['--probes', '--out', '--dir', '--answers', '--scales'].includes(args[i - 1] ?? ''))
   const probes = readFileSync(probesPath, 'utf8')
     .split('\n')
     .filter((l) => l.trim() !== '')
@@ -124,6 +177,7 @@ function cmdManifest(args: string[]): void {
       lines.push(
         JSON.stringify({
           probeId: p.id,
+          battery: 'M',
           arm,
           analysis: p.analysis,
           category: p.category,
@@ -133,6 +187,43 @@ function cmdManifest(args: string[]): void {
         }),
       )
       n += 1
+    }
+    // E1b：位置档（只翻 placement）
+    for (const arm of P_ARMS) {
+      lines.push(
+        JSON.stringify({
+          probeId: p.id,
+          battery: 'P',
+          arm,
+          analysis: p.analysis,
+          category: p.category,
+          question: p.question,
+          context: buildPlacementContext(arm, records, p.question, p.contextUpToIter),
+          protocol: PROTOCOL,
+        }),
+      )
+      n += 1
+    }
+    // E3：提醒档，只对 next-step（"给 pull 区 + 候选，产出提案"）有意义
+    if (p.category === 'next-step') {
+      const moves = (p.truth.moves as { op: string }[] | undefined) ?? []
+      const action: ActionKind = moves.some((m) => m.op === 'remove') ? 'remove' : 'add'
+      for (const level of R_LEVELS) {
+        lines.push(
+          JSON.stringify({
+            probeId: p.id,
+            battery: 'R',
+            arm: level,
+            analysis: p.analysis,
+            category: p.category,
+            question: p.question,
+            action,
+            context: buildReminderContext(level, records, p.question, p.contextUpToIter, action),
+            protocol: PROTOCOL,
+          }),
+        )
+        n += 1
+      }
     }
   }
   mkdirSync(outDir, { recursive: true })
@@ -149,10 +240,53 @@ function cmdManifest(args: string[]): void {
   }
 }
 
+/** E4：规模梯清单（evidence-preserving；只加无关历史）。 */
+function cmdLadder(args: string[]): void {
+  const probesPath = resolve(argValue(args, '--probes', 'probe-out/probes.jsonl'))
+  const outDir = resolve(argValue(args, '--out', 'probe-out'))
+  const scales = argValue(args, '--scales', '0,5,50,200').split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x))
+  const dirs = args.filter((a, i) => !a.startsWith('--') && !['--probes', '--out', '--scales'].includes(args[i - 1] ?? ''))
+  const probes = readFileSync(probesPath, 'utf8')
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .map((l) => JSON.parse(l) as Probe)
+    .filter((p) => p.category === 'current-state' || p.category === 'tried-before')
+  const diaries = new Map<string, IterationRecord[]>()
+  for (const d of dirs) diaries.set(basename(resolve(d)), readDiary(resolve(d)))
+  const allForeign = [...diaries.entries()].flatMap(([name, recs]) => recs.map((r) => ({ name, r })))
+
+  const lines: string[] = []
+  const cost = new Map<string, number>()
+  for (const p of probes) {
+    const own = diaries.get(p.analysis) ?? []
+    // 无关历史 = 别的分析的记录（确定性顺序），排除本分析的
+    const foreign = allForeign.filter((x) => x.name !== p.analysis).map((x) => x.r)
+    for (const arm of ['M1', 'M2'] as const) {
+      for (const scale of scales) {
+        const ctx = buildLadderContext(arm, own, p.question, p.contextUpToIter, foreign, scale)
+        lines.push(
+          JSON.stringify({ probeId: p.id, battery: 'L', arm, scale, analysis: p.analysis, category: p.category, question: p.question, context: ctx, protocol: PROTOCOL }),
+        )
+        const k = `${arm}@${scale}`
+        cost.set(k, (cost.get(k) ?? 0) + ctx.approxTokens)
+      }
+    }
+  }
+  mkdirSync(outDir, { recursive: true })
+  const out = join(outDir, 'ladder.jsonl')
+  writeFileSync(out, lines.join('\n') + '\n')
+  console.log(`规模梯清单 ${lines.length} 条（${probes.length} 探针 × 2 档 × ${scales.length} 规模）→ ${out}`)
+  for (const scale of scales) {
+    const m1 = cost.get(`M1@${scale}`) ?? 0
+    const m2 = cost.get(`M2@${scale}`) ?? 0
+    console.log(`  scale=${String(scale).padStart(3)}: M1 平均 ${Math.round(m1 / probes.length)} tokens/条 · M2 ${Math.round(m2 / probes.length)}`)
+  }
+}
+
 function cmdScore(args: string[]): void {
-  const probesPath = resolve(args[args.indexOf('--probes') + 1] ?? 'probe-out/probes.jsonl')
-  const answersPath = resolve(args[args.indexOf('--answers') + 1] ?? 'probe-out/answers.jsonl')
-  const outDir = resolve(args[args.indexOf('--out') + 1] ?? 'probe-out')
+  const probesPath = resolve(argValue(args, '--probes', 'probe-out/probes.jsonl'))
+  const answersPath = resolve(argValue(args, '--answers', 'probe-out/answers.jsonl'))
+  const outDir = resolve(argValue(args, '--out', 'probe-out'))
   const dirs = args.filter((a, i) => !a.startsWith('--') && !['--probes', '--answers', '--out', '--dir'].includes(args[i - 1] ?? ''))
   const probes = readFileSync(probesPath, 'utf8')
     .split('\n')
@@ -180,9 +314,10 @@ function main(): void {
   const [cmd, ...rest] = process.argv.slice(2)
   try {
     if (cmd === 'manifest') cmdManifest(rest)
+    else if (cmd === 'ladder') cmdLadder(rest)
     else if (cmd === 'score') cmdScore(rest)
     else {
-      console.error('用法: npx tsx scripts/eval-run.ts manifest|score --probes <probes.jsonl> [--answers <answers.jsonl>] [--out <dir>] <analysisDir>...')
+      console.error('用法: npx tsx scripts/eval-run.ts manifest|ladder|score --probes <probes.jsonl> [--answers <answers.jsonl>] [--scales 0,5,50,200] [--out <dir>] <analysisDir>...')
       process.exit(2)
     }
   } catch (e) {
