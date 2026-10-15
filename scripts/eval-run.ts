@@ -337,7 +337,9 @@ function cmdLadder(args: string[]): void {
     const own = diaries.get(p.analysis) ?? []
     // 无关历史 = 别的分析的记录（确定性顺序），排除本分析的
     const foreign = allForeign.filter((x) => x.name !== p.analysis).map((x) => x.r)
-    for (const arm of ['M1', 'M2'] as const) {
+    // 用**产品内容**（M2b）对全量日记：规模梯要回答的是"上下文变长时，
+    // 产品注入的方案还稳不稳"，不是"某个历史档位稳不稳"。
+    for (const arm of ['M1', 'M2b'] as const) {
       for (const scale of scales) {
         const ctx = buildLadderContext(arm, own, p.question, p.contextUpToIter, foreign, scale)
         lines.push(

@@ -232,7 +232,12 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
       id: `${a.name}/current-state/iter-${String(rec.iter).padStart(3, '0')}`,
       analysis: a.name,
       category: 'current-state',
-      question: `截至 iter-${String(rec.iter).padStart(3, '0')} 结束，被**接受为当前模型基线**的是哪一轮？（= 后续 ΔNLL 应当与之比较的那一轮；不是"本轮自己与谁比"，也不是"NLL 最低的一轮"）`,
+      // 题面必须钉死成**纯声明查找**：实测"比对基线"至少有三种口径（声明点名的轮次 /
+      // 内容等价的轮次 / "被接受即自身"），同一批 driver 三种都用过 → 原措辞下这题不可解释。
+      // 现在只问"日记里最后一次显式声明的基线是哪一轮"，与 fold 的规则抽取一一对应。
+      question:
+        `截至 iter-${String(rec.iter).padStart(3, '0')} 结束，日记里**最后一次显式声明**的基线是 iter-哪一轮？` +
+        '（声明句式如"回退到 iter-N"/"基线仍为 iter-N"/"最终模型定为 iter-N"；不是"本轮自己与谁比"，也不是"NLL 最低的一轮"）',
       answer: `iter-${String(fold.baseIter).padStart(3, '0')}`,
       truth: {
         ...(contaminatedUpTo.has(rec.iter) ? { hindsight: true } : {}),
