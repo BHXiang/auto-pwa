@@ -253,6 +253,15 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
   // abstention：本分析从没碰过、但别的分析碰过的名字（同时是串味对照）。
   // 每个分析**限量**取前 12 个，避免"从没试过"类问题淹没其它类别。
   const own = new Set(timeline.map((t) => t.name))
+  // 近名陷阱检测：归一化后与"本分析试过的某个名字"相同 → 标 aliasOf。
+  // 试点实测（§8.5）：driver 两次运行的差异全部集中在这类名字上（K2*_1430 vs K2_1430），
+  // 若不单列，词形混淆会被算进"记忆失败"。
+  const norm = (x: string): string => x.toLowerCase().replace(/[*_\s]/g, '')
+  const ownByNorm = new Map<string, string>()
+  for (const n of own) {
+    const k = norm(n)
+    if (!ownByNorm.has(k)) ownByNorm.set(k, n)
+  }
   for (const name of [...foreignNames].filter((n) => !own.has(n)).sort().slice(0, 12)) {
     push({
       id: `${a.name}/abstention/${name}`,
@@ -260,7 +269,11 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
       category: 'abstention',
       question: `${a.name} 分析里试过 ${name} 吗？`,
       answer: '没试过',
-      truth: { verdict: 'never', note: '该名字出现在别的分析里 —— 正确行为是答"本分析没试过"，不是照搬' },
+      truth: {
+        verdict: 'never',
+        note: '该名字出现在别的分析里 —— 正确行为是答"本分析没试过"，不是照搬',
+        ...(ownByNorm.get(norm(name)) !== undefined ? { aliasOf: ownByNorm.get(norm(name))! } : {}),
+      },
       judge: 'code',
     })
   }

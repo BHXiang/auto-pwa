@@ -24,7 +24,7 @@ import type { IterationRecord } from '../src/report.js'
 
 /** 记忆档位（§5.2 E2）。M4 是**负对照**：离线没有向量库，用"关键词相似度"
  *  作替代实现（proxy），必须在结论里标明它不是真的 embedding 检索。 */
-const ARMS = ['M0', 'M1', 'M2', 'M3', 'M4'] as const
+const ARMS = ['M0', 'M1', 'M2', 'M2b', 'M3', 'M4'] as const
 type Arm = (typeof ARMS)[number]
 
 interface ArmContext {
@@ -84,6 +84,11 @@ export function buildArmContext(arm: Arm, records: IterationRecord[], question: 
     // 代码生成的当前状态摘要（= P1b 的注入内容）+ 已否决清单
     const text = buildStateDigest({ analysisRoot: '(arm-M2)', records: seen })
     return { text, placement: 'head', approxTokens: approxTokens(text) }
+  }
+  if (arm === 'M2b') {
+    // M2 + 名字级 tried 索引（试点实测 M2 在 tried-before 上只有 ~12/35，见 §8.5）
+    const text = buildStateDigest({ analysisRoot: '(arm-M2b)', records: seen, includeTriedIndex: true })
+    return { text, placement: 'head', approxTokens: approxTokens(text), note: 'M2 + tried 索引' }
   }
   if (arm === 'M3') {
     const digest = buildStateDigest({ analysisRoot: '(arm-M3)', records: seen })
@@ -270,9 +275,11 @@ function cmdMerge(args: string[]): void {
   let answered = 0
   const seen = new Set<string>()
   for (const file of readdirSync(answersDir)) {
-    const m = /^([A-Za-z0-9]+)-(.+)\.json$/.exec(file)
+    const m = /^([A-Za-z0-9]+)-(.+?)(?:-run(\d+))?\.json$/.exec(file)
     if (m === null) continue
     const arm = m[1]!
+    // 文件名里的 -run<k> 优先（k 次重复互不覆盖）；否则用 --run
+    const fileRun = m[3] !== undefined ? Number(m[3]) : run
     const items = JSON.parse(readFileSync(join(answersDir, file), 'utf8')) as { id: string; answer: unknown }[]
     for (const it of items) {
       const key = `${arm}|${it.id}`
@@ -282,7 +289,7 @@ function cmdMerge(args: string[]): void {
       }
       seen.add(key)
       answered += 1
-      out.push(JSON.stringify({ id: it.id, arm, run, answer: it.answer, tokensIn: cost.get(key) ?? 0 }))
+      out.push(JSON.stringify({ id: it.id, arm, run: fileRun, answer: it.answer, tokensIn: cost.get(key) ?? 0 }))
     }
   }
   const missing = [...valid].filter((k) => !seen.has(k))

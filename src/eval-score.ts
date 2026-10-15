@@ -65,6 +65,8 @@ export interface ProbeScore {
   overlap?: number
   /** next-step 专用：所选动作是否落在"已否决集"里（重复率分子）。 */
   repeated?: boolean
+  /** 该探针是"近似名陷阱"（如 K2*_1430 vs K2_1430）——混淆会被单列，不混进记忆失败。 */
+  aliasTrap?: boolean
   detail?: string
 }
 
@@ -95,6 +97,8 @@ export interface Metrics {
    */
   verdictAccuracy?: number
   verdictN?: number
+  /** 近名陷阱 vs 干净题的分组准确率（试点实测：混淆集中在近名上）。 */
+  byAlias?: { alias: { n: number; correct: number }; clean: { n: number; correct: number } }
   // ---- E4 诊断量（Scale-Conditioned Eval 的四个量）----
   /** 预算 B（默认 2）。 */
   budgetB?: number
@@ -177,6 +181,7 @@ export function scoreOne(probe: Probe, answer: AnswerRecord, rejectedNames?: Set
     ...(answer.memoryCalls !== undefined ? { memoryCalls: answer.memoryCalls } : {}),
     ...(answer.tokensIn !== undefined ? { tokensIn: answer.tokensIn } : {}),
     ...(answer.tokensOut !== undefined ? { tokensOut: answer.tokensOut } : {}),
+    ...(probe.truth.aliasOf !== undefined ? { aliasTrap: true } : {}),
   }
   switch (probe.category) {
     case 'current-state': {
@@ -311,6 +316,8 @@ export function aggregate(
       }
     }
     const verdict = list.filter((s) => s.category === 'tried-before' || s.category === 'abstention')
+    const aliasGroup = list.filter((s) => s.aliasTrap === true)
+    const cleanGroup = list.filter((s) => s.aliasTrap !== true && (s.category === 'tried-before' || s.category === 'abstention'))
     let breakdownOnset: number | undefined
     const scaleOut: Record<string, { n: number; correct: number; accuracy: number }> = {}
     for (const [sc, v] of [...byScale.entries()].sort((x, y) => x[0] - y[0])) {
@@ -333,6 +340,14 @@ export function aggregate(
       byAnalysis,
       ...(verdict.length > 0
         ? { verdictAccuracy: verdict.filter((s) => s.correct).length / verdict.length, verdictN: verdict.length }
+        : {}),
+      ...(aliasGroup.length > 0 || cleanGroup.length > 0
+        ? {
+            byAlias: {
+              alias: { n: aliasGroup.length, correct: aliasGroup.filter((s) => s.correct).length },
+              clean: { n: cleanGroup.length, correct: cleanGroup.filter((s) => s.correct).length },
+            },
+          }
         : {}),
       ...(calls.length > 0
         ? {
@@ -375,6 +390,15 @@ export function attributionMarkdown(metrics: Metrics[], title = '记忆档位 at
     }
   }
   lines.push('', '\* 判定类联合 = tried-before ∪ abstention（防止只看 abstention：零记忆档在那里是 100%）。', '')
+  const withAlias = metrics.filter((m) => m.byAlias !== undefined)
+  if (withAlias.length > 0) {
+    lines.push('', '近名陷阱 vs 干净题（判定类内）：', '', '| 档位 | 分组 | n | 准确率 |', '|---|---|---|---|')
+    for (const m of withAlias) {
+      const pct2 = (v: { n: number; correct: number }): string => (v.n === 0 ? '—' : `${((v.correct / v.n) * 100).toFixed(1)}%`)
+      lines.push(`| ${m.arm} | 近名陷阱 | ${m.byAlias!.alias.n} | ${pct2(m.byAlias!.alias)} |`)
+      lines.push(`| ${m.arm} | 干净 | ${m.byAlias!.clean.n} | ${pct2(m.byAlias!.clean)} |`)
+    }
+  }
   lines.push('分类别准确率：', '', '| 档位 | 类别 | n | 准确率 |', '|---|---|---|---|')
   for (const m of metrics) {
     for (const [cat, v] of Object.entries(m.byCategory).sort()) {

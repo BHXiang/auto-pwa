@@ -216,3 +216,21 @@ describe('round-reference（"本轮与哪一轮比"，插件 previousDiaryNll �
     expect(scoreOne(notComputable, { id: 'x', answer: 'iter-005' }).correct).toBe(false)
   })
 })
+
+describe('近名陷阱单列（词形混淆不混进记忆失败）', () => {
+  it('alias 组与 clean 组分开统计', () => {
+    const probes = [
+      p({ id: 'a/abstention/K2*_1430', category: 'abstention', answer: '没试过', truth: { verdict: 'never', aliasOf: 'K2_1430' } }),
+      p({ id: 'a/abstention/f0_2020', category: 'abstention', answer: '没试过', truth: { verdict: 'never' } }),
+    ]
+    const answers: AnswerRecord[] = [
+      { id: 'a/abstention/K2*_1430', arm: 'M2', answer: '试过（K2_1430）' }, // 被近名骗了
+      { id: 'a/abstention/f0_2020', arm: 'M2', answer: '没试过' }, // 干净题答对
+    ]
+    const scores = answers.map((a) => scoreOne(probes.find((x) => x.id === a.id)!, a))
+    const [m] = aggregate(scores, answers)
+    expect(m!.byAlias!.alias).toEqual({ n: 1, correct: 0 })
+    expect(m!.byAlias!.clean).toEqual({ n: 1, correct: 1 })
+    expect(attributionMarkdown([m!])).toContain('近名陷阱')
+  })
+})

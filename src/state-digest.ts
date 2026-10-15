@@ -10,7 +10,7 @@
  *   - 注入体积必须小（实测全量日记 4.7k–6.9k tokens → 摘要 ~100–200 tokens）；
  *   - 纯函数、无 I/O：便于单测，也保证 sync provider 不会抛。
  */
-import { modelBaselineFold, naiveAnswers } from './memory-fold.js'
+import { modelBaselineFold, naiveAnswers, parseTouchEvents, type TouchOp } from './memory-fold.js'
 import type { IterationRecord } from './report.js'
 
 export interface DigestLoopState {
@@ -26,6 +26,14 @@ export interface DigestInput {
   loopState?: DigestLoopState
   /** 最近一轮的 run-to-run NLL 极差（"ΔNLL 小于它不可信"），可选。 */
   noise?: { iter: number; nRuns: number; spread: number }
+  /**
+   * **M2b**：附上"已触碰的态"索引（在模型中的 / 试过但已移除）。
+   *
+   * 依据（试点实测 §8.5）：M2 摘要在 `current-state` 上 21/21 全对，但
+   * `tried-before` 只有 11–12/35——因为摘要把"已否决"截断到最近 5 条、且不含
+   * 逐名状态。名字级问题占判定类联合的大头，所以这一块必须补。
+   */
+  includeTriedIndex?: boolean
 }
 
 const cut = (s: string, n: number): string => (s.length <= n ? s : `${s.slice(0, n - 1)}…`)
@@ -93,6 +101,29 @@ export function buildStateDigest(input: DigestInput): string {
     lines.push(
       `噪声地板: iter-${pad(input.noise.iter)} 的 ${input.noise.nRuns} 个随机初值 NLL 极差=${input.noise.spread.toFixed(0)}；|ΔNLL| 远小于它时**不可信**（要 warm start + 多次重复）`,
     )
+  }
+  if (input.includeTriedIndex === true) {
+    // 名字级索引。**只陈述证据，不断言结论**：
+    // 实测发现"被回退到上一轮"撤销的态不会留下 `-=` 记录（X2200/X2450/N1440/X2300_2m…），
+    // 所以 "+=" 侧**不代表仍在模型中**——若写成"仍在模型中"就是往上下文里注入错误陈述，
+    // 比指标偏差更危险（模型会因此不再尝试某个其实已被否的态）。
+    const lastOp = new Map<string, { op: TouchOp; iter: number }>()
+    for (const rec of sorted) for (const e of parseTouchEvents(rec)) lastOp.set(e.name, { op: e.op, iter: e.iter })
+    const added: string[] = []
+    const removed: string[] = []
+    for (const [name, v] of [...lastOp.entries()].sort((a, b) => a[1].iter - b[1].iter)) {
+      const tag = `${name}(i${v.iter})`
+      if (v.op === 'add') added.push(tag)
+      else removed.push(tag)
+    }
+    const join = (xs: string[]): string => {
+      const s2 = xs.join(' ')
+      return s2.length <= 460 ? s2 : `${s2.slice(0, 459)}…（共 ${xs.length} 个）`
+    }
+    lines.push('已触碰的态索引（只用于回答"试过没有"；+= 侧**不代表**仍在模型中）:')
+    if (added.length > 0) lines.push(`  += 过（${added.length}）: ${join(added)}`)
+    if (removed.length > 0) lines.push(`  -= 过（${removed.length}）: ${join(removed)}`)
+    if (added.length === 0 && removed.length === 0) lines.push('  （无 —— 本分析日记里没有逐轮 +=/-= 记录）')
   }
   if (last.nextPlan !== undefined && last.nextPlan.trim() !== '') lines.push(`上轮计划: ${cut(last.nextPlan, 120)}`)
   lines.push('</system-reminder>')
