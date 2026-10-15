@@ -114,6 +114,33 @@ export function verifyPrediction(
   }
 }
 
+/**
+ * 一条已完成的"预测→验证"记录（P1c 账本）。
+ *
+ * 键 = 作出预测的那一轮（`iter`）+ 验证发生的那一轮（`verifiedAtIter`）；
+ * append-only，永不改写——这正是 §6.1 判据里"结论晚于证据 → 只能追加"的落地。
+ */
+export interface VerificationLedgerEntry {
+  /** 作出预测的轮次。 */
+  iter: number
+  hypothesis?: string
+  prediction: Prediction
+  passed: boolean
+  actual: number | null
+  note: string
+  /** 在哪一轮被验证。 */
+  verifiedAtIter: number
+  /** 记录时间（ISO）。 */
+  at?: string
+}
+
+/** 追加一条验证记录（幂等：同一 iter+verifiedAtIter 不重复追加）。 */
+export function appendVerification(state: LoopState, entry: VerificationLedgerEntry): void {
+  const list = state.verifications ?? []
+  if (!list.some((e) => e.iter === entry.iter && e.verifiedAtIter === entry.verifiedAtIter)) list.push(entry)
+  state.verifications = list
+}
+
 export interface LoopState {
   schemaVersion: 1
   iterationsRoot: string
@@ -128,8 +155,16 @@ export interface LoopState {
   objective: LoopObjective
   lastEval?: LoopEval
   /** Prediction pending verification (attached by loop_decide, verified by
-   * the next loop_next evaluation). */
-  pendingPrediction?: { prediction: Prediction; hypothesis?: string }
+   * the next loop_next evaluation). `iter` = 作出预测的那一轮（向后兼容可缺）。 */
+  pendingPrediction?: { prediction: Prediction; hypothesis?: string; iter?: number }
+  /**
+   * **验证账本**（append-only）：每次 loop_next 完成验证都追加一条。
+   *
+   * 为什么需要：`pendingPrediction` 是**单槽**，验证后被清空；此前只有模型
+   * 手动把结果抄进 `auto_pwa_note` 才会留痕，代码侧不留任何记录 —— 于是
+   * "预测被证伪"这条最重要的教训在会话结束后就消失了。
+   */
+  verifications?: VerificationLedgerEntry[]
   finalized?: {
     bestIter: number
     bestNll: number | null

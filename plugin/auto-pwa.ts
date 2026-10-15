@@ -66,6 +66,7 @@ import {
   previousIterDir,
   writeFinalReport,
   verifyPrediction,
+  appendVerification,
   type LoopState,
   type LoopEval,
   type LoopObjective,
@@ -4993,7 +4994,19 @@ export function apply(ctx: Context) {
         // Verify the previous decision's prediction, if one is pending.
         let verification: { passed: boolean; actual: number | null; note: string } | undefined
         if (state.pendingPrediction !== undefined) {
-          verification = verifyPrediction(state.pendingPrediction.prediction, evalResult)
+          const pending = state.pendingPrediction
+          verification = verifyPrediction(pending.prediction, evalResult)
+          // P1c：把验证结果**追加进账本**（此前只有模型手动抄进 note 才留痕）。
+          appendVerification(state, {
+            iter: pending.iter ?? state.iter,
+            ...(pending.hypothesis !== undefined ? { hypothesis: pending.hypothesis } : {}),
+            prediction: pending.prediction,
+            passed: verification.passed,
+            actual: verification.actual,
+            note: verification.note,
+            verifiedAtIter: state.iter,
+            at: new Date().toISOString(),
+          })
           state.pendingPrediction = undefined
           saveLoopState(state)
         }
@@ -5059,13 +5072,35 @@ export function apply(ctx: Context) {
           iterDir: { type: 'string', required: true },
           rounds: { type: 'integer', required: true },
           lastEval: { type: 'object', additionalProperties: false, properties: { nll: { oneOf: [{ type: 'number' }, { type: 'null' }] }, deltaNll: { oneOf: [{ type: 'number' }, { type: 'null' }] }, maxPull: { oneOf: [{ type: 'number' }, { type: 'null' }] }, maxChi2Ndf: { oneOf: [{ type: 'number' }, { type: 'null' }] }, verdict: { type: 'string' } } },
+          verifications: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                iter: { type: 'integer', required: true },
+                verifiedAtIter: { type: 'integer', required: true },
+                passed: { type: 'boolean', required: true },
+                actual: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+                note: { type: 'string', required: true },
+                hypothesis: { type: 'string' },
+              },
+            },
+          },
           error: { type: 'string' },
         },
       },
-      render: (_args, value: { ok: boolean; phase: string; iter: number; iterDir: string; rounds: number; lastEval?: { nll: number | null; deltaNll: number | null; maxPull: number | null; maxChi2Ndf: number | null; verdict: string }; error?: string }) =>
+      render: (_args, value: { ok: boolean; phase: string; iter: number; iterDir: string; rounds: number; lastEval?: { nll: number | null; deltaNll: number | null; maxPull: number | null; maxChi2Ndf: number | null; verdict: string }; verifications?: { iter: number; verifiedAtIter: number; passed: boolean; actual: number | null; note: string; hypothesis?: string }[]; error?: string }) =>
         text(
           value.ok
-            ? `loop 状态: phase=${value.phase}, iter-${String(value.iter).padStart(3, '0')}（${value.iterDir}）, rounds=${value.rounds}${value.lastEval ? `, 上次评估 NLL=${value.lastEval.nll?.toFixed(2) ?? '—'} ΔNLL=${value.lastEval.deltaNll ?? '—'} max|pull|=${value.lastEval.maxPull ?? '—'} chi2/ndf=${value.lastEval.maxChi2Ndf ?? '—'}` : ''}`
+            ? `loop 状态: phase=${value.phase}, iter-${String(value.iter).padStart(3, '0')}（${value.iterDir}）, rounds=${value.rounds}${value.lastEval ? `, 上次评估 NLL=${value.lastEval.nll?.toFixed(2) ?? '—'} ΔNLL=${value.lastEval.deltaNll ?? '—'} max|pull|=${value.lastEval.maxPull ?? '—'} chi2/ndf=${value.lastEval.maxChi2Ndf ?? '—'}` : ''}${
+                value.verifications !== undefined && value.verifications.length > 0
+                  ? `\n  验证账本（最近 ${value.verifications.length} 条）: ${value.verifications
+                      .map((v) => `iter-${String(v.iter).padStart(3, '0')} ${v.passed ? '成立' : '不成立'}${v.actual === null ? '' : `(actual=${v.actual})`}`)
+                      .join('；')}`
+                  : ''
+              }`
             : `loop 未启动或读取失败: ${value.error ?? '未知'}`,
         ),
     },
@@ -5082,6 +5117,15 @@ export function apply(ctx: Context) {
         iter: state.iter,
         iterDir: state.currentIterDir,
         rounds: state.rounds,
+        // P1c 验证账本：最近 5 条（append-only，重启后可查；不再依赖模型抄进 note）
+        verifications: (state.verifications ?? []).slice(-5).map((v) => ({
+          iter: v.iter,
+          verifiedAtIter: v.verifiedAtIter,
+          passed: v.passed,
+          actual: v.actual,
+          note: v.note,
+          ...(v.hypothesis !== undefined ? { hypothesis: v.hypothesis } : {}),
+        })),
         lastEval: lastEval === undefined
           ? undefined
           : {
@@ -5235,7 +5279,8 @@ export function apply(ctx: Context) {
           state.rounds += 1
           state.phase = 'evaluate'
           if (args.prediction !== undefined) {
-            state.pendingPrediction = { prediction: args.prediction, hypothesis: args.hypothesis }
+            // `iter` 显式记下"作出预测的那一轮"，供 P1c 账本按键（不要靠验证时的 state.iter 猜）
+            state.pendingPrediction = { prediction: args.prediction, ...(args.hypothesis !== undefined ? { hypothesis: args.hypothesis } : {}), iter: started.iter }
           } else {
             state.pendingPrediction = undefined
           }

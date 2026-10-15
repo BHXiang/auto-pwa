@@ -180,7 +180,8 @@ describe('startIteration', () => {
     expect(existsSync(join(r.iterDir, 'config.yml'))).toBe(true)
     expect(readFileSync(join(r.iterDir, 'config.yml'), 'utf8')).toBe('base config')
     expect(existsSync(join(r.iterDir, 'fit.py'))).toBe(true)
-    expect(existsSync(join(r.iterDir, 'note.md'))).toBe(true)
+    // S2：不再生成 note.md 骨架（实测无任何读取者；本轮结论走 SUMMARY.jsonl）
+    expect(existsSync(join(r.iterDir, 'note.md'))).toBe(false)
     // second call -> iter-001
     const r2 = startIteration({
       iterationsRoot: join(root, 'iterations'),

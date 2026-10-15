@@ -1350,6 +1350,68 @@ Resonances:
     }
   })
 
+  it('P1c 验证账本：loop_next 把"预测→验证"追加落盘（不再依赖模型抄进 note）', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-ledger-'))
+    try {
+      const iterationsRoot = join(dir, 'iterations')
+      const iter0 = join(iterationsRoot, 'iter-000')
+      mkdirSync(join(iter0, 'results'), { recursive: true })
+      writeFileSync(join(iter0, 'config.yml'), LOOP_CONFIG)
+      writeFileSync(join(iter0, 'results', 'fit.json'), fitJson(100))
+      new IterationLog({ rootDir: iterationsRoot }).append({
+        iter: 0,
+        timestamp: new Date().toISOString(),
+        title: '基线',
+        kind: 'other',
+        configPath: join(iter0, 'config.yml'),
+        iterDir: iter0,
+        nll: 100,
+        conclusion: 'baseline',
+      })
+      await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter0 }, { agent: { id: 'sess-1' } })
+      const decided = (await run(
+        h,
+        'auto_pwa_loop_decide',
+        {
+          iterationsRoot,
+          action: 'iterate',
+          proposal: { name: 'omega1420', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.41, 0.29] },
+          hypothesis: 'omega1420 会吸收 ΔNLL 大改善',
+          prediction: { metric: 'deltaNll', threshold: -3, direction: 'below' },
+        },
+        { agent: { id: 'sess-1' } },
+      )) as { iterDir: string }
+      // 拟合完成：ΔNLL = 98-100 = -2 → 预测不成立（阈值 -3）
+      mkdirSync(join(decided.iterDir, 'results'), { recursive: true })
+      mkdirSync(join(decided.iterDir, 'evaluate'), { recursive: true })
+      writeFileSync(join(decided.iterDir, 'results', 'fit.json'), fitJson(98))
+      writeFileSync(
+        join(decided.iterDir, 'evaluate', 'evaluate.json'),
+        JSON.stringify({ worst_distributions: [{ name: 'mass_R_KK', max_abs_pull: 2.1, bins_over_5sigma: 0 }] }),
+      )
+
+      const next = (await run(h, 'auto_pwa_loop_next', { iterationsRoot }, { agent: { id: 'sess-1' } })) as {
+        verification?: { passed: boolean; actual: number | null }
+      }
+      expect(next.verification).toMatchObject({ passed: false })
+      // 关键：**代码侧留痕**（此前 pendingPrediction 一清就什么都不剩）
+      const state = JSON.parse(readFileSyncSync(join(iterationsRoot, '.loop-state.json'), 'utf8')) as {
+        verifications?: { iter: number; verifiedAtIter: number; passed: boolean; hypothesis?: string }[]
+      }
+      expect(state.verifications).toHaveLength(1)
+      expect(state.verifications![0]).toMatchObject({ iter: 1, passed: false, hypothesis: 'omega1420 会吸收 ΔNLL 大改善' })
+
+      const status = (await run(h, 'auto_pwa_loop_status', { iterationsRoot }, {})) as {
+        verifications: { iter: number; passed: boolean; actual: number | null }[]
+      }
+      expect(status.verifications).toHaveLength(1)
+      expect(status.verifications[0]).toMatchObject({ iter: 1, passed: false, actual: -2 })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('auto_pwa_loop_decide iterate accepts removals without a proposal', async () => {
     const h = harnessCtx()
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-loop-rm-'))

@@ -94,7 +94,7 @@ export class IterationLog {
 /**
  * Create the next iteration directory:
  *   iterations/iter-N/  config.yml (copied from base), fit.py/plot.py
- *   (symlinked from a solver dir), note.md skeleton.
+ *   (symlinked from a solver dir). No note.md skeleton (S2: it had no reader).
  * Returns the new iterDir and the records to date.
  */
 export function startIteration(options: {
@@ -147,8 +147,9 @@ export function startIteration(options: {
     }
   }
 
-  writeFileSync(join(iterDir, 'note.md'), `# iter-${String(iter).padStart(3, '0')}\n\n（本轮决策记录）\n`)
-  changed.push(`note.md 骨架`)
+  // S2：不再写 `note.md` 骨架。实测它**没有任何读取者**（只写、进 git、永不消费），
+  // 每轮却多一个文件进历史；本轮结论走 `SUMMARY.jsonl`（+ 结构化字段）与 git commit。
+  // 已有目录里的旧 note.md 保持原样（历史不改写）。
   return { iterDir, iter, changed, warnings }
 }
 

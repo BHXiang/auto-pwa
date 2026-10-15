@@ -8,7 +8,8 @@ import { diagnoseFit } from '../src/diagnose.js'
 import { convergenceVerdict, initLoopState, loadLoopState, writeFinalReport, DEFAULT_OBJECTIVE } from '../src/loop-state.js'
 import { IterationLog } from '../src/iteration-log.js'
 import { freeParamCount, compareModels, simplerFavoured } from '../src/model-selection.js'
-import { verifyPrediction } from '../src/loop-state.js'
+import { verifyPrediction, appendVerification } from '../src/loop-state.js'
+import type { LoopState } from '../src/loop-state.js'
 import { defaultDb } from '../src/db.js'
 import { parseConfig, validateConfig } from '../src/config-edit.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
@@ -461,6 +462,34 @@ describe('model selection (AIC/BIC)', () => {
 })
 
 describe('prediction verification', () => {
+
+  it('P1c：验证账本是 append-only（修掉 pendingPrediction 单槽覆盖）', () => {
+    const state = {
+      schemaVersion: 1,
+      iterationsRoot: '/x/iterations',
+      phase: 'evaluate',
+      baseIterDir: '/x/iterations/iter-000',
+      currentIterDir: '/x/iterations/iter-001',
+      iter: 1,
+      rounds: 1,
+      objective: { ...DEFAULT_OBJECTIVE },
+    } as LoopState
+    const entry = (iter: number, verifiedAtIter: number, passed: boolean) => ({
+      iter,
+      prediction: { metric: 'deltaNll' as const, threshold: -3, direction: 'below' as const },
+      passed,
+      actual: passed ? -5 : -2,
+      note: 'note',
+      verifiedAtIter,
+    })
+    appendVerification(state, entry(1, 1, true))
+    appendVerification(state, entry(2, 2, false))
+    expect(state.verifications).toHaveLength(2)
+    // 幂等：同 (iter, verifiedAtIter) 不重复追加
+    appendVerification(state, entry(2, 2, false))
+    expect(state.verifications).toHaveLength(2)
+    expect(state.verifications!.map((v) => `${v.iter}:${v.passed}`)).toEqual(['1:true', '2:false'])
+  })
 
   it('maxPull prediction passes when the global pull drops below threshold', () => {
     const r = verifyPrediction({ metric: 'maxPull', threshold: 3, direction: 'below' }, { maxPull: 2.1, deltaNll: -1, pullRegions: [] })
