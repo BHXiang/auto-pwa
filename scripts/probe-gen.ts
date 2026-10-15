@@ -88,36 +88,58 @@ interface NoiseRow {
   worst: number | null
   spread: number | null
   bestIsPD: boolean | null
-  source: 'fit.json' | 'none'
+  source: 'fit.json' | 'nll_history.txt' | 'none'
+}
+
+/** 旧流水线（无 fit.json）的兜底：从 `nll_history.txt` 的 `# RUN:` 分段取每次 run 的终值。 */
+function parseNllHistoryRuns(text: string): number[] {
+  const finals: number[] = []
+  let current: number | null = null
+  for (const line of text.split('\n')) {
+    if (/^\s*#\s*RUN\b/.test(line)) {
+      if (current !== null) finals.push(current)
+      current = null
+      continue
+    }
+    const m = /^\s*\d+\s+([-+0-9.eE]+)\s*$/.exec(line)
+    if (m !== null) {
+      const v = Number(m[1])
+      if (Number.isFinite(v)) current = v
+    }
+  }
+  if (current !== null) finals.push(current)
+  return finals
 }
 
 function noiseOf(a: Analysis): NoiseRow[] {
   const rows: NoiseRow[] = []
   for (const { iter, dir } of a.iterDirs) {
     const fitPath = join(dir, 'results', 'fit.json')
-    if (!existsSync(fitPath)) {
-      rows.push({ iter, nRuns: 0, best: null, worst: null, spread: null, bestIsPD: null, source: 'none' })
-      continue
+    const histPath = join(dir, 'results', 'nll_history.txt')
+    let nlls: number[] = []
+    let bestIsPD: boolean | null = null
+    let source: 'fit.json' | 'nll_history.txt' | 'none' = 'none'
+    if (existsSync(fitPath)) {
+      const view = parseFitJson(readFileSync(fitPath, 'utf8'))
+      const summaries = view.fit?.runSummaries ?? []
+      nlls = summaries.map((r) => r.nll).filter((n): n is number => typeof n === 'number')
+      if (nlls.length > 0) {
+        const best = Math.min(...nlls)
+        bestIsPD = summaries.find((r) => r.nll === best)?.positiveDefinite ?? null
+        source = 'fit.json'
+      }
     }
-    const view = parseFitJson(readFileSync(fitPath, 'utf8'))
-    const summaries = view.fit?.runSummaries ?? []
-    const nlls = summaries.map((r) => r.nll).filter((n): n is number => typeof n === 'number')
+    if (nlls.length === 0 && existsSync(histPath)) {
+      nlls = parseNllHistoryRuns(readFileSync(histPath, 'utf8'))
+      if (nlls.length > 0) source = 'nll_history.txt'
+    }
     if (nlls.length === 0) {
       rows.push({ iter, nRuns: 0, best: null, worst: null, spread: null, bestIsPD: null, source: 'none' })
       continue
     }
     const best = Math.min(...nlls)
     const worst = Math.max(...nlls)
-    const bestRun = summaries.find((r) => r.nll === best)
-    rows.push({
-      iter,
-      nRuns: nlls.length,
-      best,
-      worst,
-      spread: worst - best,
-      bestIsPD: bestRun?.positiveDefinite ?? null,
-      source: 'fit.json',
-    })
+    rows.push({ iter, nRuns: nlls.length, best, worst, spread: worst - best, bestIsPD, source })
   }
   return rows
 }
@@ -337,8 +359,11 @@ function main(): void {
   console.log(`探针 ${probes.length} 条 → ${join(outDir, 'probes.jsonl')}`)
   console.log(`  分类: ${Object.entries(byCat).map(([k, v]) => `${k}=${v}`).join(' ')}`)
   for (const a of analyses) {
+    const rows = (noise[a.name] as { rows: NoiseRow[] }).rows
     const s = (noise[a.name] as { summary: { medianSpread: number | null; maxSpread: number | null; withFitJson: number } }).summary
-    console.log(`  ${a.name}: 目录 ${a.iterDirs.length} / 日记 ${a.records.length} / 有 fit.json 的轮次 ${s.withFitJson} / 噪声中位 spread ${s.medianSpread === null ? 'n/a' : s.medianSpread.toFixed(1)} / 最大 ${s.maxSpread === null ? 'n/a' : s.maxSpread.toFixed(1)}`)
+    const fromFit = rows.filter((r) => r.source === 'fit.json').length
+    const fromHist = rows.filter((r) => r.source === 'nll_history.txt').length
+    console.log(`  ${a.name}: 目录 ${a.iterDirs.length} / 日记 ${a.records.length} / 噪声来源 fit.json=${fromFit} nll_history=${fromHist} / 中位 spread ${s.medianSpread === null ? 'n/a' : s.medianSpread.toFixed(1)} / 最大 ${s.maxSpread === null ? 'n/a' : s.maxSpread.toFixed(1)}`)
   }
   console.log(`噪声 → ${join(outDir, 'noise.json')}`)
   console.log(`fold → ${join(outDir, 'fold-report.json')}`)
