@@ -157,6 +157,32 @@ function median(xs: number[]): number | null {
 
 function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; fold: ReturnType<typeof modelBaselineFold> } {
   const probes: Probe[] = []
+  // **后见泄漏检测**：某轮记录里提到比自己更晚的轮次（日记事后补写），则"截至该轮"的
+  // 快照会被未来信息污染——实测 chicj2KKeta iter-008 写了"回滚 iter-009"，导致
+  // k=8 的摘要把第 9 轮的基线当成已知。这类探针必须单列，不能进头条数字。
+  // 排除 `nextPlan`：它天然前瞻（"→ iter-006，检验…"是计划，不泄漏未来的**结果**）。
+  // 只有带结果性动词的越界引用才算泄漏（实测 chicj2KKeta iter-008 的
+  // "f0_2020 测试…不显著，回滚 iter-009" 正是这种）。
+  const RESULT_HINT = /回滚|回退|被拒|否决|不显著|已证伪|已晋级|已回滚|已确定|最终模型/
+  const mentionsAhead = (rec: IterationRecord): boolean => {
+    // **不能按字段排除**：`nextPlan` 也是事后补写的，实测 chicj2KKeta iter-008 的
+    // nextPlan 里写着"f0_2020 测试…不显著，回滚 iter-009"——那是**结果**，不是计划。
+    const blob = [rec.title, rec.conclusion ?? '', rec.nextPlan ?? '', ...(rec.changes ?? [])].join(' | ')
+    for (const m of blob.matchAll(/iter-(\d+)/g)) {
+      if (Number(m[1]) <= rec.iter || m.index === undefined) continue
+      const w = blob.slice(Math.max(0, m.index - 40), m.index + 40)
+      if (RESULT_HINT.test(w)) return true
+    }
+    return false
+  }
+  const contaminatedUpTo = new Set<number>()
+  {
+    let seen = false
+    for (const r of a.records) {
+      if (mentionsAhead(r)) seen = true
+      if (seen) contaminatedUpTo.add(r.iter)
+    }
+  }
   const push = (p: Probe): void => {
     probes.push(p)
   }
@@ -176,7 +202,7 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
       category: 'round-reference',
       question: `第 iter-${String(rec.iter).padStart(3, '0')} 轮的 ΔNLL 是拿**哪一轮的 NLL** 相减得到的？（定义：上一条日记记录；若它没有 NLL，则这一轮算不出 ΔNLL）`,
       answer: computable ? `iter-${String(prev.iter).padStart(3, '0')}` : '无法计算（上一条记录无 NLL）',
-      truth: { prevIter: prev.iter, prevNll: computable ? prev.nll : null, computable, definition: 'plugin previousDiaryNll' },
+      truth: { ...(contaminatedUpTo.has(rec.iter) ? { hindsight: true } : {}), prevIter: prev.iter, prevNll: computable ? prev.nll : null, computable, definition: 'plugin previousDiaryNll' },
       judge: 'code',
       contextUpToIter: rec.iter,
     })
@@ -209,6 +235,7 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
       question: `截至 iter-${String(rec.iter).padStart(3, '0')} 结束，被**接受为当前模型基线**的是哪一轮？（= 后续 ΔNLL 应当与之比较的那一轮；不是"本轮自己与谁比"，也不是"NLL 最低的一轮"）`,
       answer: `iter-${String(fold.baseIter).padStart(3, '0')}`,
       truth: {
+        ...(contaminatedUpTo.has(rec.iter) ? { hindsight: true } : {}),
         baseIter: fold.baseIter,
         rule: fold.rule,
         confidence: fold.confidence,

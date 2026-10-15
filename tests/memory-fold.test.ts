@@ -173,3 +173,24 @@ describe('modelBaselineFold', () => {
     expect(fold.pendingEdits.some((e) => e.name === 'N1700' && e.advisory)).toBe(true)
   })
 })
+
+describe('因果守卫：丢掉"未来引用"', () => {
+  it('记录里引用比自己更晚的 iter 时必须忽略（实测 chicj2KKeta iter-008 写了"回滚 iter-009"）', () => {
+    const recs: IterationRecord[] = [
+      { iter: 5, kind: 'other', title: '回滚 iter-005', conclusion: '回退至 iter-004', nll: undefined },
+      {
+        iter: 8,
+        kind: 'added',
+        title: 'iter-008：继续压 mKK 高能区',
+        conclusion: 'f0_2020 测试中 ΔNLL -2.7 不显著，回滚 iter-009）与 Kη 中段',
+        nll: -3702.67,
+      },
+    ]
+    const fold = modelBaselineFold(recs)
+    // 若不做守卫会得到 9（时间上不可能：第 8 轮不可能以第 9 轮为基线）
+    expect(fold.baseIter).toBe(4)
+    expect(fold.forwardRefs).toContainEqual({ iter: 8, ref: 9, rule: 'rollback-bare' })
+    // 分轮：第 8 轮时应仍是 iter-004
+    expect(modelBaselineFold(recs, 8).baseIter).toBe(4)
+  })
+})

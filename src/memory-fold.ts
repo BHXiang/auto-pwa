@@ -187,6 +187,14 @@ export interface BaselineFold {
   steps: BaselineFoldStep[]
   /** 出现过"以 iter-N 为基座"的迭代 → 说明为什么不能用"最后一次 iter-N 提法"。 */
   experimentBases: { iter: number; baseIter: number }[]
+  /**
+   * 被**因果守卫**丢掉的"未来引用"（`iter-N` 且 N > 该记录自己的轮次）。
+   *
+   * 实测必要：chicj2KKeta 的 iter-008 记录里写着"f0_2020 测试…回滚 iter-009"——
+   * 日记是事后补写的，天然会引用更晚的轮次；若不丢掉，fold 会在第 8 轮就报出
+   * "基线 = iter-009"这种时间上不可能的答案。
+   */
+  forwardRefs: { iter: number; ref: number; rule: string }[]
   /** 基线确定之后出现的触碰事件（"当前模型 = baseIter + pendingEdits"的候选）。 */
   pendingEdits: { iter: number; op: TouchOp; name: string; advisory: boolean }[]
 }
@@ -200,6 +208,7 @@ export function modelBaselineFold(records: IterationRecord[], untilIter?: number
   const sorted = [...records].filter((r) => untilIter === undefined || r.iter <= untilIter).sort((a, b) => a.iter - b.iter)
   const steps: BaselineFoldStep[] = []
   const experimentBases: { iter: number; baseIter: number }[] = []
+  const forwardRefs: { iter: number; ref: number; rule: string }[] = []
   let baseIter: number | null = null
   let rule: string | undefined
   let confidence: 'high' | 'low' | 'none' = 'none'
@@ -208,7 +217,11 @@ export function modelBaselineFold(records: IterationRecord[], untilIter?: number
   for (const rec of sorted) {
     const text = recordText(rec)
     const changesText = (rec.changes ?? []).join(' | ')
-    for (const m of text.matchAll(EXPERIMENT_BASE_RE)) experimentBases.push({ iter: rec.iter, baseIter: Number(m[1]) })
+    for (const m of text.matchAll(EXPERIMENT_BASE_RE)) {
+      const n = Number(m[1])
+      if (n > rec.iter) forwardRefs.push({ iter: rec.iter, ref: n, rule: 'experiment-base' })
+      else experimentBases.push({ iter: rec.iter, baseIter: n })
+    }
 
     for (const r of BASELINE_RULES) {
       const target = r.scope === 'changes' ? changesText : text
@@ -217,6 +230,11 @@ export function modelBaselineFold(records: IterationRecord[], untilIter?: number
       const m = r.re.exec(target)
       if (m === null) continue
       const n = Number(m[1])
+      // 因果守卫：记录只能描述 ≤ 自己轮次的事（日记事后补写，存在未来引用）
+      if (n > rec.iter) {
+        forwardRefs.push({ iter: rec.iter, ref: n, rule: r.rule })
+        continue
+      }
       baseIter = n
       rule = r.rule
       confidence = r.confidence
@@ -240,6 +258,7 @@ export function modelBaselineFold(records: IterationRecord[], untilIter?: number
     confidence,
     steps,
     experimentBases,
+    forwardRefs,
     pendingEdits,
   }
 }
