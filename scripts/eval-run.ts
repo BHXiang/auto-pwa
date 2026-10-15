@@ -81,9 +81,10 @@ export function buildArmContext(arm: Arm, records: IterationRecord[], question: 
     return { text, placement: 'head', approxTokens: approxTokens(text) }
   }
   if (arm === 'M2') {
-    // 代码生成的当前状态摘要（= P1b 的注入内容）+ 已否决清单
-    const text = buildStateDigest({ analysisRoot: '(arm-M2)', records: seen })
-    return { text, placement: 'head', approxTokens: approxTokens(text) }
+    // 历史档位：摘要**不含** tried 索引（产品默认现已开启，见 state-digest 注释），
+    // 这样 M2/M2b 才是"只差索引"的单变量对照。
+    const text = buildStateDigest({ analysisRoot: '(arm-M2)', records: seen, includeTriedIndex: false })
+    return { text, placement: 'head', approxTokens: approxTokens(text), note: '摘要（无 tried 索引）' }
   }
   if (arm === 'M2b') {
     // M2 + 名字级 tried 索引（试点实测 M2 在 tried-before 上只有 ~12/35，见 §8.5）

@@ -27,11 +27,11 @@ export interface DigestInput {
   /** 最近一轮的 run-to-run NLL 极差（"ΔNLL 小于它不可信"），可选。 */
   noise?: { iter: number; nRuns: number; spread: number }
   /**
-   * **M2b**：附上"已触碰的态"索引（在模型中的 / 试过但已移除）。
+   * 名字级"已触碰的态"索引。**默认开启**（`false` 才关）。
    *
-   * 依据（试点实测 §8.5）：M2 摘要在 `current-state` 上 21/21 全对，但
-   * `tried-before` 只有 11–12/35——因为摘要把"已否决"截断到最近 5 条、且不含
-   * 逐名状态。名字级问题占判定类联合的大头，所以这一块必须补。
+   * 依据（对照实测 §8.5.1，k=3 干净子集）：加上它以后 tried-before 从 **26.7% → 99.0%**、
+   * `pass^3` 从 54.7% → **98.4%**，代价只有 +36% 注入（344 vs 253 tokens，仍是全量日记的
+   * 0.27×）。关掉它等于主动放弃名字级召回——那是判定类问题里的大头。
    */
   includeTriedIndex?: boolean
 }
@@ -102,7 +102,7 @@ export function buildStateDigest(input: DigestInput): string {
       `噪声地板: iter-${pad(input.noise.iter)} 的 ${input.noise.nRuns} 个随机初值 NLL 极差=${input.noise.spread.toFixed(0)}；|ΔNLL| 远小于它时**不可信**（要 warm start + 多次重复）`,
     )
   }
-  if (input.includeTriedIndex === true) {
+  if (input.includeTriedIndex !== false) {
     // 名字级索引。**只陈述证据，不断言结论**：
     // 实测发现"被回退到上一轮"撤销的态不会留下 `-=` 记录（X2200/X2450/N1440/X2300_2m…），
     // 所以 "+=" 侧**不代表仍在模型中**——若写成"仍在模型中"就是往上下文里注入错误陈述，
@@ -123,7 +123,8 @@ export function buildStateDigest(input: DigestInput): string {
     lines.push('已触碰的态索引（只用于回答"试过没有"；+= 侧**不代表**仍在模型中）:')
     if (added.length > 0) lines.push(`  += 过（${added.length}）: ${join(added)}`)
     if (removed.length > 0) lines.push(`  -= 过（${removed.length}）: ${join(removed)}`)
-    if (added.length === 0 && removed.length === 0) lines.push('  （无 —— 本分析日记里没有逐轮 +=/-= 记录）')
+    // 没有任何事件时不输出这一块（避免给每一轮都塞一句噪音）
+    if (added.length === 0 && removed.length === 0) lines.pop()
   }
   if (last.nextPlan !== undefined && last.nextPlan.trim() !== '') lines.push(`上轮计划: ${cut(last.nextPlan, 120)}`)
   lines.push('</system-reminder>')

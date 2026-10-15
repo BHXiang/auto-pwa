@@ -78,16 +78,17 @@ describe('M2b：tried 索引（只陈述证据，不断言结论）', () => {
     { iter: 3, kind: 'removed' as const, title: '删 N1700', changes: ['R_ppbar [1-] -= N1700'] },
   ]
 
-  it('includeTriedIndex 时列出 += / -= 两侧的名字与轮次', () => {
-    const txt = buildStateDigest({ analysisRoot: '/x', records: RECS, includeTriedIndex: true })
+  it('**默认**列出 += / -= 两侧的名字与轮次（实测该索引值 +72pp，故默认开）', () => {
+    const txt = buildStateDigest({ analysisRoot: '/x', records: RECS })
     expect(txt).toContain('已触碰的态索引')
     expect(txt).toContain('+= 过（1）: X2200(i1)')
     expect(txt).toContain('-= 过（1）: N1700(i3)') // N1700 的最后动作是 -=（i3 之前先 += 过 → 末次动作在 i3）
-    expect(buildStateDigest({ analysisRoot: '/x', records: RECS })).not.toContain('已触碰的态索引')
+    // 显式关掉才不出现（历史档位 M2 用它做单变量对照）
+    expect(buildStateDigest({ analysisRoot: '/x', records: RECS, includeTriedIndex: false })).not.toContain('已触碰的态索引')
   })
 
   it('**不许**把"被回退撤销的态"说成仍在模型中（注入错误陈述比指标偏差更危险）', () => {
-    const txt = buildStateDigest({ analysisRoot: '/x', records: RECS, includeTriedIndex: true })
+    const txt = buildStateDigest({ analysisRoot: '/x', records: RECS })
     expect(txt).not.toContain('仍在模型中的态')
     expect(txt).toContain('不代表')
   })
