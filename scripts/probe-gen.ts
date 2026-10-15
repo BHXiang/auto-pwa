@@ -297,13 +297,47 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
   // 试点实测（§8.5）：driver 两次运行的差异全部集中在这类名字上（K2*_1430 vs K2_1430），
   // 若不单列，词形混淆会被算进"记忆失败"。
   const norm = (x: string): string => x.toLowerCase().replace(/[*_\s]/g, '')
+  // **散文也要算**：只在结论里出现（没有严格 `+=`/`-=`）的写法同样是"本分析触碰过的态"。
+  // 实测（KsKs 的 `K1_1680`/`K2*_1980`、region_big 的 `K1_1410`）driver 两次指出：
+  // 它们被误标成 `abstention`（真值"没试过"），而材料里明明动过 → 真值错。
   const ownByNorm = new Map<string, string>()
-  for (const n of own) {
-    const k = norm(n)
-    if (!ownByNorm.has(k)) ownByNorm.set(k, n)
+  for (const t of touchTimeline(a.records, { includeProse: true })) {
+    const k = norm(t.name)
+    if (!ownByNorm.has(k)) ownByNorm.set(k, t.name)
   }
+  // **词元集合**而不是子串：否则短名（`K2`）会误命中长名（`K2_1980`）里的子串
+  const normTokens = new Set(
+    a.records
+      .flatMap(
+        (r) =>
+          [r.title, r.conclusion ?? '', r.nextPlan ?? '', ...(r.changes ?? [])]
+            .join(' | ')
+            .match(/[A-Za-z][A-Za-z0-9_*()]*/g) ?? [],
+      )
+      .map(norm),
+  )
   for (const name of [...foreignNames].filter((n) => !own.has(n)).sort().slice(0, 12)) {
     const aliasOf = ownByNorm.get(norm(name))
+    // **散文出现过也算触碰过**：本分析的日记文本里若出现该名字的归一化形式
+    // （例如 KsKs 的 `K1_1680`/`K2*_1980`、region_big 的 `K1_1410`），那它就不是"没试过"。
+    // 仅凭散文无法判定"仍在模型 / 已移除"，故两种判定都接受（宽容）。
+    const mentionedInText = normTokens.has(norm(name))
+    if (aliasOf === undefined && mentionedInText) {
+      push({
+        id: `${a.name}/alias/${name}`,
+        analysis: a.name,
+        category: 'alias',
+        question: `${a.name} 分析里试过 ${name} 吗？（材料（本分析日记）里出现过这个名字）`,
+        answer: 'touched',
+        truth: {
+          verdict: 'touched',
+          tolerantVerdicts: ['touched', 'added-then-removed'],
+          note: '名字在本分析文本里出现过（散文证据）→ 视为触碰过；"仍在模型/已移除"存疑故宽容',
+        },
+        judge: 'code',
+      })
+      continue
+    }
     if (aliasOf !== undefined) {
       // **记法变体**（如 `K2*_1430` vs 日记里的 `K2*(1430)`）：这**不是**"没试过"，
       // 而是同一个态被换了个写法。原先把它当 abstention 会让真值变错——实测由
@@ -314,8 +348,12 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
         analysis: a.name,
         category: 'alias',
         question: `${a.name} 分析里试过 ${name} 吗？（注意：本分析日记用 ${aliasOf} 这种写法）`,
-        answer: triedBefore(a.records, aliasOf).verdict,
-        truth: { aliasOf, verdict: triedBefore(a.records, aliasOf).verdict, note: '记法变体：真值取本体名的判定' },
+        answer: triedBefore(a.records, aliasOf, { includeProse: true }).verdict,
+        truth: {
+          aliasOf,
+          verdict: triedBefore(a.records, aliasOf, { includeProse: true }).verdict,
+          note: '记法变体：真值取本体名的判定（含散文证据）',
+        },
         judge: 'code',
       })
       continue
