@@ -14,7 +14,7 @@
  * 为什么要有 manifest：E1b/E2 的对照必须**同起点、同问题、只换记忆档位**；把注入文本
  * 固化下来（而不是每次让 driver 自己拼）才能保证"只翻一个开关"。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { touchTimeline } from '../src/memory-fold.js'
 import { rejectedNamesOf, scoreAll, type AnswerRecord, type Probe } from '../src/eval-score.js'
@@ -240,6 +240,58 @@ function cmdManifest(args: string[]): void {
   }
 }
 
+/**
+ * merge：把 driver 产出的 `<arm>-<analysis>.json`（JSON 数组 [{id, answer}]）合并成
+ * 评分器要的答案集，并从 manifest 里取该 (探针, 档位) 的**注入成本**作为 tokensIn。
+ *
+ * 为什么要单独一步：driver 可以是 subagent / 人工 / 真实 harness，产物只需满足
+ * "每个 id 一个 answer" 这一条契约；成本与档位元数据统一由 manifest 提供。
+ */
+function cmdMerge(args: string[]): void {
+  const answersDir = resolve(argValue(args, '--answers', 'probe-out/answers'))
+  const manifestPath = resolve(argValue(args, '--manifest', 'probe-out/manifest.jsonl'))
+  const outPath = resolve(argValue(args, '--out', 'probe-out/answers.jsonl'))
+  const battery = argValue(args, '--battery', 'M')
+  const manifest = readFileSync(manifestPath, 'utf8')
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .map((l) => JSON.parse(l) as { battery: string; arm: string; probeId: string; context: { approxTokens: number } })
+  const cost = new Map<string, number>()
+  const valid = new Set<string>()
+  for (const m of manifest) {
+    if (m.battery !== battery) continue
+    cost.set(`${m.arm}|${m.probeId}`, m.context.approxTokens)
+    valid.add(`${m.arm}|${m.probeId}`)
+  }
+  const out: string[] = []
+  let answered = 0
+  const seen = new Set<string>()
+  for (const file of readdirSync(answersDir)) {
+    const m = /^([A-Za-z0-9]+)-(.+)\.json$/.exec(file)
+    if (m === null) continue
+    const arm = m[1]!
+    const items = JSON.parse(readFileSync(join(answersDir, file), 'utf8')) as { id: string; answer: unknown }[]
+    for (const it of items) {
+      const key = `${arm}|${it.id}`
+      if (!valid.has(key)) {
+        console.warn(`  ⚠️ 未知 (档位,探针) 组合，已忽略：${key}`)
+        continue
+      }
+      seen.add(key)
+      answered += 1
+      out.push(JSON.stringify({ id: it.id, arm, run: 0, answer: it.answer, tokensIn: cost.get(key) ?? 0 }))
+    }
+  }
+  const missing = [...valid].filter((k) => !seen.has(k))
+  mkdirSync(resolve(outPath, '..'), { recursive: true })
+  writeFileSync(outPath, out.join('\n') + '\n')
+  console.log(`合并 ${answered} 条答案 → ${outPath}`)
+  if (missing.length > 0) {
+    console.log(`  ⚠️ 未作答 ${missing.length} 条（按"未答 = 错"计入分母，不隐藏）`)
+    for (const k of missing.slice(0, 8)) console.log(`     - ${k}`)
+  }
+}
+
 /** E4：规模梯清单（evidence-preserving；只加无关历史）。 */
 function cmdLadder(args: string[]): void {
   const probesPath = resolve(argValue(args, '--probes', 'probe-out/probes.jsonl'))
@@ -315,9 +367,10 @@ function main(): void {
   try {
     if (cmd === 'manifest') cmdManifest(rest)
     else if (cmd === 'ladder') cmdLadder(rest)
+    else if (cmd === 'merge') cmdMerge(rest)
     else if (cmd === 'score') cmdScore(rest)
     else {
-      console.error('用法: npx tsx scripts/eval-run.ts manifest|ladder|score --probes <probes.jsonl> [--answers <answers.jsonl>] [--scales 0,5,50,200] [--out <dir>] <analysisDir>...')
+      console.error('用法: npx tsx scripts/eval-run.ts manifest|ladder|merge|score --probes <probes.jsonl> [--answers <answers.jsonl>] [--scales 0,5,50,200] [--out <dir>] <analysisDir>...')
       process.exit(2)
     }
   } catch (e) {

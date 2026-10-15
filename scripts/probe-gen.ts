@@ -161,6 +161,27 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
     probes.push(p)
   }
 
+  // ①b round-reference：**本轮自己的 ΔNLL 参照**（= 插件的 previousDiaryNll 语义：
+  //     上一条日记记录；它可能没有 NLL → 该轮 ΔNLL 根本算不出来）。
+  //     为什么单独一类：试点实测这道题的措辞歧义让 chicj2KKeta 的答案无法解释
+  //     （读法 A 命中 5/26、读法 P 命中 9/26，其余属第三种理解）——钉子必须钉死。
+  for (const rec of a.records) {
+    if (rec.iter === 0) continue
+    const prev = a.records.filter((r) => r.iter < rec.iter).pop()
+    if (prev === undefined) continue
+    const computable = typeof prev.nll === 'number'
+    push({
+      id: `${a.name}/round-reference/iter-${String(rec.iter).padStart(3, '0')}`,
+      analysis: a.name,
+      category: 'round-reference',
+      question: `第 iter-${String(rec.iter).padStart(3, '0')} 轮的 ΔNLL 是拿**哪一轮的 NLL** 相减得到的？（定义：上一条日记记录；若它没有 NLL，则这一轮算不出 ΔNLL）`,
+      answer: computable ? `iter-${String(prev.iter).padStart(3, '0')}` : '无法计算（上一条记录无 NLL）',
+      truth: { prevIter: prev.iter, prevNll: computable ? prev.nll : null, computable, definition: 'plugin previousDiaryNll' },
+      judge: 'code',
+      contextUpToIter: rec.iter,
+    })
+  }
+
   // ① current-state：第 k 轮结束时的**比对基线**（真值 = fold）。
   //    注意语义：fold 答的是"ΔNLL 的参照基线"，不是"当前最优模型"。后者用
   //    `bestNllIter`（argmin NLL，纯代码可判）单独给出——两者在 chicj2KKeta 里
@@ -185,7 +206,7 @@ function probesFor(a: Analysis, foreignNames: Set<string>): { probes: Probe[]; f
       id: `${a.name}/current-state/iter-${String(rec.iter).padStart(3, '0')}`,
       analysis: a.name,
       category: 'current-state',
-      question: `截至 iter-${String(rec.iter).padStart(3, '0')} 结束，ΔNLL 的**比对基线**是哪一轮？（不是"当前最优模型"）`,
+      question: `截至 iter-${String(rec.iter).padStart(3, '0')} 结束，被**接受为当前模型基线**的是哪一轮？（= 后续 ΔNLL 应当与之比较的那一轮；不是"本轮自己与谁比"，也不是"NLL 最低的一轮"）`,
       answer: `iter-${String(fold.baseIter).padStart(3, '0')}`,
       truth: {
         baseIter: fold.baseIter,

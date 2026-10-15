@@ -86,6 +86,15 @@ export interface Metrics {
   meanTokensIn?: number
   byCategory: Record<string, { n: number; correct: number }>
   byAnalysis: Record<string, { n: number; correct: number }>
+  /**
+   * `tried-before` ∪ `abstention` 的**联合**准确率。
+   *
+   * 为什么必须报这个：实测零记忆档（M0）在 abstention 上是 **100%**——因为
+   * "永远说没试过"恰好是保守默认、而 abstention 的真值就是"没试过"；同一个档位在
+   * tried-before 上是 **0%**。只看 abstention 会得出"没有记忆也很好"的荒谬结论。
+   */
+  verdictAccuracy?: number
+  verdictN?: number
   // ---- E4 诊断量（Scale-Conditioned Eval 的四个量）----
   /** 预算 B（默认 2）。 */
   budgetB?: number
@@ -183,6 +192,14 @@ export function scoreOne(probe: Probe, answer: AnswerRecord, rejectedNames?: Set
     case 'abstention': {
       const ok = verdictOf(text) === 'never'
       return { ...base, correct: ok, detail: 'want=没试过' }
+    }
+    case 'round-reference': {
+      const computable = probe.truth.computable === true
+      const want = probe.truth.prevIter as number | undefined
+      const saysNo = /无法计算|算不出|不可计算|n\/a|无 NLL/.test(text)
+      const got = firstIter(text)
+      const ok = computable ? got === want : saysNo
+      return { ...base, correct: ok, detail: `want=${computable ? `iter-${want}` : '无法计算'} got=${saysNo ? '无法计算' : (got ?? 'n/a')}` }
     }
     case 'repeat': {
       const want = probe.answer as number
@@ -293,6 +310,7 @@ export function aggregate(
         byScale.set(s.scale, cur)
       }
     }
+    const verdict = list.filter((s) => s.category === 'tried-before' || s.category === 'abstention')
     let breakdownOnset: number | undefined
     const scaleOut: Record<string, { n: number; correct: number; accuracy: number }> = {}
     for (const [sc, v] of [...byScale.entries()].sort((x, y) => x[0] - y[0])) {
@@ -313,6 +331,9 @@ export function aggregate(
       ...(list.length > 0 ? { meanTokensIn: tokensInTotal / list.length } : {}),
       byCategory,
       byAnalysis,
+      ...(verdict.length > 0
+        ? { verdictAccuracy: verdict.filter((s) => s.correct).length / verdict.length, verdictN: verdict.length }
+        : {}),
       ...(calls.length > 0
         ? {
             budgetB,
@@ -335,13 +356,13 @@ export function attributionMarkdown(metrics: Metrics[], title = '记忆档位 at
   const lines = [
     `# ${title}`,
     '',
-    '| 档位 | n | 准确率 | pass^k | 重复率 | 平均重合 | Pass@B | P90R | p_wrong | p_exh | onset | 注入 tokens/条 |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|',
+    '| 档位 | n | 准确率 | 判定类联合* | pass^k | 重复率 | 平均重合 | Pass@B | P90R | p_wrong | p_exh | onset | 注入 tokens/条 |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   ]
   const num = (x: number | undefined, d = 2): string => (x === undefined ? '—' : x.toFixed(d))
   for (const m of metrics) {
     lines.push(
-      `| ${m.arm} | ${m.n} | ${pct(m.accuracy)} | ${m.passK === undefined ? '—' : `${pct(m.passK)} (k=${m.passKValue ?? '?'})`} | ${pct(m.repeatRate)} | ${m.meanOverlap === undefined ? '—' : m.meanOverlap.toFixed(2)} | ${pct(m.passAtB)}${m.budgetB === undefined ? '' : ` (B=${m.budgetB})`} | ${num(m.p90R, 1)} | ${pct(m.pWrong)} | ${pct(m.pExh)} | ${m.breakdownOnset ?? '—'} | ${m.meanTokensIn === undefined ? '—' : Math.round(m.meanTokensIn)} |`,
+      `| ${m.arm} | ${m.n} | ${pct(m.accuracy)} | ${pct(m.verdictAccuracy)} | ${m.passK === undefined ? '—' : `${pct(m.passK)} (k=${m.passKValue ?? '?'})`} | ${pct(m.repeatRate)} | ${m.meanOverlap === undefined ? '—' : m.meanOverlap.toFixed(2)} | ${pct(m.passAtB)}${m.budgetB === undefined ? '' : ` (B=${m.budgetB})`} | ${num(m.p90R, 1)} | ${pct(m.pWrong)} | ${pct(m.pExh)} | ${m.breakdownOnset ?? '—'} | ${m.meanTokensIn === undefined ? '—' : Math.round(m.meanTokensIn)} |`,
     )
   }
   const withScale = metrics.filter((m) => m.byScale !== undefined)
@@ -353,7 +374,8 @@ export function attributionMarkdown(metrics: Metrics[], title = '记忆档位 at
       }
     }
   }
-  lines.push('', '分类别准确率：', '', '| 档位 | 类别 | n | 准确率 |', '|---|---|---|---|')
+  lines.push('', '\* 判定类联合 = tried-before ∪ abstention（防止只看 abstention：零记忆档在那里是 100%）。', '')
+  lines.push('分类别准确率：', '', '| 档位 | 类别 | n | 准确率 |', '|---|---|---|---|')
   for (const m of metrics) {
     for (const [cat, v] of Object.entries(m.byCategory).sort()) {
       lines.push(`| ${m.arm} | ${cat} | ${v.n} | ${pct(v.correct / v.n)} |`)

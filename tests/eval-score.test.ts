@@ -174,3 +174,45 @@ describe('E4 诊断量：Pass@B / P90R / p_wrong·p_exh / breakdown onset', () =
     expect(md).toContain('| M2 | 50 | 1 | 0.0% |')
   })
 })
+
+describe('判定类联合准确率（防"永远说没试过"刷分）', () => {
+  it('abstention 满分 + tried-before 零分 → 联合只有一半', () => {
+    const probes = [
+      p({ id: 'a/tried-before/X', category: 'tried-before', truth: { verdict: 'touched' } }),
+      p({ id: 'a/abstention/Y', category: 'abstention', answer: '没试过', truth: { verdict: 'never' } }),
+    ]
+    const answers: AnswerRecord[] = [
+      { id: 'a/tried-before/X', arm: 'M0', answer: 'never' }, // 零记忆的保守默认 → 错
+      { id: 'a/abstention/Y', arm: 'M0', answer: '没试过' }, // 恰好是 abstention 的真值 → 对
+    ]
+    const scores = answers.map((a) => scoreOne(probes.find((x) => x.id === a.id)!, a))
+    const [m] = aggregate(scores, answers)
+    expect(m!.byCategory['abstention']!.correct / m!.byCategory['abstention']!.n).toBe(1)
+    expect(m!.byCategory['tried-before']!.correct / m!.byCategory['tried-before']!.n).toBe(0)
+    expect(m!.verdictAccuracy).toBeCloseTo(0.5)
+    expect(m!.verdictN).toBe(2)
+  })
+})
+
+describe('round-reference（"本轮与哪一轮比"，插件 previousDiaryNll 语义）', () => {
+  it('可算时比对轮次；上一条无 NLL 时必须答"无法计算"', () => {
+    const computable = p({
+      id: 'a/round-reference/iter-014',
+      category: 'round-reference',
+      answer: 'iter-013',
+      truth: { prevIter: 13, prevNll: -3944.9, computable: true },
+    })
+    expect(scoreOne(computable, { id: 'x', answer: 'iter-013' }).correct).toBe(true)
+    expect(scoreOne(computable, { id: 'x', answer: '上一轮 iter-014' }).correct).toBe(false)
+
+    const notComputable = p({
+      id: 'a/round-reference/iter-006',
+      category: 'round-reference',
+      answer: '无法计算（上一条记录无 NLL）',
+      truth: { prevIter: 5, prevNll: null, computable: false },
+    })
+    expect(scoreOne(notComputable, { id: 'x', answer: '无法计算（上一条记录无 NLL）' }).correct).toBe(true)
+    // 编一个轮次 = 错（这正是"ΔNLL 其实算不出来"要被抓住的地方）
+    expect(scoreOne(notComputable, { id: 'x', answer: 'iter-005' }).correct).toBe(false)
+  })
+})
