@@ -87,6 +87,7 @@ import {
   analysisRootOf,
   blobMd5,
   commitPaths,
+  engineFingerprint,
   gitAvailable,
   gitDisabled,
   gitLog,
@@ -94,7 +95,9 @@ import {
   gitSearch,
   gitShow,
   relInside,
+  repoCoexistence,
   repoStatus,
+  type Trailers,
 } from '../src/git-log.js'
 import type { FitOwner } from './pwa-fit.js'
 
@@ -474,20 +477,56 @@ function gitRecord(
   anchorPath: string,
   paths: string[],
   message: string,
+  trailers?: Trailers,
 ): { commit?: string; changed?: string; warnings: { code: string; message: string }[] } {
   if (gitDisabled()) return { warnings: [] }
   const analysisDir = analysisRootOf(anchorPath)
-  const res = commitPaths(analysisDir, paths, message)
+  const res = commitPaths(analysisDir, paths, message, withEngine(trailers))
   if (res.committed) {
     const short = res.sha ?? '?'
-    return { commit: short, changed: `git ${short}: ${message}`, warnings: [] }
+    return { commit: short, changed: `git ${short}: ${message}`, warnings: res.warnings ?? [] }
   }
   if (res.reason === 'nothing-to-commit' || res.reason === 'disabled' || res.reason === 'unavailable') {
-    return { warnings: [] }
+    return { warnings: res.warnings ?? [] }
   }
   return {
-    warnings: [{ code: 'git-record-failed', message: `本地 git 记录失败（${res.reason ?? 'unknown'}）：${res.error ?? ''}` }],
+    warnings: [
+      ...(res.warnings ?? []),
+      { code: 'git-record-failed', message: `本地 git 记录失败（${res.reason ?? 'unknown'}）：${res.error ?? ''}` },
+    ],
   }
+}
+
+/**
+ * S1：每次提交都带引擎指纹。NLL 只在**同一引擎**内可比——`chicj2KKeta` iter-014
+ * 的事故是"同一 config 换引擎后 NLL 差 60.3"，所以版本必须随提交落盘。
+ */
+function withEngine(trailers: Trailers | undefined): Trailers | undefined {
+  const engine = engineFingerprint()
+  if (engine === undefined) return trailers
+  return { 'Pwa-Engine': engine, ...trailers }
+}
+
+/** S1：提案/删除类提交的 trailer（键落在"链/态"这一层，供按键查询与 fold 用）。 */
+function proposalTrailers(
+  iter: number | undefined,
+  proposal?: ResonanceProposal,
+  removals?: ResonanceRemoval[],
+): Trailers {
+  const t: Trailers = { 'Pwa-Kind': proposal !== undefined ? 'proposal' : 'removal' }
+  if (iter !== undefined) t['Pwa-Iter'] = iter
+  if (proposal !== undefined) {
+    t['Pwa-Resonance'] = proposal.name
+    t['Pwa-Chain'] = proposal.chain
+    t['Pwa-Jp'] = `${proposal.jpGroup.j}${proposal.jpGroup.p > 0 ? '+' : '-'}`
+    t['Pwa-Model'] = proposal.model
+  }
+  const names = (removals ?? []).map((r) => r.name)
+  if (names.length > 0) {
+    t['Pwa-Remove'] = names.join(',')
+    if (proposal === undefined) t['Pwa-Resonance'] = names.join(',')
+  }
+  return t
 }
 
 /** 一句话描述本轮编辑，用于 git 提交信息。 */
@@ -2118,7 +2157,7 @@ export function apply(ctx: Context) {
       const tmpPath = join(dirname(configPath), `.config.yml.tmp-${Date.now().toString(36)}`)
       writeFileSync(tmpPath, rendered)
       renameSync(tmpPath, configPath)
-      const gitRec = gitRecord(configPath, [configPath], `config: ${applied.changed[0] ?? 'edit'}${applied.changed.length > 1 ? ` (+${applied.changed.length - 1})` : ''}`)
+      const gitRec = gitRecord(configPath, [configPath], `config: ${applied.changed[0] ?? 'edit'}${applied.changed.length > 1 ? ` (+${applied.changed.length - 1})` : ''}`, { 'Pwa-Kind': 'config' })
       return {
         ok: true,
         written: true,
@@ -2229,7 +2268,7 @@ export function apply(ctx: Context) {
       const tmpPath = join(dirname(configPath), `.config.yml.tmp-${Date.now().toString(36)}`)
       writeFileSync(tmpPath, dumpConfig(cfg))
       renameSync(tmpPath, configPath)
-      const gitRec = gitRecord(configPath, [configPath], `config: remove ${args.removals.map((r) => r.name).join(', ')}`)
+      const gitRec = gitRecord(configPath, [configPath], `config: remove ${args.removals.map((r) => r.name).join(', ')}`, proposalTrailers(undefined, undefined, args.removals))
       return {
         ok: true,
         written: true,
@@ -2458,7 +2497,7 @@ export function apply(ctx: Context) {
         changed.push(...applied.changed)
         warnings.push(...finalXref.warnings, ...finalV.warnings)
         // B2：配置每次写入即记录（即使随后门禁拒绝，这次改动也留在历史里）
-        const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`)
+        const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`, proposalTrailers(started.iter, args.proposal, removals))
         if (gitRec.changed !== undefined) changed.push(gitRec.changed)
         warnings.push(...gitRec.warnings)
         // 跑前门禁：与所有提交口同一条闸（TS 结构/物理 + ctpwa 权威解析）
@@ -2528,7 +2567,7 @@ export function apply(ctx: Context) {
           plotScriptPath: args.plotScriptPath ?? resolveEnv().plotScript,
         })
         // B2：新迭代目录（config + note 骨架）立即入库
-        const gitRec = gitRecord(r.iterDir, [`${r.iterDir}/config.yml`, `${r.iterDir}/note.md`], `iter-${String(r.iter).padStart(3, '0')}: new iteration from ${args.baseConfigPath}`)
+        const gitRec = gitRecord(r.iterDir, [`${r.iterDir}/config.yml`, `${r.iterDir}/note.md`], `iter-${String(r.iter).padStart(3, '0')}: new iteration from ${args.baseConfigPath}`, { 'Pwa-Kind': 'start', 'Pwa-Iter': r.iter })
         return {
           iter: r.iter,
           iterDir: r.iterDir,
@@ -2681,7 +2720,15 @@ export function apply(ctx: Context) {
           `${args.iterDir}/results/fit.json`,
           `${args.iterDir}/results/provenance.json`,
           fittedConfig,
-        ], `${iterLabel} result: ${record.title}${nllBit}${dBit}${pdBit}`)
+        ], `${iterLabel} result: ${record.title}${nllBit}${dBit}${pdBit}`, {
+          'Pwa-Kind': 'result',
+          'Pwa-Decision': record.kind,
+          'Pwa-Iter': record.iter,
+          ...(record.nll !== undefined ? { 'Pwa-NLL': record.nll.toFixed(2) } : {}),
+          ...(record.deltaNll !== undefined ? { 'Pwa-Delta-NLL': record.deltaNll.toFixed(2) } : {}),
+          ...(record.hessianPositive !== undefined ? { 'Pwa-Hessian-PD': record.hessianPositive } : {}),
+          ...(provForGit?.configMd5 !== undefined ? { 'Pwa-Config-Md5': provForGit.configMd5 } : {}),
+        })
         return {
           ok: true,
           iter: record.iter,
@@ -2732,6 +2779,17 @@ export function apply(ctx: Context) {
                 short: { type: 'string', required: true },
                 date: { type: 'string' },
                 subject: { type: 'string', required: true },
+                trailers: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      key: { type: 'string', required: true },
+                      value: { type: 'string', required: true },
+                    },
+                  },
+                },
               },
             },
           },
@@ -2748,7 +2806,7 @@ export function apply(ctx: Context) {
         commit?: string
         dirty?: boolean
         untracked?: number
-        entries?: { short: string; date?: string; subject: string }[]
+        entries?: { short: string; date?: string; subject: string; trailers?: { key: string; value: string }[] }[]
         text?: string
         note?: string
         error?: string
@@ -2761,7 +2819,12 @@ export function apply(ctx: Context) {
         const lines = [`${head}${value.commit !== undefined ? ` @ ${value.commit}` : ''}${value.dirty === true ? ' ⚠️ 有未提交改动' : ''}${typeof value.untracked === 'number' && value.untracked > 0 ? `（未跟踪 ${value.untracked}）` : ''}`]
         if (value.action === 'log' && value.entries !== undefined) {
           if (value.entries.length === 0) lines.push('  （无提交）')
-          for (const e of value.entries) lines.push(`  ${e.short} ${e.date ?? ''} ${e.subject}`)
+          for (const e of value.entries) {
+            lines.push(`  ${e.short} ${e.date ?? ''} ${e.subject}`)
+            if (e.trailers !== undefined && e.trailers.length > 0) {
+              lines.push(`      ${e.trailers.map((t) => `${t.key}=${t.value}`).join('  ')}`)
+            }
+          }
         } else if (value.text !== undefined && value.text.trim() !== '') {
           lines.push(value.text.trim())
         } else {
@@ -2823,19 +2886,29 @@ export function apply(ctx: Context) {
           short: e.short,
           ...(e.date !== undefined ? { date: e.date } : {}),
           subject: e.subject,
+          ...(e.trailers !== undefined
+            ? { trailers: Object.entries(e.trailers).map(([key, value]) => ({ key, value })) }
+            : {}),
         }))
         return { ok: true, ...base, ...statusBits, entries }
       }
       if (args.action === 'status') {
-        return {
-          ok: true,
-          ...base,
-          ...statusBits,
-          note:
-            st.dirty === true
-              ? '已跟踪文件与 HEAD 不同：当前 results/ 不能由 HEAD 复现（provenance.git.dirty=true）'
-              : '已跟踪文件与 HEAD 一致（未跟踪的新文件不影响已记录 config 的可复现性）',
-        }
+        // S0：共存探测——外层仓库是否已经被"污染"，以及信息性的位置提示。
+        const coex = repoCoexistence(analysisDir)
+        const actionable = coex.issues.filter(
+          (i) => i.code === 'pwa-git-tracked-by-enclosing' || i.code === 'gitignore-tracked-by-enclosing',
+        )
+        const info = coex.issues.filter(
+          (i) => i.code === 'analysis-inside-other-repo' || i.code === 'analysis-is-repo-root',
+        )
+        const note = [
+          st.dirty === true
+            ? '已跟踪文件与 HEAD 不同：当前 results/ 不能由 HEAD 复现（provenance.git.dirty=true）'
+            : '已跟踪文件与 HEAD 一致（未跟踪的新文件不影响已记录 config 的可复现性）',
+          ...actionable.map((i) => `⚠️ ${i.message}`),
+          ...info.map((i) => `ℹ️ ${i.message}`),
+        ].join('\n')
+        return { ok: true, ...base, ...statusBits, note }
       }
       if (args.action === 'show') {
         const rev = args.rev ?? 'HEAD'
@@ -3045,7 +3118,7 @@ export function apply(ctx: Context) {
       writeFileSync(tmp, dumpConfig(newCfg))
       renameSync(tmp, target)
       // B2：配置写入即记录（门禁拒绝也保留这次改动）
-      const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`)
+      const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`, proposalTrailers(started.iter, args.proposal, removals))
       const gitChanged = gitRec.changed !== undefined ? [gitRec.changed] : []
       // 4. 跑前门禁 + submit fit
       const gate = gateBeforeFit({
@@ -4213,6 +4286,7 @@ export function apply(ctx: Context) {
           args.baseIterDir,
           pending.map((p) => `${p.iterDir}/config.yml`),
           `trials(${baseIterName}): ${pending.map((p) => p.candidate).join(', ')}`,
+          { 'Pwa-Kind': 'trial', 'Pwa-Resonance': pending.map((p) => p.candidate).join(',') },
         )
         if (gitBatch.changed !== undefined) warnings.push(gitBatch.changed)
         warnings.push(...gitBatch.warnings.map((w) => w.message))
@@ -4834,7 +4908,7 @@ export function apply(ctx: Context) {
           writeFileSync(tmp, dumpConfig(newCfg))
           renameSync(tmp, target)
           // B2：配置写入即记录
-          const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`)
+          const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`, proposalTrailers(started.iter, args.proposal, removals))
           // 跑前门禁（与 run_fit / round / iterate 同一条闸）
           const gate = gateBeforeFit({
             iterDir: started.iterDir,

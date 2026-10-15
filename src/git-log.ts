@@ -24,7 +24,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 /** 独立 git 目录名（放在分析目录内）。 */
@@ -69,6 +69,8 @@ export interface GitCommitInfo {
   short: string
   date?: string
   subject: string
+  /** S1：结构化 trailer（`Pwa-*`），用于按键查询与状态 fold。 */
+  trailers?: Record<string, string>
 }
 
 /** Provenance 里记录的 git 绑定：md5 ↔ commit 互验。 */
@@ -112,6 +114,177 @@ function run(analysisDir: string, args: string[], maxBytes = 64 * 1024): GitResu
   }
 }
 
+// ---------------------------------------------------------------------------
+// S0：与已有 git 的共存探测（只读）
+// ---------------------------------------------------------------------------
+
+/** 剥掉可能影响"外层仓库"探测的 git 环境变量。 */
+function ambientEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR', 'GIT_PREFIX']) {
+    delete env[k]
+  }
+  return env
+}
+
+/** 在"环境/外层仓库"里跑 git（**不带**我们的 --git-dir），用于共存探测。 */
+function runAmbient(cwd: string, args: string[], maxBytes = 64 * 1024): GitResult {
+  try {
+    const r = spawnSync('git', ['-C', cwd, ...args], {
+      cwd,
+      encoding: 'utf8',
+      timeout: GIT_TIMEOUT_MS,
+      env: ambientEnv(),
+      maxBuffer: 8 * 1024 * 1024,
+    })
+    if (r.error !== undefined) return { ok: false, stdout: '', stderr: '', error: r.error.message }
+    return {
+      ok: r.status === 0,
+      stdout: (r.stdout ?? '').slice(0, maxBytes),
+      stderr: (r.stderr ?? '').slice(0, maxBytes),
+      error: r.status === 0 ? undefined : `${(r.stderr ?? '').trim() || `exit ${r.status}`}`,
+    }
+  } catch (e) {
+    return { ok: false, stdout: '', stderr: '', error: (e as Error).message }
+  }
+}
+
+/** 分析目录与"已有 git"的共存状态。 */
+export interface RepoCoexistence {
+  /** 外层（或分析目录自身）仓库根；不在任何仓库内时缺省。 */
+  enclosingRepo?: string
+  /** 分析目录自己就是那个仓库的根。 */
+  isRepoRoot: boolean
+  /** 外层仓库已经跟踪的 `.pwa-git/` 内部文件数（>0 = 已污染，会持续变脏）。 */
+  trackedPwaGit: number
+  /** 外层仓库跟踪了本目录的 `.gitignore`（我们会改写它 → 外层显示改动）。 */
+  trackedGitignore: boolean
+  issues: { code: string; message: string }[]
+}
+
+/**
+ * 探测共存状态。**只读**：不写文件、不动外层仓库。
+ *
+ * `.pwa-git` 与已有仓库天然隔离（我们的命令一律带 `--git-dir`，从不碰外层
+ * index/HEAD），但有两件事 `.gitignore` 管不了：
+ *   ① `.gitignore` 生效**之前**就被外层 `git add` 过的 `.pwa-git/**`
+ *      ——ignore 对已跟踪文件无效，之后每次 auto-pwa 提交都会让外层变脏；
+ *   ② 本目录 `.gitignore` 自身被外层跟踪时，我们写入托管块会让外层显示改动。
+ */
+export function repoCoexistence(analysisDir: string): RepoCoexistence {
+  const issues: { code: string; message: string }[] = []
+  const out: RepoCoexistence = { isRepoRoot: false, trackedPwaGit: 0, trackedGitignore: false, issues }
+  if (!gitAvailable() || !existsSync(analysisDir)) return out
+  const top = runAmbient(analysisDir, ['rev-parse', '--show-toplevel'])
+  if (!top.ok || top.stdout.trim() === '') return out
+  const root = top.stdout.trim()
+  let isRoot: boolean
+  try {
+    isRoot = realpathSync(root) === realpathSync(analysisDir)
+  } catch {
+    isRoot = resolve(root) === resolve(analysisDir)
+  }
+  out.enclosingRepo = root
+  out.isRepoRoot = isRoot
+
+  const tracked = runAmbient(analysisDir, ['ls-files', '--', PWA_GIT_DIRNAME])
+  if (tracked.ok && tracked.stdout.trim() !== '') {
+    out.trackedPwaGit = tracked.stdout.split('\n').filter((l) => l.trim() !== '').length
+    issues.push({
+      code: 'pwa-git-tracked-by-enclosing',
+      message:
+        `外层仓库已经跟踪了 ${out.trackedPwaGit} 个 ${PWA_GIT_DIRNAME}/ 内部文件：` +
+        `.gitignore 对已跟踪文件无效，之后每次本地提交都会让外层变脏。` +
+        `修复：git -C ${root} rm -r --cached ${PWA_GIT_DIRNAME}`,
+    })
+  }
+  if (existsSync(join(analysisDir, '.gitignore')) && runAmbient(analysisDir, ['ls-files', '--error-unmatch', '.gitignore']).ok) {
+    out.trackedGitignore = true
+    issues.push({
+      code: 'gitignore-tracked-by-enclosing',
+      message: '本目录的 .gitignore 被外层仓库跟踪：auto-pwa 写入托管块会让外层显示改动（建议把托管块写进外层 .gitignore）',
+    })
+  }
+  if (isRoot) {
+    issues.push({
+      code: 'analysis-is-repo-root',
+      message: `分析目录自身就是一个 git 仓库（${root}）：.pwa-git 与它共存——手敲 git 看到的是这个仓库，迭代历史在 .pwa-git 里`,
+    })
+  } else {
+    const rel = relative(root, analysisDir)
+    issues.push({
+      code: 'analysis-inside-other-repo',
+      message:
+        `分析目录位于仓库 ${root} 内部：auto-pwa 只写自己的 ${PWA_GIT_DIRNAME}/，不改动它；` +
+        `若不想让外层看到这些文件，在外层 .gitignore 加一行 /${rel}/`,
+    })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// S1：结构化提交标注（commit trailer）
+// ---------------------------------------------------------------------------
+
+/** trailer 键名规范：只认我们自己的 `Pwa-` 前缀，且必须是 git 认的 token 形式。 */
+const TRAILER_KEY_RE = /^Pwa-[A-Za-z][A-Za-z0-9-]*$/
+
+/** 提交 trailer：结构化、可被 `git log --format='%(trailers:key=Pwa-NLL)'` 精确读取。 */
+export type Trailers = Record<string, string | number | boolean | undefined>
+
+/**
+ * **唯一**的 trailer 生成函数（避免各处手拼导致拼错 key 的静默丢数据）：
+ * 非 `Pwa-` 前缀或非法键名直接丢弃；值压成单行、空值丢弃。
+ */
+export function trailerBlock(trailers: Trailers | undefined): string {
+  if (trailers === undefined) return ''
+  const lines: string[] = []
+  for (const [key, value] of Object.entries(trailers)) {
+    if (value === undefined || value === null) continue
+    if (!TRAILER_KEY_RE.test(key)) continue
+    const s = String(value).replace(/[\r\n]+/g, ' ').trim()
+    if (s === '') continue
+    lines.push(`${key}: ${s}`)
+  }
+  return lines.length === 0 ? '' : `\n\n${lines.join('\n')}`
+}
+
+/** 解析 `%(trailers)` 文本为键值表（不是 trailer 的行忽略）。 */
+function parseTrailers(text: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const m = /^([A-Za-z][A-Za-z0-9-]*):[ \t]*(.*)$/.exec(raw.trim())
+    if (m !== null && m[1] !== undefined && m[2] !== undefined) out[m[1]] = m[2].trim()
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+let engineCache: string | undefined | null = null
+
+/**
+ * 拟合引擎指纹（写进 `Pwa-Engine`，用于判"两次 NLL 能不能比"）。
+ * 来源：`PWA_ENGINE` 环境变量 → `PWA_CTPWA_REPO` 指向的 checkout 的 HEAD。
+ * 拿不到就返回 undefined——**不编造版本号**。
+ */
+export function engineFingerprint(): string | undefined {
+  if (engineCache !== null) return engineCache
+  const explicit = process.env.PWA_ENGINE
+  if (explicit !== undefined && explicit.trim() !== '') {
+    engineCache = explicit.trim()
+    return engineCache
+  }
+  const repo = process.env.PWA_CTPWA_REPO
+  if (repo !== undefined && repo.trim() !== '' && existsSync(join(repo, '.git'))) {
+    const r = runAmbient(repo, ['rev-parse', '--short', 'HEAD'])
+    if (r.ok && r.stdout.trim() !== '') {
+      engineCache = `ctpwa@${r.stdout.trim()}`
+      return engineCache
+    }
+  }
+  engineCache = undefined
+  return undefined
+}
+
 /** git 可执行文件是否存在（缓存一次探测结果）。 */
 let gitAvailableCache: boolean | undefined
 export function gitAvailable(): boolean {
@@ -125,9 +298,11 @@ export function gitAvailable(): boolean {
   return gitAvailableCache
 }
 
-/** 测试用：清掉 gitAvailable 的缓存。 */
+/** 测试用：清掉 gitAvailable / engine / 共存告警的缓存。 */
 export function resetGitProbe(): void {
   gitAvailableCache = undefined
+  engineCache = null
+  coexistenceWarned.clear()
 }
 
 /**
@@ -207,9 +382,23 @@ export interface CommitResult {
   /** 未提交时的原因：disabled / unavailable / outside / no-files / nothing-to-commit / ignored-by-gitignore */
   reason?: string
   error?: string
+  /** S0：与已有 git 共存的**可行动**告警（每个分析目录每次进程只报一次）。 */
+  warnings?: { code: string; message: string }[]
 }
 
-export function commitPaths(analysisDir: string, paths: string[], message: string): CommitResult {
+/** 已就"共存问题"告警过的分析目录（避免每次提交都重复同一句话）。 */
+const coexistenceWarned = new Set<string>()
+
+/** 只在首次提交时报**可行动**的共存问题；信息性提示走 git_log action=status。 */
+function coexistenceWarnings(analysisDir: string): { code: string; message: string }[] {
+  if (coexistenceWarned.has(analysisDir)) return []
+  coexistenceWarned.add(analysisDir)
+  return repoCoexistence(analysisDir).issues.filter(
+    (i) => i.code === 'pwa-git-tracked-by-enclosing' || i.code === 'gitignore-tracked-by-enclosing',
+  )
+}
+
+export function commitPaths(analysisDir: string, paths: string[], message: string, trailers?: Trailers): CommitResult {
   if (gitDisabled()) return { committed: false, reason: 'disabled' }
   if (!gitAvailable()) return { committed: false, reason: 'unavailable' }
   const rels: string[] = []
@@ -240,11 +429,19 @@ export function commitPaths(analysisDir: string, paths: string[], message: strin
     return { committed: false, reason: 'ignored-by-gitignore', error: add.error }
   }
   const staged = run(analysisDir, ['diff', '--cached', '--quiet', '--exit-code'])
-  if (staged.ok) return { committed: false, reason: 'nothing-to-commit' }
-  const commit = run(analysisDir, ['commit', '--quiet', '-m', message])
+  if (staged.ok) {
+    const warnings = coexistenceWarnings(analysisDir)
+    return { committed: false, reason: 'nothing-to-commit', ...(warnings.length > 0 ? { warnings } : {}) }
+  }
+  const commit = run(analysisDir, ['commit', '--quiet', '-m', `${message}${trailerBlock(trailers)}`])
   if (!commit.ok) return { committed: false, reason: 'commit-failed', error: commit.error }
   const head = run(analysisDir, ['rev-parse', '--short', 'HEAD'])
-  return { committed: true, ...(head.ok ? { sha: head.stdout.trim() } : {}) }
+  const warnings = coexistenceWarnings(analysisDir)
+  return {
+    committed: true,
+    ...(head.ok ? { sha: head.stdout.trim() } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  }
 }
 
 /** 仓库状态：是否已初始化、HEAD、工作区是否脏（相对 .gitignore 后的跟踪面）。 */
@@ -284,16 +481,33 @@ export function gitProvenance(analysisDir: string): GitProvenance | undefined {
 /** 最近 N 条提交（新→旧）。 */
 export function gitLog(analysisDir: string, limit = 20): GitCommitInfo[] {
   if (!gitAvailable()) return []
-  const r = run(analysisDir, ['log', `-n${Math.max(1, Math.min(limit, 200))}`, '--date=short', '--format=%h%x09%ad%x09%s'])
+  const n = Math.max(1, Math.min(limit, 200))
+  // `%x1e` 分记录、`%x1f` 分"头部/trailer 块"：比按行切更稳（trailer 值可含空格）。
+  const r = run(analysisDir, [
+    'log',
+    `-n${n}`,
+    '--date=short',
+    '--format=%x1e%h%x09%ad%x09%s%x1f%(trailers:only=true,unfold=true)',
+  ])
   if (!r.ok) return []
-  return r.stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .map((line) => {
-      const [short, date, ...rest] = line.split('\t')
-      return { sha: short ?? '', short: short ?? '', ...(date !== undefined ? { date } : {}), subject: rest.join('\t') }
+  const out: GitCommitInfo[] = []
+  for (const rec of r.stdout.split('\x1e')) {
+    if (rec.trim() === '') continue
+    const sep = rec.indexOf('\x1f')
+    const head = (sep >= 0 ? rec.slice(0, sep) : rec).replace(/^\n+/, '')
+    const trailerText = sep >= 0 ? rec.slice(sep + 1) : ''
+    const [short, date, ...rest] = head.split('\t')
+    if (short === undefined || short.trim() === '') continue
+    const trailers = parseTrailers(trailerText)
+    out.push({
+      sha: short.trim(),
+      short: short.trim(),
+      ...(date !== undefined && date.trim() !== '' ? { date: date.trim() } : {}),
+      subject: rest.join('\t').trim(),
+      ...(trailers !== undefined ? { trailers } : {}),
     })
+  }
+  return out
 }
 
 /** `git show` 的文本（默认带 stat，限长）。 */

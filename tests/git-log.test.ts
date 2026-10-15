@@ -13,6 +13,7 @@ import {
   gitSearch,
   gitShow,
   PWA_GIT_DIRNAME,
+  repoCoexistence,
   repoStatus,
   resetGitProbe,
   writeGitignore,
@@ -175,5 +176,110 @@ describe('git-log (local record, never pushes)', () => {
     expect(existsSync(join(analysis, PWA_GIT_DIRNAME))).toBe(false)
     expect(gitProvenance(analysis)).toBeUndefined()
     expect(gitLog(analysis, 5)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// S0：与已有 git 共存（只读探测；不改动外层仓库）
+// ---------------------------------------------------------------------------
+describe('git coexistence probe (S0)', () => {
+  it('reports an enclosing repo and leaves it untouched', () => {
+    ambient(root, 'init', '--quiet')
+    ambient(root, 'config', 'user.email', 'outer@localhost')
+    ambient(root, 'config', 'user.name', 'outer')
+    writeFileSync(join(root, 'outer.txt'), 'x\n')
+    ambient(root, 'add', 'outer.txt')
+    ambient(root, 'commit', '--quiet', '-m', 'outer commit')
+    const before = ambient(root, 'rev-parse', 'HEAD')
+
+    const coex = repoCoexistence(analysis)
+    expect(coex.enclosingRepo).toBeDefined()
+    expect(coex.isRepoRoot).toBe(false)
+    expect(coex.trackedPwaGit).toBe(0)
+    const codes = coex.issues.map((i) => i.code)
+    expect(codes).toContain('analysis-inside-other-repo')
+    // 给的是"一行解决"的建议（写外层 .gitignore），不是要求重建目录
+    expect(coex.issues.find((i) => i.code === 'analysis-inside-other-repo')!.message).toContain('.gitignore')
+    // 探测是只读的
+    expect(ambient(root, 'rev-parse', 'HEAD')).toBe(before)
+  })
+
+  it('reports the analysis dir being its own repo root', () => {
+    ambient(analysis, 'init', '--quiet')
+    const coex = repoCoexistence(analysis)
+    expect(coex.isRepoRoot).toBe(true)
+    expect(coex.issues.map((i) => i.code)).toContain('analysis-is-repo-root')
+  })
+
+  it('flags a .pwa-git already tracked by the enclosing repo, with a fix command', () => {
+    // 复刻 region_big 的真实路径：外层在托管 .gitignore 生效**之前**就把
+    // .pwa-git 内部文件提交了进去 —— ignore 对已跟踪文件无效，会持续变脏。
+    ambient(root, 'init', '--quiet')
+    ambient(root, 'config', 'user.email', 'outer@localhost')
+    ambient(root, 'config', 'user.name', 'outer')
+    expect(ensureRepo(analysis).ok).toBe(true)
+    ambient(root, 'add', `analysis/${PWA_GIT_DIRNAME}/HEAD`)
+    ambient(root, 'commit', '--quiet', '-m', 'outer: accidentally committed nested git')
+
+    const coex = repoCoexistence(analysis)
+    expect(coex.trackedPwaGit).toBeGreaterThan(0)
+    const issue = coex.issues.find((i) => i.code === 'pwa-git-tracked-by-enclosing')
+    expect(issue).toBeDefined()
+    expect(issue!.message).toContain(`rm -r --cached ${PWA_GIT_DIRNAME}`)
+  })
+
+  it('warns once (not on every commit) when the enclosing repo tracks our .gitignore', () => {
+    ambient(root, 'init', '--quiet')
+    ambient(root, 'config', 'user.email', 'outer@localhost')
+    ambient(root, 'config', 'user.name', 'outer')
+    writeFileSync(join(analysis, '.gitignore'), '# user rules\n')
+    ambient(root, 'add', 'analysis/.gitignore')
+    ambient(root, 'commit', '--quiet', '-m', 'outer: track analysis .gitignore')
+
+    const first = commitPaths(analysis, ['config.yml'], 'first')
+    expect(first.committed).toBe(true)
+    expect((first.warnings ?? []).map((w) => w.code)).toContain('gitignore-tracked-by-enclosing')
+
+    // 同一问题不重复报（避免每次工具返回都刷同一句话）
+    writeFileSync(join(analysis, 'config.yml'), 'Particles: {a: 1}\n')
+    const second = commitPaths(analysis, ['config.yml'], 'second')
+    expect(second.committed).toBe(true)
+    expect(second.warnings ?? []).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// S1：结构化提交标注（trailer）
+// ---------------------------------------------------------------------------
+describe('commit trailers (S1)', () => {
+  it('round-trips structured trailers and drops malformed keys', () => {
+    expect(commitPaths(analysis, ['config.yml'], 'iter-000 plain').committed).toBe(true)
+    writeFileSync(join(analysis, 'config.yml'), 'Particles: {a: 1}\n')
+    expect(
+      commitPaths(analysis, ['config.yml'], 'iter-007 result', {
+        'Pwa-Kind': 'result',
+        'Pwa-Iter': 7,
+        'Pwa-NLL': (-18685.8).toFixed(2),
+        'Pwa-Hessian-PD': true,
+        'pwa-lowercase': 'dropped', // 前缀不合规
+        'Pwa-Bad Key': 'dropped', // 键名非法（含空格）
+        'Pwa-Multi': 'a\nb', // 多行值压成一行
+      }).committed,
+    ).toBe(true)
+
+    const [head, plain] = gitLog(analysis, 5)
+    expect(head!.subject).toBe('iter-007 result')
+    expect(head!.trailers).toMatchObject({
+      'Pwa-Kind': 'result',
+      'Pwa-Iter': '7',
+      'Pwa-NLL': '-18685.80',
+      'Pwa-Hessian-PD': 'true',
+    })
+    expect(head!.trailers!['Pwa-Multi']).toBe('a b')
+    expect(head!.trailers!['pwa-lowercase']).toBeUndefined()
+    expect(Object.keys(head!.trailers!).some((k) => k.includes(' '))).toBe(false)
+    // 普通提交没有 trailer（向后兼容：老提交照旧可读）
+    expect(plain!.subject).toBe('iter-000 plain')
+    expect(plain!.trailers).toBeUndefined()
   })
 })
