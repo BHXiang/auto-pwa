@@ -1103,6 +1103,19 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
       expect(txt).toContain('<system-reminder>')
       expect(txt).toContain('ΔNLL 比对基线: iter-009')
       expect(txt).toContain('上轮计划: 试 X2200')
+      // 程序性记忆（提醒）**默认关闭**：不开环境开关时不能出现在注入里
+      expect(txt).not.toContain('作业提醒')
+
+      // 打开开关后必须真的注入（真机 A/B 的入口）
+      process.env.PWA_REMINDERS = 'R1'
+      try {
+        const withR = provider()
+        expect(withR).toContain('作业提醒（R1')
+        expect(withR).toContain('pdg-evidence')
+      } finally {
+        delete process.env.PWA_REMINDERS
+      }
+      expect(provider()).not.toContain('作业提醒')
     } finally {
       __resetActiveAnalysisRoot()
       rmSync(root, { recursive: true, force: true })

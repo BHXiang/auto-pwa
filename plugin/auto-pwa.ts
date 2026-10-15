@@ -23,6 +23,8 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSy
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { defaultDb } from '../src/db.js'
+import { inferAction, reminderInjection, reminderLevelFromEnv } from '../src/reminder-set.js'
+import { engineFingerprint } from '../src/git-log.js'
 import { cValueOf, getParticleInfo } from '../src/particle-info.js'
 import { lookupResonance, lookupC } from '../src/lookup.js'
 import { decayCheck, hasDecayTo } from '../src/decay-check.js'
@@ -827,12 +829,22 @@ function stateDigestText(): string {
       }
       break
     }
-    return buildStateDigest({
+    const digest = buildStateDigest({
       analysisRoot: root,
       records,
       ...(loopState !== undefined ? { loopState } : {}),
       ...(noise !== undefined ? { noise } : {}),
     })
+    // **程序性记忆注入**（默认关闭）：`PWA_REMINDERS=R1|R2` 打开。
+    // 依据 §8.5.5：离线测不出净收益且有"压成不作为"的风险 → 默认关、可 A/B。
+    const level = reminderLevelFromEnv()
+    if (level === undefined) return digest
+    const injection = reminderInjection({
+      level,
+      action: inferAction(loopState?.phase, records[records.length - 1]?.kind),
+      ...(engineFingerprint() !== undefined ? { engine: engineFingerprint()! } : {}),
+    })
+    return injection === '' ? digest : `${digest}\n\n${injection}`
   } catch {
     return ''
   }

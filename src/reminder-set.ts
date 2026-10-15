@@ -79,3 +79,34 @@ export function buildReminders(level: ReminderLevel, action: ActionKind = 'any',
   const text = [header, ...picked.map((r) => `- [${r.id}] ${r.text}`)].join('\n')
   return { level, ids: picked.map((r) => r.id), text, approxTokens: approxTokens(text) }
 }
+
+
+/** `PWA_REMINDERS` → 档位；非法值按**关闭**处理（不猜）。 */
+export function reminderLevelFromEnv(env: NodeJS.ProcessEnv = process.env): 'R1' | 'R2' | undefined {
+  const v = (env.PWA_REMINDERS ?? '').trim().toUpperCase()
+  return v === 'R1' || v === 'R2' ? v : undefined
+}
+
+/**
+ * 动作推断（决定 R2 挑哪些条目）：上一轮是 `removed` 就按"删"，否则按"加"。
+ * `phase === 'propose'` 时也是"加"——这正是需要提醒介入的时刻。
+ */
+export function inferAction(_phase: string | undefined, lastKind: string | undefined): ActionKind {
+  return lastKind === 'removed' ? 'remove' : 'add'
+}
+
+/**
+ * 生成**提醒注入块**——默认关闭，靠 `PWA_REMINDERS=R1|R2` 打开。
+ *
+ * 为什么默认关：§8.5.5 的离线读数表明"全量提醒会把模型压成不作为"，
+ * 而离线材料又测不出净收益 → 接入产品必须能**一键关掉做 A/B**，而不是默认全开。
+ * `engine` 一并带上：写死的规则会随引擎过期（§4.2a 的教训）。
+ */
+export function reminderInjection(opts: {
+  level?: string
+  action: ActionKind
+  engine?: string
+}): string {
+  if (opts.level !== 'R1' && opts.level !== 'R2') return ''
+  return buildReminders(opts.level, opts.action, opts.engine).text
+}
