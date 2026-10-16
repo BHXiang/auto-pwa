@@ -22,3 +22,7 @@ render-design.cjs
 
 # 本地开发用 skill：只放 ~/.dsh/skills/，不入库
 skills/debug-auto-pwa/
+
+# 评测绘图脚本：本地用（依赖 probe-out/，不进发布包）
+scripts/make-memory-figs.py
+.mplconfig/
