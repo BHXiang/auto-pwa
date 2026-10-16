@@ -38,6 +38,7 @@
     "!**/*.pyc",
     "data",
     "skills",
+    "!skills/debug-auto-pwa",
     "patch",
     "vendor",
     "README.md",
