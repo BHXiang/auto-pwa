@@ -861,24 +861,42 @@ export function apply(ctx: Context) {
       // Same layout rule as bundledScriptPath: the compiled layout's
       // '../skills' lands on lib/skills/ (absent in published packages), so
       // prefer the package-root skills/ copy.
-      const candidates = [
-        new URL('../skills/auto-pwa-analysis/SKILL.md', import.meta.url).pathname, // plugin/ or lib/plugin/
-        new URL('../../skills/auto-pwa-analysis/SKILL.md', import.meta.url).pathname, // lib/plugin/ -> package root
+      // 随包分发的 skill 清单（新增一个 = 在这里加一行 + 建 skills/<dir>/SKILL.md）
+      const bundledSkills: { dir: string; name: string; description: string; whenToUse: string }[] = [
+        {
+          dir: 'auto-pwa-analysis',
+          name: 'auto-pwa-analysis',
+          description: 'PWA 分波分析作业规则',
+          whenToUse: 'Performing partial wave analysis with the auto_pwa_* tools.',
+        },
+        {
+          dir: 'debug-auto-pwa',
+          name: 'debug-auto-pwa',
+          description: '本地开发与调试 auto-pwa 插件',
+          whenToUse:
+            'Developing, installing or debugging the auto-pwa plugin itself: local install routes, build freshness, isolated DSH_HOME testing, tool-registration troubleshooting.',
+        },
       ]
-      const skillPath =
-        candidates.find((p) => !p.includes('/lib/skills/') && existsSync(p)) ??
-        candidates.find((p) => existsSync(p))
-      if (skillPath !== undefined) {
+      for (const bundled of bundledSkills) {
+        const candidates = [
+          new URL(`../skills/${bundled.dir}/SKILL.md`, import.meta.url).pathname, // plugin/ or lib/plugin/
+          new URL(`../../skills/${bundled.dir}/SKILL.md`, import.meta.url).pathname, // lib/plugin/ -> package root
+        ]
+        const skillPath =
+          candidates.find((p) => !p.includes('/lib/skills/') && existsSync(p)) ??
+          candidates.find((p) => existsSync(p))
+        if (skillPath === undefined) continue
         const content = readFileSync(skillPath, 'utf8')
         const fm = /^---\n([\s\S]*?)\n---/.exec(content)
         const front = fm !== null ? fm[1] : ''
-        const name = /^name:\s*(.+)$/m.exec(front)?.[1]?.trim() ?? 'auto-pwa-analysis'
-        const description = /^description:\s*(.+)$/m.exec(front)?.[1]?.trim()?.replace(/^['"]|['"]$/g, '') ?? 'PWA 分波分析作业规则'
+        const name = /^name:\s*(.+)$/m.exec(front)?.[1]?.trim() ?? bundled.name
+        const description =
+          /^description:\s*(.+)$/m.exec(front)?.[1]?.trim()?.replace(/^['"]|['"]$/g, '') ?? bundled.description
         ctx.effect?.(() =>
           skills.register({
             name,
             description,
-            whenToUse: 'Performing partial wave analysis with the auto_pwa_* tools.',
+            whenToUse: bundled.whenToUse,
             content,
             // source is REQUIRED by SkillSummary — omitting it makes the
             // loader fail with "source must be a string". provider defaults.
