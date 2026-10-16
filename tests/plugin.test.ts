@@ -1784,6 +1784,40 @@ describe('auto-pwa skill self-registration', () => {
   })
 })
 
+describe('apply 不得因未 inject 的服务访问而抛（cordis 严格语义回归）', () => {
+  /** 造一个"cordis 像"的 ctx：未声明 inject 就访问 systemPrompt 会抛——这正是 0.3.5 的线上事故。 */
+  const makeCtx = (opts: { systemPrompt?: unknown; inject?: boolean }) => {
+    const tools: unknown[] = []
+    const contexts: { name?: string }[] = []
+    const base: Record<string, unknown> = {
+      tools: { register: (t: unknown) => { tools.push(t); return () => {} } },
+      pwaFit: { submit: () => 'j1', status: () => ({ state: 'done' as const }), kill: () => 'already-finished' },
+      effect: (fn: () => () => void) => fn(),
+      on: () => {},
+      get: () => undefined,
+    }
+    const sp = { context: (c: { name?: string }) => { contexts.push(c); return () => {} } }
+    if (opts.systemPrompt !== undefined) base.systemPrompt = opts.systemPrompt
+    else Object.defineProperty(base, 'systemPrompt', { get() { throw new Error('cannot get property "systemPrompt" without inject') } })
+    if (opts.inject === true) base.inject = (deps: string[], cb: (scope: unknown) => void) => cb(base)
+    return { ctx: base, tools, contexts, sp }
+  }
+
+  it('没有 systemPrompt（且未 inject）时不抛，27 个工具仍全部注册', () => {
+    const { ctx, tools } = makeCtx({})
+    expect(() => apply(ctx as never)).not.toThrow()
+    expect(tools).toHaveLength(27)
+  })
+
+  it('systemPrompt 就绪时注册 auto-pwa:state 摘要 context（走 ctx.inject）', () => {
+    const probe = makeCtx({ systemPrompt: undefined, inject: true })
+    // inject 路径：把真实 sp 挂到 scope 上
+    probe.ctx.inject = (deps: string[], cb: (scope: unknown) => void) => cb({ systemPrompt: probe.sp })
+    apply(probe.ctx as never)
+    expect(probe.contexts.map((c) => c.name)).toContain('auto-pwa:state')
+  })
+})
+
 describe('auto_pwa_init_config (from-scratch config authoring)', () => {
   const SPEC = {
     particles: [

@@ -917,19 +917,30 @@ export function apply(ctx: Context) {
   // （也不能）自己记当前基线/否决清单/未决预测。harness 只在文本变化时新增一条
   // user 消息（dsh-agent-loop:334-349），所以天然去重、resume 不重复。
   //
-  // 无 `systemPrompt` 服务时静默跳过（不写进 inject：避免因服务缺席让整个插件
-  // 加载失败——摘要是增强，不是依赖）。
+  // ⚠️ `systemPrompt` 是 **agent 级**服务（由 dsh-agent-loop 按 session 提供），
+  // 而 cordis 里**访问未声明 inject 的服务属性会直接抛**
+  // （`cannot get property "systemPrompt" without inject`）。这个访问若放在 apply
+  // 里，一旦服务当时还没就绪，**整个 auto-pwa entry 都会挂**（27 个工具一起消失，
+  // 且是否踩中取决于 apply 顺序——线上曾因此"装了却没工具"）。
+  // 因此这里用 in-box 插件的标准写法 `ctx.inject(['systemPrompt'], scope => …)`：
+  // 服务就绪时才注册；缺席时插件照常工作（摘要是增强，不是依赖）。
   // ---------------------------------------------------------------------
-  const systemPrompt = (ctx as { systemPrompt?: { context: (c: { name: string; order: number; text: () => string }) => () => void } }).systemPrompt
-  if (systemPrompt !== undefined) {
-    try {
-      // 先注册；`ctx.effect`（若存在）只负责在插件卸载时反注册——不能把注册本身
-      // 放进 effect 回调，否则没有 effect 服务的宿主上永远不会注册。
-      const unregister = systemPrompt.context({ name: 'auto-pwa:state', order: 150, text: () => stateDigestText() })
-      ctx.effect?.(() => unregister)
-    } catch {
-      // 注入是增强，绝不阻断插件
-    }
+  const registerDigest = (host: {
+    systemPrompt?: { context: (c: { name: string; order: number; text: () => string }) => () => void }
+  }): void => {
+    const sp = host.systemPrompt
+    if (sp === undefined) return
+    // 先注册；`ctx.effect`（若存在）只负责在插件卸载时反注册——不能把注册本身
+    // 放进 effect 回调，否则没有 effect 服务的宿主上永远不会注册。
+    const unregister = sp.context({ name: 'auto-pwa:state', order: 150, text: () => stateDigestText() })
+    ctx.effect?.(() => unregister)
+  }
+  const scopedInject = (ctx as { inject?: (deps: string[], cb: (scope: unknown) => void) => unknown }).inject
+  try {
+    if (typeof scopedInject === 'function') scopedInject.call(ctx, ['systemPrompt'], (scope) => registerDigest(scope as never))
+    else registerDigest(ctx as never) // 假 ctx（单测）：直接尝试，缺席时下面兜住
+  } catch {
+    // 注入是增强，绝不阻断插件（含"服务未 inject 就访问"的宿主）
   }
 
   // token-meter: 累计本会话各 session 的 assistant/message usage；
