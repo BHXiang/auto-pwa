@@ -746,7 +746,15 @@ function harnessCtx() {
   }
   apply(ctx as never)
   applyGuard(ctx as never) // pwa-guard registers the config.yml write gate
-  return { definitions, guards, eventHandlers, submits, statusCalls, contexts }
+  // 事件助手：摘要现在是**按 agent 注册**的（agent.id === session.id），
+  // 分析目录也由 session/event 的工具调用流归档——测试照真实路径触发。
+  const fireSessionEvent = (session: unknown, event: unknown) => eventHandlers['session/event']?.(session, event)
+  const fireAgentCreated = (id: string) =>
+    eventHandlers['agent/created']?.({
+      agent: { id, ctx: { inject: (_deps: string[], cb: (scope: unknown) => void) => cb({ systemPrompt: ctx.systemPrompt }) } },
+      source: 'startup',
+    })
+  return { definitions, guards, eventHandlers, submits, statusCalls, contexts, fireSessionEvent, fireAgentCreated }
 }
 
 const run = async (h: ReturnType<typeof harnessCtx>, name: string, args: unknown, exec: unknown) => {
@@ -1080,6 +1088,7 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
 
   it('auto_pwa_state：注册 runtime context，且"没有分析目录时不注入"', async () => {
     const h = harnessCtx()
+    h.fireAgentCreated('sess-digest') // 摘要按 agent 注册（agent.id === session.id）
     const provider = (): string => {
       const c = h.contexts.find((x) => x.name === 'auto-pwa:state')!
       return typeof c.text === 'function' ? c.text() : c.text
@@ -1097,8 +1106,13 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
         join(iterations, 'SUMMARY.jsonl'),
         JSON.stringify({ iter: 9, kind: 'added', title: 'iter-009', conclusion: '回退基线到 iter-009', nll: -1759.42, nextPlan: '试 X2200' }) + '\n',
       )
-      // 让插件"见过"这个分析目录（history 是最自然的入口）
-      await run(h, 'auto_pwa_history', { iterationsRoot: iterations }, {})
+      // 让插件"见过"这个分析目录（history 是最自然的入口）；
+      // 真实 harness 会为每次工具调用发 session/event(tool/call)，插件据此按 session 归档 root。
+      await run(h, 'auto_pwa_history', { iterationsRoot: iterations }, { agent: { id: 'sess-digest' } })
+      h.fireSessionEvent(
+        { id: 'sess-digest' },
+        { type: 'tool/call', data: { name: 'auto_pwa_history', arguments: { iterationsRoot: iterations } } },
+      )
       const txt = provider()
       expect(txt).toContain('<system-reminder>')
       expect(txt).toContain('ΔNLL 比对基线: iter-009')
@@ -1784,37 +1798,63 @@ describe('auto-pwa skill self-registration', () => {
   })
 })
 
-describe('apply 不得因未 inject 的服务访问而抛（cordis 严格语义回归）', () => {
-  /** 造一个"cordis 像"的 ctx：未声明 inject 就访问 systemPrompt 会抛——这正是 0.3.5 的线上事故。 */
-  const makeCtx = (opts: { systemPrompt?: unknown; inject?: boolean }) => {
+describe('apply 健壮性与摘要按 session 隔离（cordis 严格语义回归）', () => {
+  /** 造一个"cordis 像"的 ctx：未声明 inject 就访问 systemPrompt 会抛（=0.3.5 线上事故）。 */
+  const makeCtx = (opts: { systemPrompt?: unknown; inject?: boolean } = {}) => {
     const tools: unknown[] = []
-    const contexts: { name?: string }[] = []
+    const contexts: { name?: string; text?: () => string }[] = []
+    const handlers = new Map<string, ((...a: unknown[]) => void)[]>()
+    const sp = { context: (c: { name?: string; text?: () => string }) => { contexts.push(c); return () => {} } }
     const base: Record<string, unknown> = {
       tools: { register: (t: unknown) => { tools.push(t); return () => {} } },
       pwaFit: { submit: () => 'j1', status: () => ({ state: 'done' as const }), kill: () => 'already-finished' },
       effect: (fn: () => () => void) => fn(),
-      on: () => {},
+      on: (name: string, cb: (...a: unknown[]) => void) => { const l = handlers.get(name) ?? []; l.push(cb); handlers.set(name, l) },
       get: () => undefined,
     }
-    const sp = { context: (c: { name?: string }) => { contexts.push(c); return () => {} } }
     if (opts.systemPrompt !== undefined) base.systemPrompt = opts.systemPrompt
     else Object.defineProperty(base, 'systemPrompt', { get() { throw new Error('cannot get property "systemPrompt" without inject') } })
     if (opts.inject === true) base.inject = (deps: string[], cb: (scope: unknown) => void) => cb(base)
-    return { ctx: base, tools, contexts, sp }
+    const fire = (name: string, ...args: unknown[]) => { for (const cb of handlers.get(name) ?? []) cb(...args) }
+    const agentCreated = (id: string) => fire('agent/created', { agent: { id, ctx: { inject: (d: string[], cb: (s: unknown) => void) => cb({ systemPrompt: sp }) } }, source: 'startup' })
+    return { ctx: base, tools, contexts, sp, fire, agentCreated }
   }
 
   it('没有 systemPrompt（且未 inject）时不抛，27 个工具仍全部注册', () => {
-    const { ctx, tools } = makeCtx({})
+    const { ctx, tools } = makeCtx()
     expect(() => apply(ctx as never)).not.toThrow()
     expect(tools).toHaveLength(27)
   })
 
-  it('systemPrompt 就绪时注册 auto-pwa:state 摘要 context（走 ctx.inject）', () => {
-    const probe = makeCtx({ systemPrompt: undefined, inject: true })
-    // inject 路径：把真实 sp 挂到 scope 上
-    probe.ctx.inject = (deps: string[], cb: (scope: unknown) => void) => cb({ systemPrompt: probe.sp })
+  it('agent 创建时注册 auto-pwa:state 摘要 context（按 agent，不是插件级）', () => {
+    const probe = makeCtx({ inject: true })
     apply(probe.ctx as never)
+    probe.agentCreated('sess-a')
     expect(probe.contexts.map((c) => c.name)).toContain('auto-pwa:state')
+  })
+
+  it('摘要按 session 隔离：B 会话拿不到 A 会话触达过的分析', () => {
+    const A = mkdtempSync(join(tmpdir(), 'pwa-iso-a-'))
+    const B = mkdtempSync(join(tmpdir(), 'pwa-iso-b-'))
+    for (const [dir, name] of [[A, 'alpha'], [B, 'beta']] as const) {
+      mkdirSync(join(dir, 'iterations'), { recursive: true })
+      writeFileSync(join(dir, 'iterations', 'SUMMARY.jsonl'), `${JSON.stringify({ iter: 0, title: `基线 ${name}`, kind: 'other', changes: [] })}\n`)
+    }
+    const probe = makeCtx({ inject: true })
+    apply(probe.ctx as never)
+    // A 会话做了一次带 iterationsRoot 的工具调用（事件流里记 root）
+    probe.fire('session/event', { id: 'sess-a' }, {
+      type: 'tool/call',
+      data: { name: 'auto_pwa_history', arguments: JSON.stringify({ iterationsRoot: join(A, 'iterations') }) },
+    })
+    probe.agentCreated('sess-a')
+    probe.agentCreated('sess-b')
+    const texts = probe.contexts.map((c) => { try { return c.text?.() ?? '' } catch { return '' } })
+    // A 拿到自己的分析
+    expect(texts.some((t) => t.includes(A))).toBe(true)
+    // B 没有触达任何分析（cwd 也不是分析目录）→ 空串，且**绝不包含 A**
+    expect(texts.filter((t) => t.includes(A))).toHaveLength(1)
+    expect(texts.filter((t) => t.length > 0)).toHaveLength(1)
   })
 })
 

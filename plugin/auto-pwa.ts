@@ -759,14 +759,36 @@ const gateOutputFields = {
 // P1b：当前状态摘要（runtime context）的运行期状态
 // ---------------------------------------------------------------------------
 
-/** 插件"见过"的分析目录（任何工具解析出它就会记下）。 */
-let activeAnalysisRoot: string | undefined
+/**
+ * 插件"见过"的分析目录——**按 agent(=session) 分开记**。
+ *
+ * 为什么必须分开：`agent.id === session.id`（dsh-agent 里明确断言），而摘要是**每轮
+ * 注入到该 agent 的 prompt** 里的。早先只有一个进程级 root，导致跑分析 B 的会话
+ * 会看到分析 A 的"已触碰态索引"（实测 8/8 个 agent 都主动声明"那是另一个分析、
+ * 不混用"——但这依赖模型自觉，弱模型会被带偏）。
+ */
+const rootsByAgent = new Map<string, string>()
 
-/** 记下当前分析目录（所有写路径都经 gitRecord，覆盖面足够）。 */
-function noteAnalysisRoot(anchorPath: string): void {
+/** 无 agent 身份的宿主（单测、工具调用不带 agent 的场景）用这个兜底。 */
+let fallbackAnalysisRoot: string | undefined
+
+/** 从工具参数里挑出分析路径（命中任一即算"触达了该分析"）。 */
+function pickAnalysisPath(args: Record<string, unknown> | undefined): string | undefined {
+  if (args === undefined) return undefined
+  for (const key of ['iterationsRoot', 'baseIterDir', 'iterDir', 'configPath', 'baseConfigPath', 'analysisDir']) {
+    const v = args[key]
+    if (typeof v === 'string' && v.length > 0) return v
+  }
+  return undefined
+}
+
+/** 记下分析目录（写路径经 gitRecord；读路径经 session/event 的工具调用流）。 */
+function noteAnalysisRoot(anchorPath: string, agentId?: string): void {
   try {
     const root = analysisRootOf(anchorPath)
-    if (existsSync(root)) activeAnalysisRoot = root
+    if (!existsSync(root)) return
+    if (agentId !== undefined) rootsByAgent.set(agentId, root)
+    else fallbackAnalysisRoot = root
   } catch {
     /* 尽力而为 */
   }
@@ -774,16 +796,21 @@ function noteAnalysisRoot(anchorPath: string): void {
 
 /** 测试用：清掉"当前分析目录"的记忆。 */
 export function __resetActiveAnalysisRoot(): void {
-  activeAnalysisRoot = undefined
+  rootsByAgent.clear()
+  fallbackAnalysisRoot = undefined
 }
 
 /**
  * 解析要总结的分析目录：优先插件见过的；其次工作目录（= 在分析目录里启动的会话，
  * resume 后无需任何工具调用就有状态）。两者都不像分析目录时返回 undefined。
  */
-function resolveDigestRoot(): string | undefined {
-  if (activeAnalysisRoot !== undefined && existsSync(join(activeAnalysisRoot, 'iterations', 'SUMMARY.jsonl'))) {
-    return activeAnalysisRoot
+function resolveDigestRoot(agentId?: string): string | undefined {
+  // 只认"本 agent 自己触达过的"，以及无 agent 身份时的兜底——**绝不**借用别的
+  // session 记下的 root（那正是跨分析污染的来源）。
+  // 有 agent 身份时**只认自己**记下的；全局兜底仅服务"没有 agent 身份"的宿主。
+  const remembered = agentId !== undefined ? rootsByAgent.get(agentId) : fallbackAnalysisRoot
+  if (remembered !== undefined && existsSync(join(remembered, 'iterations', 'SUMMARY.jsonl'))) {
+    return remembered
   }
   try {
     const cwd = process.cwd()
@@ -800,9 +827,9 @@ function resolveDigestRoot(): string | undefined {
  * sync provider：读日记 + 状态机 + 最近 fit.json，渲染注入文本。
  * **任何异常都退化为空串**——注入是增强，绝不能让组装 prompt 失败。
  */
-function stateDigestText(): string {
+function stateDigestText(agentId?: string): string {
   try {
-    const root = resolveDigestRoot()
+    const root = resolveDigestRoot(agentId)
     if (root === undefined) return ''
     const records = new IterationLog({ rootDir: join(root, 'iterations') }).readAll()
     if (records.length === 0) return ''
@@ -925,20 +952,45 @@ export function apply(ctx: Context) {
   // 因此这里用 in-box 插件的标准写法 `ctx.inject(['systemPrompt'], scope => …)`：
   // 服务就绪时才注册；缺席时插件照常工作（摘要是增强，不是依赖）。
   // ---------------------------------------------------------------------
-  const registerDigest = (host: {
-    systemPrompt?: { context: (c: { name: string; order: number; text: () => string }) => () => void }
-  }): void => {
+  const registerDigest = (
+    host: { systemPrompt?: { context: (c: { name: string; order: number; text: () => string }) => () => void } },
+    agentId?: string,
+  ): void => {
     const sp = host.systemPrompt
     if (sp === undefined) return
     // 先注册；`ctx.effect`（若存在）只负责在插件卸载时反注册——不能把注册本身
     // 放进 effect 回调，否则没有 effect 服务的宿主上永远不会注册。
-    const unregister = sp.context({ name: 'auto-pwa:state', order: 150, text: () => stateDigestText() })
+    const unregister = sp.context({ name: 'auto-pwa:state', order: 150, text: () => stateDigestText(agentId) })
     ctx.effect?.(() => unregister)
   }
-  const scopedInject = (ctx as { inject?: (deps: string[], cb: (scope: unknown) => void) => unknown }).inject
+  // **按 agent 注册**（in-box 插件的标准做法，见 dsh-file-reference-local：text 闭包
+  // 捕获该 agent，于是摘要天然按 session 隔离）。宿主不提供事件时才退回插件级。
+  const onAgentCreated = (ctx as { on?: (name: string, cb: (arg: unknown) => void) => unknown }).on
+  const installForAgent = (agent: unknown): void => {
+    const a = agent as { id?: unknown; ctx?: { inject?: (deps: string[], cb: (scope: unknown) => void) => unknown } }
+    const id = typeof a?.id === 'string' ? a.id : undefined
+    const injectOnAgent = a?.ctx?.inject
+    if (typeof injectOnAgent !== 'function') return
+    try {
+      injectOnAgent.call(a.ctx, ['systemPrompt'], (scope) => registerDigest(scope as never, id))
+    } catch {
+      /* 注入是增强 */
+    }
+  }
   try {
-    if (typeof scopedInject === 'function') scopedInject.call(ctx, ['systemPrompt'], (scope) => registerDigest(scope as never))
-    else registerDigest(ctx as never) // 假 ctx（单测）：直接尝试，缺席时下面兜住
+    if (typeof onAgentCreated === 'function') {
+      // harness 的载荷是 `{ agent, source, signal? }`（dsh-agent 的
+      // `ctx.serial(carrier, "agent/created", { agent, source })`），与 in-box 插件
+      // （dsh-file-reference-local）的接法一致；直接给 agent 的宿主也兼容。
+      onAgentCreated.call(ctx, 'agent/created', (payload: unknown) => {
+        installForAgent((payload as { agent?: unknown } | null | undefined)?.agent ?? payload)
+      })
+      // 插件也可能在 agent 之后才加载 → 补装现存 agent（in-box 同样这么做）
+      const agents = (ctx as { agents?: { list?: () => unknown[] } }).agents
+      for (const a of agents?.list?.() ?? []) installForAgent(a)
+    } else {
+      registerDigest(ctx as never) // 假 ctx（单测）：直接尝试，缺席时下面兜住
+    }
   } catch {
     // 注入是增强，绝不阻断插件（含"服务未 inject 就访问"的宿主）
   }
@@ -952,6 +1004,14 @@ export function apply(ctx: Context) {
       ? (session as { id: string }).id
       : '?'
     usage.onSessionEvent(sessionId, event as { type?: string; data?: { usage?: TokenUsageLike } } as never)
+    // 按 session 记"触达过的分析目录"：任何带分析路径的工具调用都算（读写都覆盖）。
+    const ev = event as { type?: string; data?: { arguments?: unknown } } | null | undefined
+    if (ev?.type === 'tool/call') {
+      const raw = ev.data?.arguments
+      const args = typeof raw === 'string' ? (() => { try { return JSON.parse(raw) as unknown } catch { return undefined } })() : raw
+      const picked = pickAnalysisPath(args as Record<string, unknown> | undefined)
+      if (picked !== undefined) noteAnalysisRoot(picked, sessionId)
+    }
   })
 
   // ---------------------------------------------------------------------
