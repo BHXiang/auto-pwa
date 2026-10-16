@@ -1760,21 +1760,26 @@ describe('auto-pwa skill self-registration', () => {
       effect: (fn: () => () => void) => fn(),
     }
     apply(ctx as never)
-    // 随包分发**两个** skill：分析作业规则 + 插件本地开发/调试
-    expect(registered.map((r) => r.name).sort()).toEqual(['auto-pwa-analysis', 'debug-auto-pwa'])
+    // 仓库**随包分发**的是 auto-pwa-analysis；`debug-auto-pwa` 是**本地开发用**的
+    // （只放工作区或 ~/.dsh/skills/，不入库）→ 存在就一起注册，不存在也不许报错。
+    const names = registered.map((r) => r.name).sort()
+    expect(names).toContain('auto-pwa-analysis')
+    expect(names.every((n) => n === 'auto-pwa-analysis' || n === 'debug-auto-pwa')).toBe(true)
     const analysis = registered.find((r) => r.name === 'auto-pwa-analysis')!
-    const debug = registered.find((r) => r.name === 'debug-auto-pwa')!
     expect(analysis.content).toContain('PWA 分波分析作业规则')
-    expect(debug.content).toContain('本地开发与调试 auto-pwa 插件')
-    // 调试 skill 必须覆盖这次踩过的坑（回归守卫：删掉关键段就红）
-    expect(debug.content).toContain('npm install')
-    expect(debug.content).toContain('check:build')
-    expect(debug.content).toContain('DSH_HOME')
-    expect(debug.content).toContain('dump-config')
     for (const r of registered) {
       expect((r.invocation as { modelInvocable: boolean }).modelInvocable).toBe(true)
       // source is required by SkillSummary — its absence breaks skill loading.
       expect(r.source).toBe('runtime')
+    }
+    // 本地存在调试 skill 时，它的内容必须覆盖这次踩过的坑（回归守卫）
+    const debug = registered.find((r) => r.name === 'debug-auto-pwa')
+    if (debug !== undefined) {
+      expect(debug.content).toContain('本地开发与调试 auto-pwa 插件')
+      expect(debug.content).toContain('npm install')
+      expect(debug.content).toContain('check:build')
+      expect(debug.content).toContain('DSH_HOME')
+      expect(debug.content).toContain('dump-config')
     }
   })
 })
