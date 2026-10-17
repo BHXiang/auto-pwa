@@ -32,14 +32,14 @@ export interface Reminder {
  * 只保留"做下一步提案时会被违反"的那些。
  */
 export const REMINDERS: Reminder[] = [
-  { id: 'pdg-evidence', triggers: ['add'], text: 'BWR/BW/Flatte/GS 必须有 PDG 依据；PDG 上没有的新粒子一律拒绝（例外：model=ONE）。', skillRef: '## 3. 物理硬规则' },
-  { id: 'jpc-consistency', triggers: ['add'], text: '提案 (J,P) 必须与 PDG 条目一致；PDG 没有的量子数不许发明。', skillRef: '## 3. 物理硬规则' },
-  { id: 'jpc-from-group', triggers: ['add'], text: '新增共振态不写 J/P：量子数由所属 intermediates [J,P] 组决定（共轭链 P 反号是正常的）。', skillRef: '## 3. 物理硬规则' },
-  { id: 'threshold-margin', triggers: ['add', 'float'], text: '检查运动学阈值 m_R ≤ m_A − m_B；接近阈值 → off-shell 风险 → 建议 float 质量。', skillRef: '## 3. 物理硬规则' },
-  { id: 'reachability', triggers: ['add'], text: '先确认该 J^P 物理可达（角动量+宇称守恒，maxL 截断）；不可达会被门禁拒绝。', skillRef: '## 3. 物理硬规则' },
-  { id: 'decay-vertex', triggers: ['add'], text: '衰变顶点：提案 J^P 必须在 R→d1+d2 的允许集合里，否则振幅恒为零（零-SL）。', skillRef: '## 3. 物理硬规则' },
-  { id: 'c-parity', triggers: ['add'], text: '若母子均为 C 本征态：C(R) = C(A)·C(B) 强制；Kη、Kπ 这类无 C 系统只查 J^P，不要伪造 C。', skillRef: '## 3. 物理硬规则' },
-  { id: 'identical-particles', triggers: ['any'], text: '全同粒子必须声明进 Constraints.identical，否则引擎不对称化（π⁰π⁰ 的奇 L 波会被放进波表）。', skillRef: '## 3. 物理硬规则' },
+  { id: 'pdg-evidence', triggers: ['add'], text: 'BWR/BW/Flatte/GS 必须有 PDG 依据；PDG 上没有的新粒子一律拒绝（例外：model=ONE）。', skillRef: '## PDG 依据的语义' },
+  { id: 'jpc-consistency', triggers: ['add'], text: '提案 (J,P) 必须与 PDG 条目一致；PDG 没有的量子数不许发明。', skillRef: '## PDG 依据的语义' },
+  { id: 'jpc-from-group', triggers: ['add'], text: '新增共振态不写 J/P：量子数由所属 intermediates [J,P] 组决定（共轭链 P 反号是正常的）。', skillRef: '## PDG 依据的语义' },
+  { id: 'threshold-margin', triggers: ['add', 'float'], text: '检查运动学阈值 m_R ≤ m_A − m_B；接近阈值 → off-shell 风险 → 建议 float 质量。', skillRef: '## 量子数与顶点门禁' },
+  { id: 'reachability', triggers: ['add'], text: '先确认该 J^P 物理可达（角动量+宇称守恒，maxL 截断）；不可达会被门禁拒绝。', skillRef: '## 量子数与顶点门禁' },
+  { id: 'decay-vertex', triggers: ['add'], text: '衰变顶点：提案 J^P 必须在 R→d1+d2 的允许集合里，否则振幅恒为零（零-SL）。', skillRef: '## 量子数与顶点门禁' },
+  { id: 'c-parity', triggers: ['add'], text: '若母子均为 C 本征态：C(R) = C(A)·C(B) 强制；Kη、Kπ 这类无 C 系统只查 J^P，不要伪造 C。', skillRef: '## 量子数与顶点门禁' },
+  { id: 'identical-particles', triggers: ['any'], text: '全同粒子必须声明进 Constraints.identical，否则引擎不对称化（π⁰π⁰ 的奇 L 波会被放进波表）。', skillRef: '## 2.1 两顶点 J^PC 检查' },
   { id: 'narrow-fixed', triggers: ['add', 'float'], text: '窄共振、PDG 测定良好（Γ ≲ 50 MeV）→ 参数固定，float 会与耦合退化。', skillRef: '## 4. float' },
   { id: 'new-res-float', triggers: ['add', 'float'], text: '新加入的态第一轮建议只 float 质量，区间 = PDG 质量 ± max(0.5Γ, 30 MeV)。', skillRef: '## 4. float' },
   { id: 'broad-float', triggers: ['add', 'float'], text: '宽态（Γ > 0.2 GeV）或近阈值 → 质量+宽度都 float，宽度区间 ±50%Γ。', skillRef: '## 4. float' },

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { apply } from '../plugin/auto-pwa.js'
 
 /**
@@ -66,8 +67,10 @@ const EXPECTED_TOOLS = [
 /** 已弃用工具：描述必须以 [已弃用 开头并给出替代者。 */
 const DEPRECATED = ['auto_pwa_round']
 
-/** 描述长度上限（规范值；当前最长 175）。 */
+/** 描述长度上限（规范值）。 */
 const MAX_DESC = 200
+/** 瘦身后：工具描述只写"做什么"，路由指导（用/不要用）统一放 skill 路由表。 */
+const MAX_DESC_SLIM = 90
 /** 参数描述长度上限。 */
 const MAX_PARAM_DESC = 200
 
@@ -120,11 +123,12 @@ describe('工具表面契约（规范化守门）', () => {
     }
   })
 
-  it('非弃用工具的描述统一包含「用：」与「不要用」', () => {
+  it('描述保持精简：路由指导（用/不要用）归 skill 路由表，不在描述里重复', () => {
     for (const d of defs) {
       if (DEPRECATED.includes(d.name)) continue
-      expect(d.description, d.name).toContain('用：')
-      expect(d.description, d.name).toContain('不要用')
+      expect(d.description, d.name).not.toContain('用：')
+      expect(d.description, d.name).not.toContain('不要用')
+      expect(d.description!.length, `${d.name} 描述 ${d.description!.length} 字符（上限 ${MAX_DESC_SLIM}）`).toBeLessThanOrEqual(MAX_DESC_SLIM)
     }
   })
 
@@ -140,11 +144,19 @@ describe('工具表面契约（规范化守门）', () => {
     }
   })
 
-  it('易混对必须互相点名（避免"该用哪个"歧义）', () => {
+  it('易混对在 skill 路由表里被区分（避免"该用哪个"歧义）', () => {
+    // 路由指导从工具描述搬到了 skill（progressive disclosure）：这里守住"没丢"。
+    const skill = readFileSync(new URL('../skills/auto-pwa-analysis/SKILL.md', import.meta.url), 'utf8')
     for (const [a, b] of ROUTING_PAIRS) {
-      const da = map.get(a)?.description ?? ''
-      const db = map.get(b)?.description ?? ''
-      expect(da.includes(bare(b)) || db.includes(bare(a)), `${a} 与 ${b} 必须互相点名`).toBe(true)
+      expect(skill.includes(bare(a)) || skill.includes(bare(b)), `${a} 与 ${b} 至少一方要出现在路由表`).toBe(true)
+    }
+  })
+
+  it('全部非弃用工具出现在 skill 的工具索引里（描述瘦身不丢入口）', () => {
+    const skill = readFileSync(new URL('../skills/auto-pwa-analysis/SKILL.md', import.meta.url), 'utf8')
+    for (const d of defs) {
+      if (DEPRECATED.includes(d.name)) continue
+      expect(skill.includes(d.name), `${d.name} 未出现在 skill 工具索引`).toBe(true)
     }
   })
 

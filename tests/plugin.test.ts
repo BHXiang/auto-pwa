@@ -1934,9 +1934,12 @@ describe('auto-pwa skill self-registration', () => {
     apply(ctx as never)
     // 仓库**随包分发**的是 auto-pwa-analysis；`debug-auto-pwa` 是**本地开发用**的
     // （只放工作区或 ~/.dsh/skills/，不入库）→ 存在就一起注册，不存在也不许报错。
-    const names = registered.map((r) => r.name).sort()
-    expect(names).toContain('auto-pwa-analysis')
-    expect(names.every((n) => n === 'auto-pwa-analysis' || n === 'debug-auto-pwa')).toBe(true)
+    const names = registered.map((r) => r.name).filter((n): n is string => typeof n === 'string').sort()
+    // 随包分发 4 个 skill（分析核心 + 迭代 + PDG + J^PC）；debug 可选（本地）。
+    for (const n of ['auto-pwa-analysis', 'auto-pwa-iter', 'auto-pwa-pdg', 'auto-pwa-jpc']) {
+      expect(names).toContain(n)
+    }
+    expect(names.every((n) => n.startsWith('auto-pwa-') || n === 'debug-auto-pwa')).toBe(true)
     const analysis = registered.find((r) => r.name === 'auto-pwa-analysis')!
     expect(analysis.content).toContain('PWA 分波分析作业规则')
     for (const r of registered) {

@@ -899,6 +899,27 @@ export function apply(ctx: Context) {
           whenToUse: 'Performing partial wave analysis with the auto_pwa_* tools.',
         },
         {
+          dir: 'auto-pwa-iter',
+          name: 'auto-pwa-iter',
+          description: '迭代主循环与拟合质量判断',
+          whenToUse:
+            'Running the PWA iteration loop: iteration folders, the state machine and same-session goal, local git records, the pre-fit gate, fit-quality judgment.',
+        },
+        {
+          dir: 'auto-pwa-pdg',
+          name: 'auto-pwa-pdg',
+          description: 'PDG 依据 / 本地登记 / 线形选择',
+          whenToUse:
+            'Deciding whether a resonance may be added: PDG backing vs local registrations, reference overrides, per-analysis local-states.json, line-shape conventions (advisory), experiment-base vs model-baseline.',
+        },
+        {
+          dir: 'auto-pwa-jpc',
+          name: 'auto-pwa-jpc',
+          description: 'J^PC / 顶点 / 阈值可达性',
+          whenToUse:
+            'Checking quantum-number reachability before adding a resonance: two-vertex J^PC intersection, decay-vertex pairJPC gate, C conservation, thresholds, maxL.',
+        },
+        {
           dir: 'debug-auto-pwa',
           name: 'debug-auto-pwa',
           description: '本地开发与调试 auto-pwa 插件',
@@ -1021,7 +1042,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_lookup',
-    description: '查 PDG-2026 共振态表：名称/J^P/C/质量/宽度/阈值下候选/单实验测量历史。用：加态前确认它存在与量子数；扫某质量段的候选。不要用：校验一份 config 是否合法（用 validate_config/jpc_check）；查你 config 里已有的态（用 config_view）。',
+    description: '查 PDG/本地登记表：名称/J^P/质量/宽度/候选；返回出处与建议线形。',
     parameters: {
       name: { type: 'string', description: '粒子名或其别名，如 "phi1680" 或 "phi(1680)"；省略则按其他条件过滤' },
       jp: jpParam,
@@ -1137,7 +1158,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_decay_check',
-    description: '运动学可达性：A→R+B 允许的中间态 J^P（角动量+宇称守恒，maxL 截断）与阈值下候选。用：起草新链、确认某 J^P 能否产生。不要用：查已有 config 的两顶点 J^PC/C（用 jpc_check）。',
+    description: '运动学可达性：A→R+B 允许的 J^P（maxL 截断）与阈值下候选。',
     parameters: {
       mother: {
         type: 'object',
@@ -1241,7 +1262,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_jpc_check',
-    description: '两顶点 J^PC 检查（只读）：逐中间态给出衰变顶点 J^PC 集与产生顶点 J^P/C 守恒要求的交集，附按 J^PC 过滤的 PDG 候选与 on-shell 余量。用：写 config 前确认某 [J,P] 组可达、看哪些波被 C 拦。不要用：整份 config 校验（用 validate_config）；查单态是否存在（用 lookup）。',
+    description: '两顶点 J^PC 检查：逐中间态给出可达 J^PC 与 PDG 候选。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       target: { type: 'string', description: '链名（如 decay1）或中间态名（如 R_KK）；省略 = 全部链的全部中间态' },
@@ -1556,7 +1577,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_init_config',
-    description: '从 0 起草 init_config.yml（结构化 spec→渲染→物理门禁→原子写；preview 只构建）。用：全新分析目录的第一份配置。不要用：改已有 config（用 edit_config/remove_resonance）；校验已有配置（用 validate_config）。',
+    description: '从 0 起草 init_config.yml（spec→渲染→门禁→原子写；preview 只构建）。',
     parameters: {
       dir: { type: 'string', required: true, description: '分析目录（绝对路径）；写入 <dir>/<fileName>' },
       fileName: { type: 'string', description: '文件名，默认 init_config.yml' },
@@ -1778,7 +1799,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_config_view',
-    description: 'config.yml 只读视图：粒子/链与衰变步/共振态（含 options）/约束解析/校验结果/PDG 与阈值余量。用：先看清"这份 config 到底有什么"。不要用：改配置（用 edit_config）；判断能否跑（用 validate_config）；查历史（用 git_log）。',
+    description: 'config.yml 只读视图：粒子/链/共振态/约束/校验/阈值余量。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       filter: {
@@ -1998,7 +2019,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_validate_config',
-    description: '跑前门禁预览（秒级、无 GPU、不写文件）：结构/交叉引用/两顶点 J^PC+C/阈值/PDG/预算逐项回报；deep=true 再跑 ctpwa --validate-only 并打印权威参数清单与振幅数。用：手改或工具改完立刻自查。不要用：加单个态前的提案预检（用 validate_add）；看配置内容（用 config_view）。',
+    description: '跑前门禁：结构/两顶点 J^PC/阈值/PDG 逐项回报；deep=true 走 ctpwa。',
     parameters: {
       configPath: { type: 'string', description: '要校验的配置文件绝对路径（与 yamlText 二选一；deep 需要它）' },
       yamlText: { type: 'string', description: '直接给 YAML 文本（还没落盘时用；此时 deep 自动跳过）' },
@@ -2127,7 +2148,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_suggest',
-    description: '候选发现：把评估出的 pull>3σ 质量区与各中间态允许 J^PC 相交，按质量对齐度排序给出 PDG 候选（含阈值余量）。用：评估之后决定"下一个加什么"。不要用：凭空查 PDG（用 lookup）；判收敛（用 loop_next）。',
+    description: '按 pull>3σ 质量区 × 可达 J^PC 给出 PDG 候选（含阈值余量）。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       evaluateJsonPath: { type: 'string', required: true, description: 'evaluate.json 绝对路径（auto_pwa_evaluate 的输出）' },
@@ -2216,7 +2237,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_validate_add',
-    description: '“添加共振态”只读门禁：PDG 依据/JPC/阈值/衰变顶点 J^P/C 守恒/全同/重复/free 结构，并给 float 建议。用：edit_config 之前预检提案。不要用：整份 config 校验（用 validate_config）；只查 PDG（用 lookup）。',
+    description: '加态只读门禁：PDG 依据/JPC/阈值/顶点/重复/free，并给 float 建议。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       proposal: { ...proposalParam, required: true },
@@ -2309,7 +2330,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_edit_config',
-    description: '把共振态写入 config.yml 的快车道：物理校验→结构化修改→写前总闸→原子写(+.bak)，并自动本地 git 提交。用：加态/挂链（含 Interp/Custom 的 options 透传）。不要用：删除（用 remove_resonance）；整份校验（用 validate_config）；从零起草（用 init_config）。',
+    description: '写态/挂链：物理校验→写前总闸→原子写(+.bak)→本地 git 提交。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径（会被修改）' },
       proposal: { ...proposalParam, required: true },
@@ -2409,7 +2430,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_remove_resonance',
-    description: '摘除共振态（显著性剪枝）：dry-run 校验→按名摘除→写前总闸→原子写(+.bak)+git 提交；[J,P] 组即使变空也保留（维持 Constraints.trans 索引）。用：删份额不显著/撞边界的态做 ΔNLL 对照。不要用：改参数（用 edit_config 重挂或直接编辑 yml）；从零起草（用 init_config）。',
+    description: '摘除共振态（显著性剪枝）；[J,P] 组保留以维持 trans 索引。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径（会被修改）' },
       removals: { ...removalListParam, required: true },
@@ -2522,7 +2543,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_round',
-    description: '[已弃用，改用 iterate 或 loop_decide(iterate)] 一轮迭代：评估上一轮+应用 proposal/removals+建轮+门禁+提交拟合。保留仅供旧脚本兼容。',
+    description: '[已弃用] 用 iterate 或 loop_decide。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-004），其 config.yml 为基座、results/ 被评估' },
       proposal: { ...proposalParam, description: '要添加/挂载的共振态（省略 = 纯评估模式，不创建新轮）' },
@@ -2762,7 +2783,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_iter_start',
-    description: '创建 iterations/iter-N/（复制基座 config、软链 fit.py、写 note 骨架、Data 路径绝对化）并 git 提交。用：手动分步跑一轮时先建目录。不要用：一步到位跑一轮（用 iterate/loop_decide）；只评估（用 loop_next）。',
+    description: '建 iterations/iter-N/（复制基座 config、软链 fit.py、Data 绝对化）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录（如 <分析目录>/iterations）' },
       baseConfigPath: { type: 'string', required: true, description: '本轮基座 config.yml（上一轮的 config 或项目初始 config）' },
@@ -2818,7 +2839,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_note',
-    description: '把本轮结论写进迭代日记（SUMMARY.jsonl + HTML），并 git 提交该轮配置与结果；includeTokens 记 token 成本。用：每轮结束记录决策/证据/下一步计划。不要用：代替配置变更记录（edit_config 等已自动提交配置）。',
+    description: '写迭代日记（SUMMARY/HTML）并 git 提交；includeTokens 记 token 成本。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '本轮迭代目录（如 .../iterations/iter-001）' },
       title: { type: 'string', required: true, description: '本轮决策一句话（如 "添加 rho(1450) 到 R_KK [1-]"）' },
@@ -2988,7 +3009,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_git_log',
-    description: '本地 git 记录（无远端）：log 列每轮提交、show 看某轮 config diff、search 用 pickaxe 找某态/参数是哪轮进来的、status 看有无未提交改动。用：审计"谁改了哪一条"、判断结果能否由 HEAD 复现。不要用：看拟合数值（用 evaluate/diagnose）；看迭代结论（用 history）。',
+    description: '本地 git：log/show/search/status（查某态/参数是哪轮引入）。',
     parameters: {
       anyPath: { type: 'string', description: '分析目录内的任意路径（分析目录、iterations/、迭代目录或 config 文件），用于定位仓库（等价于旧名 path）' },
       path: { type: 'string', description: '[已弃用别名，用 anyPath]' },
@@ -3173,7 +3194,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_history',
-    description: '读迭代日记（每轮决策/NLL/ΔNLL/预测验证/结论/下一步/token），支持按键检索（needle/iter/kind/status）与 as-of 快照（asOf）并给出代码折叠出的当前状态。用：新一轮决策前恢复上下文、问"这个态试过吗/当前基线是哪轮"。不要用：看配置文本差异（用 git_log）；看拟合细节（用 diagnose/evaluate）。',
+    description: '读日记并折叠状态；支持 needle/iter/kind/status/limit/asOf。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
       needle: { type: 'string', description: '按键检索：只保留标题/结论/下一步/变更里含该文本的记录（如共振态名 X1750）' },
@@ -3454,7 +3475,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_iterate',
-    description: '一轮完整迭代（复合）：验证 proposal/removals→建新迭代目录→写 config→跑前门禁→提交拟合，并 git 提交配置。用：单步循环的默认入口。不要用：需要状态机与预测验证时用 loop_decide；只评估上一轮用 loop_next。',
+    description: '一轮完整迭代：验证→建轮→写 config→门禁→提交拟合。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-000），其 config.yml 作为本轮基座' },
       proposal: proposalParam,
@@ -3602,7 +3623,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_evaluate',
-    description: '把 weight_best.root 数值化：每分布 chi2/ndf、max|pull|、>3σ/>5σ、泊松偏差与 top 偏差 bin、分波份额、勒让德矩，并出 PNG。用：判断拟合好坏、定位偏差区。不要用：看单个波的形状（用 root_view/wave_view）；把事实转成决策（用 diagnose）。',
+    description: '把 weight_best.root 数值化：chi2/ndf、max|pull|、份额、勒让德矩。',
     parameters: {
       rootPath: { type: 'string', required: true, description: 'weight_best.root 绝对路径' },
       outDir: { type: 'string', description: '评估输出目录（默认 root 同目录下的 evaluate/）' },
@@ -3874,7 +3895,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_diagnose',
-    description: '把 results/fit.json 转成可行动假设：退化解(Σ波强度/总强度≥3)、参数精确贴边、撞边界、份额<2σ、强干涉、参数简并、Hessian 不正定。用：拿到 NLL 后判断"能不能信、下一步动什么"。不要用：看分布形状（用 evaluate/root_view）。',
+    description: '把 fit.json 转成可行动假设（退化解/撞边界/份额<2σ/简并/Hessian）。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录（读其 results/fit.json）' },
       configPath: { type: 'string', description: 'config.yml 绝对路径（用于把共振态名映射到链/组，给出删除建议上下文）' },
@@ -3939,7 +3960,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_root_view',
-    description: '直接读 weight_best.root 直方图：list 列全部、read 取逐 bin。用：看某个共振态的波谱 h_<chain>-<int>-<res> 或角分布。不要用：整体拟合质量（用 evaluate）；任意分波组合（用 wave_view）。',
+    description: '读 weight_best.root 直方图：list 列全部、read 取逐 bin。',
     parameters: {
       rootPath: { type: 'string', required: true, description: 'weight_best.root 绝对路径' },
       mode: { type: 'string', required: true, enum: ['list', 'read'], description: 'list=列全部直方图；read=取指定直方图逐 bin 数据' },
@@ -4048,7 +4069,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_wave_view',
-    description: '画任意分波组合的拟合分布（与全波同归一化），可直接与数据谱对比。用：检验"缺哪个波/去掉某波后长什么样"。不要用：单波谱（用 root_view）；整体质量指标（用 evaluate）。',
+    description: '任意分波组合的拟合分布（与全波同归一化），可直接比数据。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录（须含 config.yml 与 results/fit.json、results/weight_best.root）' },
       waves: { type: 'array', required: true, items: { type: 'string' }, description: '要组合的波名（h_ 名去掉前缀，如 chain1-R_KK-phi1020），最多 6 个' },
@@ -4174,7 +4195,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_run_fit',
-    description: '提交拟合（本地/SLURM 自动探测）：先跑前门禁（errors 拒绝提交）→ 记录 provenance（md5/初值/runs/git commit）→ 作为本会话后台任务运行，完成自动唤醒。用：正式拟合一版配置。不要用：先并行试多个候选（用 try_candidates）；查已提交任务（用 fit_status）。',
+    description: '提交拟合：跑前门禁→记录 provenance→后台任务（完成自动唤醒）。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录绝对路径（须含 fit.py；配置默认取 <iterDir>/config.yml）' },
       configPath: { type: 'string', description: '要拟合的配置文件（默认 <iterDir>/config.yml）；变体实验可指向 <dir>/variant_xxx.yml —— 门禁一视同仁' },
@@ -4284,7 +4305,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_fit_status',
-    description: '查询后台拟合任务：running/done/failed + 日志尾部 + results/ 摘要（NLL/正定性）。用：收到完成通知后取结果。不要用：提交拟合（用 run_fit）；判断拟合好坏（用 evaluate/diagnose）。',
+    description: '查后台任务：running/done/failed + 日志尾 + results 摘要。',
     parameters: {
       jobId: { type: 'string', required: true, description: 'run_fit 返回的 jobId（ctpwa-N）' },
     },
@@ -4541,7 +4562,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_try_candidates',
-    description: '并行短拟合试探 2–5 个候选：各建 _trials 目录、各自跑前门禁与 provenance（--runs 1 --max-iter 500）。用：一轮里同时比较多个假设。不要用：正式单轮迭代（用 iterate）；裁决用 compare，不要自己拍 ΔNLL。',
+    description: '并行短拟合 2–5 个候选（各建 _trials、--runs 1 --max-iter 500）。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '基座迭代目录（其 config.yml 作为所有候选的公共起点）' },
       candidates: {
@@ -4769,7 +4790,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_compare',
-    description: '基座 vs trial 的 ΔNLL 显著性 + AIC/BIC 复杂度惩罚，给出晋级裁决。用：try_candidates 之后选最优。不要用：拿不同起点/不同 runs 的两次拟合比 ΔNLL（条件不可比）。',
+    description: 'ΔNLL 显著性 + AIC/BIC 惩罚 → 晋级裁决。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '基座迭代目录（参考 NLL 的来源）' },
       trialDirs: { type: 'array', required: true, items: { type: 'string' }, description: 'auto_pwa_try_candidates 返回的 trial 目录列表' },
@@ -5011,7 +5032,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_next',
-    description: '循环状态机：评估当前迭代（NLL/ΔNLL/max|pull|/chi2ndf/Hessian）→ 按目标判收敛，收敛则写 FINAL-REPORT.md，未收敛进入 propose。用：每轮开始时。不要用：落盘决策（用 loop_decide）；只想评估单轮（用 evaluate）。',
+    description: '循环状态机：评估→判收敛（收敛写 FINAL-REPORT）→进入 propose。',
     parameters: {
       iterationsRoot: { type: 'string', description: 'iterations/ 目录（省略时从 baseIterDir 推导）' },
       baseIterDir: { type: 'string', description: '起始基线迭代目录（仅首次/重启时必填；如 .../iterations/iter-004）' },
@@ -5193,7 +5214,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_status',
-    description: '只读循环状态：阶段/轮次预算/最近一次评估。用：重启或断线后续跑前恢复。不要用：评估新结果（用 loop_next）。',
+    description: '只读循环状态：阶段/轮次预算/最近一次评估。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
     },
@@ -5277,7 +5298,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_decide',
-    description: '把决策落盘：iterate（验证+建轮+写 config+门禁+提交拟合）/ rollback（标记失败并回退）/ converge（强制收敛出报告）；可带 hypothesis+prediction 供下轮自动验证。用：状态机主路径。不要用：只想跑一轮且不带状态机（用 iterate）。',
+    description: '落盘决策：iterate / rollback / converge。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
       action: { type: 'string', required: true, enum: ['iterate', 'rollback', 'converge'], description: '决策动作' },

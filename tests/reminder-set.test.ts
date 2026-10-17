@@ -40,10 +40,12 @@ describe('reminder-set（E3 档位）', () => {
     expect(buildReminders('R1').text).not.toContain('引擎 ctpwa@')
   })
 
-  it('漂移守卫：每条提醒的 skillRef 都能在 SKILL.md 里找到', () => {
-    const skill = readFileSync(new URL('../skills/auto-pwa-analysis/SKILL.md', import.meta.url), 'utf8')
+  it('漂移守卫：每条提醒的 skillRef 都能在某个 SKILL.md 里找到', () => {
+    // skill 已按需拆成 4 份（analysis/iter/pdg/jpc），所以守卫查**全部** skill 文件。
+    const dirs = ['auto-pwa-analysis', 'auto-pwa-iter', 'auto-pwa-pdg', 'auto-pwa-jpc']
+    const all = dirs.map((d) => readFileSync(new URL(`../skills/${d}/SKILL.md`, import.meta.url), 'utf8')).join('\n')
     for (const r of REMINDERS) {
-      expect(skill.includes(r.skillRef), `${r.id} → ${r.skillRef} 在 SKILL.md 里找不到（章节被改名/删除了？）`).toBe(true)
+      expect(all.includes(r.skillRef), `${r.id} → ${r.skillRef} 在任何 SKILL.md 里都找不到（章节被改名/删除了？）`).toBe(true)
     }
   })
 
