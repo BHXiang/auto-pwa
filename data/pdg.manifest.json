@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "pdgFile": "pdg.json",
+  "canonicalSha256": "e22125f513364b7149f1660af26bdc7bde4c12b1e4ed74618b6f4c3702ae1732",
+  "fileSha256": "02eb5c64e856cead89af15715dfd47bd45d4c75211ea8aa1bcf444febbef5671",
+  "generatedAt": "2026-10-17T07:19:45.632Z",
+  "source": "pdg-2026 official package (fetch_pdg.py)",
+  "counts": {
+    "total": 298,
+    "pdg": 294,
+    "seed": 4
+  }
+}

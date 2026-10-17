@@ -22,7 +22,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { defaultDb } from '../src/db.js'
+import { defaultDb, dbIntegrity } from '../src/db.js'
+import { conventionFor } from '../src/lineshape.js'
 import { inferAction, reminderInjection, reminderLevelFromEnv } from '../src/reminder-set.js'
 import { engineFingerprint } from '../src/git-log.js'
 import { cValueOf, getParticleInfo } from '../src/particle-info.js'
@@ -1042,6 +1043,8 @@ export function apply(ctx: Context) {
                 mass: { type: 'number', required: true },
                 width: { oneOf: [{ type: 'number' }, { type: 'null' }] },
                 status: { type: 'string' },
+                suggestedModel: { type: 'string' },
+                modelHint: { type: 'string' },
                 decayModes: { type: 'array', items: { type: 'string' } },
                 measurements: {
                   type: 'array',
@@ -1068,16 +1071,21 @@ export function apply(ctx: Context) {
           total: { type: 'integer', required: true },
         },
       },
-      render: (_args, value: { hits: { id: string; jp: JP; mass: number; width?: number; measurements?: { year?: number; publication?: string; value?: number; errorPositive?: number; statError?: number; systError?: number; usedInAverage?: boolean }[] }[]; total: number }) => {
+      render: (_args, value: { hits: { id: string; jp: JP; mass: number; width?: number; status?: string; suggestedModel?: string; modelHint?: string; measurements?: { year?: number; publication?: string; value?: number; errorPositive?: number; statError?: number; systError?: number; usedInAverage?: boolean }[] }[]; total: number }) => {
         if (value.hits.length === 0) return text('(无命中)')
         const lines = value.hits.map((h) => {
-          const base = `${h.id.padEnd(16)} J^P=${h.jp.j}${h.jp.p > 0 ? '+' : '-'}  m=${h.mass.toFixed(4)} GeV  Γ=${h.width?.toFixed(4) ?? '-'} GeV`
+          const conv = h.suggestedModel !== undefined ? `\n    惯例: ${h.suggestedModel}${h.modelHint !== undefined ? `（${h.modelHint}）` : ''}（仅提醒，不强制）` : ''
+          // 出处必须可见：`[PDG]` 才算官方数据，`[本地]` 是分析自定义/未收录
+          // （门禁只把 PDG 算作"有依据"，所以模型必须能一眼分辨）。
+          const tag = h.status === undefined || h.status === 'pdg' ? '[PDG] ' : '[本地]'
+          const base = `${tag}${h.id.padEnd(16)} J^P=${h.jp.j}${h.jp.p > 0 ? '+' : '-'}  m=${h.mass.toFixed(4)} GeV  Γ=${h.width?.toFixed(4) ?? '-'} GeV`
           const ms = (h.measurements ?? []).slice(0, 4).map((m) =>
             `      ${m.year ?? '?'} ${(m.publication ?? '?').slice(0, 28).padEnd(28)} m=${m.value?.toFixed(4) ?? '—'} GeV${m.errorPositive !== undefined ? ` ±${m.errorPositive.toFixed(4)}` : ''}${m.statError !== undefined ? ` (stat ${m.statError.toFixed(4)})` : ''}${m.systError !== undefined ? ` (syst ${m.systError.toFixed(4)})` : ''}${m.usedInAverage ? ' 入平均' : ''}`,
           )
-          return ms.length > 0 ? `${base}\n    单实验测量:\n${ms.join('\n')}` : base
+          return ms.length > 0 ? `${base}${conv}\n    单实验测量:\n${ms.join('\n')}` : `${base}${conv}`
         })
-        return text(`PDG 命中 ${value.total} 条:\n${lines.join('\n')}`)
+        const integrity = dbIntegrity.ok ? '' : `⚠ ${dbIntegrity.warning}\n`
+        return text(`${integrity}PDG 命中 ${value.total} 条（[本地] = 本地登记，非 PDG）:\n${lines.join('\n')}`)
       },
     },
     async execute(args: { name?: string; jp?: JP; massRange?: [number, number]; decayTo?: string[] }) {
@@ -1089,12 +1097,15 @@ export function apply(ctx: Context) {
       })
       return {
         total: hits.length,
-        hits: hits.map((h) => ({
+        hits: hits.map((h) => {
+          const conv = conventionFor(h.id, h.aliases)
+          return {
           id: h.id,
           jp: h.jp,
           mass: h.mass,
           width: h.width ?? null,
           status: h.status,
+          ...(conv !== undefined ? { suggestedModel: conv.model, modelHint: conv.why } : {}),
           decayModes: (h.decayModes ?? []).map((m) => m.daughters.join(' -> ')),
           measurements: (h.measurements ?? []).slice(0, 8).map((m) => {
             // Lossless-JSON: undefined values are rejected by the tool
@@ -1111,7 +1122,8 @@ export function apply(ctx: Context) {
             if (m.usedInAverage !== undefined) out.usedInAverage = m.usedInAverage
             return out
           }),
-        })),
+          }
+        }),
       }
     },
   }))
@@ -2073,6 +2085,10 @@ export function apply(ctx: Context) {
         : { ran: false, ok: false, error: args.configPath === undefined ? 'yamlText 模式无文件路径：deep 需要真实 configPath（include/相对路径要靠文件位置）' : '已关闭（deep=false）' }
       const errors = [...gate.errors]
       const warnings = [...gate.warnings]
+      if (!dbIntegrity.ok && dbIntegrity.warning !== undefined) {
+        // 信任锚漂移 → 跑前门禁关于"PDG 依据"的判定不可信，必须让调用方看到。
+        warnings.unshift({ code: 'pdg-integrity', message: dbIntegrity.warning, severity: 'warning' as const })
+      }
       if (deep.ran && !deep.ok) {
         errors.push({ code: 'ctpwa-config-invalid', message: `ctpwa 拒绝该配置: ${deep.message ?? deep.status ?? 'DecayInfo 校验失败'}`, severity: 'error' })
       } else if (!deep.ran && (args.deep === true || gate.resonancesExternal)) {
@@ -2254,6 +2270,10 @@ export function apply(ctx: Context) {
         massTolerance: args.massTolerance,
         decayTo: args.decayTo,
       })
+      if (!dbIntegrity.ok && dbIntegrity.warning !== undefined) {
+        // 信任锚漂移时，"PDG 依据"这条检查本身不可信 → 必须让调用方看到。
+        result.warnings.unshift({ code: 'pdg-integrity', message: dbIntegrity.warning })
+      }
       const kin = cfg.kinematics[args.proposal.chain]
       const out: {
         ok: boolean

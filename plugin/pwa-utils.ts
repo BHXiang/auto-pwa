@@ -215,7 +215,13 @@ export function snapshotOnce(path: string): string {
 // ---------------------------------------------------------------------------
 
 /** 命中 init_config.yml（basename 判定，任意目录）。 */
-export const INIT_CONFIG_RE = /(^|[\\/])init_config\.ya?ml$/i
+export /** 校验门的信任锚：PDG 表、其 manifest、线形约定表。只能由 sync/人工维护。 */
+const TRUST_ANCHOR_RE = /(?:^|[\\/])data[\\/](?:pdg\.json|pdg\.manifest\.json|lineshape-conventions\.json)$/i
+const GUARD_TRUST_REASON =
+  'data/pdg.json、data/pdg.manifest.json、data/lineshape-conventions.json 是校验门的信任锚，' +
+  '模型不允许直接改写（否则"PDG 依据"这条门禁会被自己的数据糊弄）。' +
+  'PDG 表用 `npm run check:pdg -- --write` 重新生成并提交评审；线形约定表由人工维护。'
+const INIT_CONFIG_RE = /(^|[\\/])init_config\.ya?ml$/i
 
 export const GUARD_WRITE_REASON =
   'init_config.yml 只能由 auto_pwa_init_config 生成（物理校验 → 渲染 → 原子写）；pwa-guard 拦下了直接写。' +
@@ -232,6 +238,7 @@ export function configWriteGuard(exec: ToolExecution): string | undefined {
   const args = (exec.arguments ?? {}) as Record<string, unknown>
   if ((exec.name === 'write' || exec.name === 'edit') && typeof args.file_path === 'string') {
     if (INIT_CONFIG_RE.test(args.file_path)) return GUARD_WRITE_REASON
+    if (TRUST_ANCHOR_RE.test(args.file_path)) return GUARD_TRUST_REASON
   }
   if (exec.name === 'bash' && typeof args.command === 'string') {
     const cmd = args.command
@@ -239,6 +246,9 @@ export function configWriteGuard(exec: ToolExecution): string | undefined {
     // `>`/`>>` redirection, `tee`, and in-place `sed -i`.
     if (/(?:>>?|tee)\s*[^;&|\n]{0,160}init_config\.ya?ml|sed\s+-i\s*[^;&|\n]{0,160}init_config\.ya?ml/i.test(cmd)) {
       return GUARD_BASH_REASON
+    }
+    if (/(?:>>?|tee|sed\s+-i\s*)[^;&|\n]{0,160}(?:pdg\.json|pdg\.manifest\.json|lineshape-conventions\.json)/i.test(cmd)) {
+      return GUARD_TRUST_REASON
     }
   }
   return undefined

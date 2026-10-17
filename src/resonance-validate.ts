@@ -33,6 +33,7 @@
  * Pure function; no I/O.
  */
 import { normalizeName } from './lookup.js'
+import { conventionFor, conventionHint } from './lineshape.js'
 import { hasDecayTo, allowedIntermediateJP } from './decay-check.js'
 import { analyzeIntermediateJPC } from './intermediate-jpc.js'
 import { explicitJp } from './jpc.js'
@@ -231,12 +232,26 @@ export function validateResonanceAddition(
 
   // --- PDG lookup (particle models only) -----------------------------------
   const pdgHits = isParticle ? db.resonances.filter((r) => normalizeName(r.id) === normalizeName(proposal.name) || r.aliases.some((a) => normalizeName(a) === normalizeName(proposal.name))) : []
-  const pdg = pdgHits[0]
+  // **只有 status === 'pdg' 才算"有 PDG 依据"**：`seed`/`local` 是本地登记
+  // （历史上 agent 往 PDG 表里加过 PDG 没有的态 → 门禁被自己的数据糊弄了）。
+  const pdg = pdgHits.find((r) => r.status === 'pdg')
+  const local = pdgHits.find((r) => r.status !== 'pdg')
   const hasReference = proposal.reference !== undefined && proposal.reference.trim() !== ''
 
   // --- 2. PDG backing ------------------------------------------------------
-  if (isParticle && !pdg) {
-    if (hasReference) {
+  if (isParticle && pdg === undefined) {
+    if (local !== undefined) {
+      // 本地登记（非 PDG）：**不阻塞**——分析自己的态可以存在，但"PDG 依据"这句话
+      // 不再成立，必须说清楚，并指向两个合法出口（cite / ONE）。
+      warnings.push(
+        warn(
+          'local-not-pdg',
+          `"${proposal.name}" 命中本地登记（status=${local.status}），**不在 PDG 表中**：` +
+            `这不阻塞拟合，但"PDG 依据"不再成立。请补 \`reference\`（发表出处），` +
+            `或对相空间项用 \`model: ONE\`。注意 PDG 事实由 data/pdg.json + manifest 校验和维护，不要手改。`,
+        ),
+      )
+    } else if (hasReference) {
       // Provenance overrides: a state whose parameters come from a recent
       // experiment may not be in the current PDG edition yet.
       warnings.push(
@@ -602,6 +617,22 @@ export function validateResonanceAddition(
           'overlapping-mass',
           `${proposal.name} (${proposal.parameters[0].toFixed(3)} GeV) overlaps within ${overlapWindow.toFixed(3)} GeV ` +
             `of existing ${near.join(', ')} — ambiguous separation likely`,
+        ),
+      )
+    }
+  }
+
+  // --- 线形惯例（**只提醒、不强制**）-----------------------------------------
+  // 用户明确要求：同一个态在不同过程形状里可以有不同线形选择，所以这里只给
+  // "常见做法 + 理由"，永远不报错、不阻断。证据见 data/lineshape-usage-stats.json。
+  const conventionEntry = pdg ?? local
+  if (isParticle && conventionEntry !== undefined) {
+    const conv = conventionFor(conventionEntry.id, conventionEntry.aliases)
+    if (conv !== undefined && conv.model !== proposal.model) {
+      warnings.push(
+        warn(
+          'model-deviates-from-convention',
+          `"${proposal.name}" 的惯例线形是 ${conv.model}，当前选择 ${proposal.model}。${conventionHint(conv)}`,
         ),
       )
     }

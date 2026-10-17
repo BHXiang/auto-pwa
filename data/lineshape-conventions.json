@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.0.0",
+  "note": "线形模型的**惯例**，只作提醒、绝不强制：不同过程（阈值位置、附近耦合道、拟合稳定性）可以有不同选择。命中方式：按 PDG id 的**电荷无关前缀**匹配（如 rho(770) 命中 rho(770)+/-/0），或与别名规范化后相等。",
+  "generatedFrom": "PDG 表 + 分波惯例；证据见 data/lineshape-usage-stats.json（各分析实际用法）",
+  "conventions": [
+    {
+      "id": "f(0)(980)",
+      "aliases": ["f0_980", "f0(980)"],
+      "model": "Flatte",
+      "why": "K K̄ 阈值正下方，耦合道效应主导，Breit-Wigner 描述不了阈值行为",
+      "needs": ["channels"]
+    },
+    {
+      "id": "a(0)(980)",
+      "aliases": ["a0_980", "a0(980)"],
+      "model": "Flatte",
+      "why": "同 f0(980)：K K̄ 阈值效应主导",
+      "needs": ["channels"]
+    },
+    {
+      "id": "rho(770)",
+      "aliases": ["rho_770", "rho(770)"],
+      "model": "GS",
+      "why": "宽矢量介子；Gounaris-Sakurai 是 ρ 的经典线形（保峰位/宽度与幺正性）",
+      "needs": []
+    },
+    {
+      "id": "K(1)(1270)",
+      "aliases": ["K1_1270"],
+      "model": "BWR",
+      "why": "相对常规的共振，BWR 足以描述（若与阈值道强烈耦合则考虑 Flatte）",
+      "needs": []
+    },
+    {
+      "id": "f(2)(1270)",
+      "aliases": ["f2_1270"],
+      "model": "BWR",
+      "why": "较窄的 2++ 态，BWR/BW 是常规起点",
+      "needs": []
+    },
+    {
+      "id": "f(0)(1500)",
+      "aliases": ["f0_1500"],
+      "model": "BWR",
+      "why": "各分析用法不一（BWR/BW/GS 都有）；BWR 作为默认起点，按需替换",
+      "needs": []
+    }
+  ]
+}

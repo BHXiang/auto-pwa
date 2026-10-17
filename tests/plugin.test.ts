@@ -7,6 +7,7 @@ import { apply, __resetActiveAnalysisRoot } from '../plugin/auto-pwa.js'
 import { apply as applyGuard } from '../plugin/pwa-guard.js'
 import { parseConfig } from '../src/config-edit.js'
 import { IterationLog } from '../src/iteration-log.js'
+import { dbIntegrity } from '../src/db.js'
 import { defaultFitRunnerConfig } from '../src/fit-runner.js'
 import type { FitOwner } from '../plugin/pwa-fit.js'
 
@@ -533,6 +534,67 @@ Resonances:
     }
   })
 
+  it('PDG 表完整性：内容与 manifest 一致（手改 pdg.json 会让这条测试红）', () => {
+    // data/pdg.json 是校验门的信任锚；改了内容却忘了 `npm run check:pdg -- --write`
+    // 会让"PDG 依据"判定不可信——所以这里直接钉住。
+    expect(dbIntegrity.ok).toBe(true)
+    expect(dbIntegrity.expected).toBe(dbIntegrity.actual)
+  })
+
+  it('本地登记（非 PDG）的态：给 local-not-pdg warning，而不是 not-on-pdg error', async () => {
+    await withConfig(async (configPath) => {
+      const out = (await execute('auto_pwa_validate_add', {
+        configPath,
+        proposal: {
+          name: 'K1_2100',
+          chain: 'R_KK',
+          jpGroup: { j: 1, p: -1 },
+          model: 'BWR',
+          parameters: [2.1, 0.3],
+        },
+      } as never)) as { errors: { code: string }[]; warnings: { code: string }[] }
+      // 关键：名字在表里（seed）≠ 有 PDG 依据 —— 不能再报 not-on-pdg，也不能静默通过
+      expect(out.errors.map((e) => e.code)).not.toContain('not-on-pdg')
+      expect(out.warnings.map((w) => w.code)).toContain('local-not-pdg')
+    })
+  })
+
+  it('auto_pwa_lookup 的渲染标注 [PDG] / [本地] 出处', async () => {
+    const h = harnessCtx()
+    const def = h.definitions.find((d) => d.name === 'auto_pwa_lookup') as unknown as {
+      execute: (a: unknown, e: unknown) => Promise<unknown>
+      output?: { render?: (a: unknown, v: unknown) => unknown }
+    }
+    const pdgHit = await def.execute({ name: 'f2_1270' }, {})
+    const localHit = await def.execute({ name: 'K1_2100' }, {})
+    const rt = JSON.stringify(def.output?.render?.({ name: 'x' }, pdgHit) ?? '')
+    const rl = JSON.stringify(def.output?.render?.({ name: 'x' }, localHit) ?? '')
+    expect(rt).toContain('[PDG]')
+    expect(rl).toContain('[本地]')
+  })
+
+  it('线形惯例只提醒：偏离给 warning、不产生 error', async () => {
+    await withConfig(async (configPath) => {
+      const out = (await execute('auto_pwa_validate_add', {
+        configPath,
+        proposal: { name: 'f0_980', chain: 'R_KK', jpGroup: { j: 0, p: 1 }, model: 'BWR', parameters: [0.98, 0.07] },
+      } as never)) as { errors: { code: string }[]; warnings: { code: string }[] }
+      expect(out.warnings.map((w) => w.code)).toContain('model-deviates-from-convention')
+      // 关键：**永不因此报错**（用户明确要求"只提醒、不强制"）
+      expect(out.errors.map((e) => e.code)).not.toContain('model-deviates-from-convention')
+    })
+  })
+
+  it('auto_pwa_lookup 给出 suggestedModel（f0(980) → Flatte）', async () => {
+    const h = harnessCtx()
+    const def = h.definitions.find((d) => d.name === 'auto_pwa_lookup') as unknown as {
+      execute: (a: unknown, e: unknown) => Promise<{ hits: { id: string; suggestedModel?: string; modelHint?: string }[] }>
+    }
+    const out = await def.execute({ name: 'f0_980' }, {})
+    expect(out.hits[0]!.suggestedModel).toBe('Flatte')
+    expect(out.hits[0]!.modelHint).toContain('阈值')
+  })
+
   it('auto_pwa_validate_add runs rules 10-12 against the real PDG table', async () => {
     await withConfig(async (configPath) => {
       const out = (await execute('auto_pwa_validate_add', {
@@ -773,6 +835,13 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
     expect(h.guards[0]!({ name: 'write', arguments: { file_path: '/pwa/config.yml' } })).toBeUndefined()
     expect(h.guards[0]!({ name: 'write', arguments: { file_path: '/pwa/note.md' } })).toBeUndefined()
     expect(h.guards[0]!({ name: 'write', arguments: { file_path: '/pwa/init_config.yml' } })).toMatch(/auto_pwa_init_config/)
+    // 校验门的信任锚不允许模型改写（否则"PDG 依据"会被自己的数据糊弄）
+    for (const f of ['/pwa/data/pdg.json', '/pwa/data/pdg.manifest.json', '/pwa/data/lineshape-conventions.json']) {
+      expect(h.guards[0]!({ name: 'write', arguments: { file_path: f } })).toMatch(/信任锚/)
+      expect(h.guards[0]!({ name: 'edit', arguments: { file_path: f } })).toMatch(/信任锚/)
+    }
+    expect(h.guards[0]!({ name: 'bash', arguments: { command: 'echo "{}" > data/pdg.json' } })).toMatch(/信任锚/)
+    expect(h.guards[0]!({ name: 'bash', arguments: { command: 'sed -i "s/x/y/" data/lineshape-conventions.json' } })).toMatch(/信任锚/)
   })
 
   it('auto_pwa_run_fit runs the pre-fit gate first and refuses a missing config', async () => {
