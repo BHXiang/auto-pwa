@@ -20,6 +20,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { PwaConfig } from './types.js'
 import { md5, type GateResult, type GateStats } from './config-gate.js'
+import { dbIntegrity, defaultDb } from './db.js'
+import pdgManifestJson from '../data/pdg.manifest.json' with { type: 'json' }
 import { engineFingerprint } from './git-log.js'
 import type { GitProvenance } from './git-log.js'
 
@@ -53,6 +55,8 @@ export interface ProvenanceInit {
   note?: string
 }
 
+const pdgManifest = pdgManifestJson as { generatedAt?: string }
+
 export interface Provenance {
   schemaVersion: number
   tool: string
@@ -68,6 +72,11 @@ export interface Provenance {
    * 只能靠复拟合才发现"NLL 不可比"。缺省 = 拿不到指纹（不编造）。
    */
   engine?: string
+  /**
+   * PDG 表指纹：这次拟合的门禁判定基于哪一版 PDG 事实（可复现前提）。
+   * 与 `engine` 同理——换了 PDG 版本，"质量/J^P 是否与 PDG 一致"的结论可能变。
+   */
+  pdg?: { canonicalSha256: string; generatedAt?: string; entries: number; integrity: boolean }
   resonancesInclude?: ProvenanceInclude
   fitScript?: string
   fitScriptMd5?: string
@@ -181,6 +190,12 @@ export function buildProvenance(options: BuildProvenanceOptions): Provenance {
     configPath: options.configPath,
     configMd5: gate.configMd5,
     ...(engineFingerprint() !== undefined ? { engine: engineFingerprint() } : {}),
+    pdg: {
+      canonicalSha256: dbIntegrity.actual,
+      ...(pdgManifest.generatedAt !== undefined ? { generatedAt: pdgManifest.generatedAt } : {}),
+      entries: defaultDb.resonances.filter((r) => r.status === 'pdg').length,
+      integrity: dbIntegrity.ok,
+    },
     ...(include !== undefined ? { resonancesInclude: include } : {}),
     ...(options.fitScript !== undefined ? { fitScript: options.fitScript } : {}),
     ...(fitScriptMd5 !== undefined ? { fitScriptMd5 } : {}),

@@ -25,6 +25,9 @@ from pdg import PdgApi
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE.parent / "data" / "pdg.json"
+OUT_NEXT = HERE.parent / "data" / "pdg.json.next"
+QUERY = HERE.parent / "data" / "pdg-query-names.json"
+LOCAL = HERE.parent / "data" / "local-states.json"
 
 DB = Path(pdg.__file__).resolve().parent / "pdg.sqlite"
 
@@ -323,7 +326,8 @@ def extract_measurements(particle, max_n: int = 6) -> list[dict]:
 def main() -> int:
     db_url = f"sqlite:///{DB}"
     api = PdgApi(db_url)
-    seed = json.loads(OUT.read_text())["resonances"]
+    # **输入 = 查询名单**（不再从输出文件里读种子：那会让手改的内容自动"转正"）
+    seed = json.loads(QUERY.read_text())["resonances"]
 
     # Merge the baryon sector (idempotent): the curated table is meson-only, so
     # without this every N*/Delta* proposal is rejected as 'not-on-pdg'.
@@ -388,16 +392,30 @@ def main() -> int:
         e["status"] = "pdg"
         n_hit += 1
 
+    # pdg.json 只放**官方命中**：未命中的名字要么是拼写问题，要么确实不在 PDG
+    # （后者应登记到 data/local-states.json，而不是混进这张"官方事实"表）。
+    kept = [e for e in seed if e.get("status") == "pdg"]
+    dropped = [e.get("id") for e in seed if e.get("status") != "pdg"]
     out = {
-        "schemaVersion": "0.5.0",
-        "source": "pdg-2026 official package (fetch_pdg.py)",
-        "resonances": seed,
+        "schemaVersion": "0.6.0",
+        "source": "pdg-2026 official package (fetch_pdg.py; pure PDG)",
+        "resonances": kept,
         "particles": extract_particles(api),
     }
-    OUT.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
-    print(f"[fetch_pdg] {len(seed)} entries: {n_hit} updated with PDG-2026 "
-          f"(+errors), {n_miss} kept as seed; "
-          f"particles table: {len(out['particles'])} mcids -> {OUT}")
+    OUT_NEXT.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
+    print(f"[fetch_pdg] {len(kept)} PDG entries prepared ({n_hit} enriched); "
+          f"particles table: {len(out['particles'])} mcids -> {OUT_NEXT}")
+    if dropped:
+        print(f"[fetch_pdg] {len(dropped)} names did NOT match PDG: {', '.join(sorted(dropped))}")
+        # **绝不静默丢数据**：同步必须由人确认。设 ALLOW_PDG_DROP=1 才允许丢。
+        if os.environ.get("ALLOW_PDG_DROP") != "1":
+            print("[fetch_pdg] ❌ 中止同步：现有 pdg.json 未被覆盖。"
+                  "请检查名字转换（tex→PDG 拼写），确需丢弃请设 ALLOW_PDG_DROP=1。")
+            try:
+                OUT_NEXT.unlink()
+            except FileNotFoundError:
+                pass
+            return 2
     return 0
 
 

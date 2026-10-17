@@ -573,6 +573,50 @@ Resonances:
     expect(rl).toContain('[本地]')
   })
 
+  it('P1：pdg.json 里没有非 PDG 条目（本地态一律在 data/local-states.json）', async () => {
+    const { readFileSync } = await import('node:fs')
+    const url = new URL('../data/pdg.json', import.meta.url)
+    const db = JSON.parse(readFileSync(url, 'utf8')) as { resonances: { id: string; status: string }[] }
+    const nonPdg = db.resonances.filter((r) => r.status !== 'pdg').map((r) => r.id)
+    expect(nonPdg).toEqual([])
+  })
+
+  it('P1：<analysis>/local-states.json 让"本分析自己的态"通过（只 warning）', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'pwa-localstates-'))
+    try {
+      // 一个 PDG 里完全不存在的名字，只在本分析的本地登记表里
+      writeFileSync(
+        join(root, 'local-states.json'),
+        JSON.stringify({
+          schemaVersion: '1.0.0',
+          states: [{ id: 'Z(9999)', aliases: ['Z9999'], jp: { j: 1, p: -1 }, mass: 9.999, width: 0.1, reason: '测试用本地态' }],
+        }),
+      )
+      mkdirSync(join(root, 'iterations'), { recursive: true })
+      const configPath = join(root, 'config.yml')
+      writeFileSync(configPath, GATE_CONFIG)
+      const ok = (await execute('auto_pwa_validate_add', {
+        configPath,
+        proposal: { name: 'Z9999', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [9.999, 0.1] },
+      } as never)) as { errors: { code: string }[]; warnings: { code: string }[] }
+      expect(ok.warnings.map((w) => w.code)).toContain('local-not-pdg')
+      expect(ok.errors.map((e) => e.code)).not.toContain('not-on-pdg')
+
+      // 换个目录（没有本地登记）→ 同样的名字必须被拒绝
+      const other = mkdtempSync(join(tmpdir(), 'pwa-nolocal-'))
+      const otherConfig = join(other, 'config.yml')
+      writeFileSync(otherConfig, GATE_CONFIG)
+      const bad = (await execute('auto_pwa_validate_add', {
+        configPath: otherConfig,
+        proposal: { name: 'Z9999', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [9.999, 0.1] },
+      } as never)) as { errors: { code: string }[] }
+      expect(bad.errors.map((e) => e.code)).toContain('not-on-pdg')
+      rmSync(other, { recursive: true, force: true })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('线形惯例只提醒：偏离给 warning、不产生 error', async () => {
     await withConfig(async (configPath) => {
       const out = (await execute('auto_pwa_validate_add', {

@@ -109,8 +109,16 @@ export interface ResonanceEntry {
   massError?: number
   /** PDG width uncertainty, GeV. */
   widthError?: number
-  /** "seed": hand-curated approximation; "pdg": authoritative fetch. */
-  status: 'seed' | 'pdg'
+  /**
+   * `pdg` = 官方抓取（唯一参与"PDG 依据"判定）；
+   * `local` = 本地登记（data/local-states.json 或 <analysis>/local-states.json）；
+   * `seed` = 历史遗留（P1 之后不应再出现）。
+   */
+  status: 'seed' | 'pdg' | 'local'
+  /** 本地登记专用的理由（为什么需要这个非 PDG 态）。 */
+  reason?: string
+  /** 出处（DOI/引用）；本地登记也可以写。 */
+  reference?: string
   tex?: string
   decayModes?: DecayMode[]
   /** Individual mass measurements (newest first; from the pdg-2026 package). */

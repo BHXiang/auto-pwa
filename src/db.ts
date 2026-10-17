@@ -8,12 +8,28 @@
  * 内容与 manifest 不符时，lookup / validate 都显式提示"表格未验证"。
  */
 import { createHash } from 'node:crypto'
-import type { ResonanceDb } from './types.js'
+import type { ResonanceDb, ResonanceEntry } from './types.js'
 import raw from '../data/pdg.json' with { type: 'json' }
+import localRaw from '../data/local-states.json' with { type: 'json' }
 import manifest from '../data/pdg.manifest.json' with { type: 'json' }
 
-/** The shipped resonance table. */
-export const defaultDb: ResonanceDb = raw as unknown as ResonanceDb
+/** PDG 官方表（**不含**本地登记；这是 manifest 校验的对象）。 */
+const pdgDb = raw as unknown as ResonanceDb
+
+/**
+ * 本地登记表（跨分析共享的策展表）：**不参与"PDG 依据"判定**。
+ * 每分析还可以用 `<analysis>/local-states.json` 追加（见 local-states.ts）。
+ */
+export const localStates: ResonanceEntry[] = ((localRaw as unknown as { states?: ResonanceEntry[] }).states ?? []).map((s) => ({
+  ...s,
+  status: 'local' as const,
+}))
+
+/** The shipped resonance table = PDG ∪ 本地登记。 */
+export const defaultDb: ResonanceDb = {
+  ...pdgDb,
+  resonances: [...pdgDb.resonances, ...localStates],
+}
 
 /** 规范化哈希：对解析后的对象做 JSON.stringify 再 sha256（与格式化无关）。 */
 export function canonicalHash(value: unknown): string {
@@ -31,7 +47,7 @@ export interface DbIntegrity {
 }
 
 export const dbIntegrity: DbIntegrity = (() => {
-  const actual = canonicalHash(defaultDb)
+  const actual = canonicalHash(pdgDb)
   const expected = (manifest as { canonicalSha256?: string }).canonicalSha256
   if (expected === undefined) {
     return {

@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "1.0.0",
+  "note": "本地登记的共振态：PDG 表中没有、但分析需要命名使用的态。**不参与“PDG 依据”判定**——门禁对它们只给 warning。每个分析也可以放 <analysis>/local-states.json 追加自己的。",
+  "states": [
+    {
+      "id": "f0(1770)",
+      "aliases": [
+        "f0_1770"
+      ],
+      "jp": {
+        "j": 0,
+        "p": 1
+      },
+      "mass": 1.77,
+      "width": 0.2,
+      "tex": "f_{0}(1770)",
+      "decayModes": [
+        {
+          "daughters": [
+            "Ks",
+            "Ks"
+          ],
+          "partial": true
+        }
+      ],
+      "reason": "PDG-2026 未收录为独立条目；分析用它做 0++ 的补充项（质量/宽度为近似值）",
+      "reference": ""
+    },
+    {
+      "id": "rho(1900)",
+      "aliases": [
+        "rho1900"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 1.909,
+      "width": 0.335,
+      "tex": "\\rho(1900)",
+      "decayModes": [
+        {
+          "daughters": [
+            "pi+",
+            "pi-"
+          ],
+          "partial": true
+        }
+      ],
+      "reason": "PDG 表中无该质量点的独立条目；保留供 ρ 家族试探（尚未在任何 config 中使用）",
+      "reference": ""
+    },
+    {
+      "id": "K*(2100)",
+      "aliases": [
+        "K1_2100"
+      ],
+      "jp": {
+        "j": 1,
+        "p": -1
+      },
+      "mass": 2.1,
+      "width": 0.3,
+      "tex": "K^{*}(2100)",
+      "reason": "PDG 表未收录；分析用它做 1⁻ K* 试探（21 个 config 使用，别名 K1_2100）",
+      "reference": ""
+    },
+    {
+      "id": "K2(2250)",
+      "aliases": [
+        "K2_2250"
+      ],
+      "jp": {
+        "j": 2,
+        "p": -1
+      },
+      "mass": 2.249,
+      "width": 0.2,
+      "tex": "K_{2}(2250)",
+      "reason": "PDG 表未收录；分析用它做 2⁻ K2 试探（别名 K2_2250）",
+      "reference": ""
+    }
+  ]
+}

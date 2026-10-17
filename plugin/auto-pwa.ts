@@ -24,6 +24,7 @@ import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { defaultDb, dbIntegrity } from '../src/db.js'
 import { conventionFor } from '../src/lineshape.js'
+import { dbWithLocal } from '../src/local-states.js'
 import { inferAction, reminderInjection, reminderLevelFromEnv } from '../src/reminder-set.js'
 import { engineFingerprint } from '../src/git-log.js'
 import { cValueOf, getParticleInfo } from '../src/particle-info.js'
@@ -1088,8 +1089,11 @@ export function apply(ctx: Context) {
         return text(`${integrity}PDG 命中 ${value.total} 条（[本地] = 本地登记，非 PDG）:\n${lines.join('\n')}`)
       },
     },
-    async execute(args: { name?: string; jp?: JP; massRange?: [number, number]; decayTo?: string[] }) {
-      const hits = lookupResonance(defaultDb, {
+    async execute(args: { name?: string; jp?: JP; massRange?: [number, number]; decayTo?: string[] }, exec?: { agent?: { id?: string; sessionId?: string } }) {
+      // 本地登记：优先用本 agent 触达过的分析目录（<analysis>/local-states.json）
+      const agentId = exec?.agent?.id ?? exec?.agent?.sessionId
+      const db = dbWithLocal(defaultDb, resolveDigestRoot(agentId))
+      const hits = lookupResonance(db, {
         name: args.name,
         jp: args.jp,
         massRange: args.massRange,
@@ -2266,7 +2270,9 @@ export function apply(ctx: Context) {
     },
     async execute(args: { configPath: string; proposal: ResonanceProposal; massTolerance?: number; decayTo?: string[] }) {
       const cfg = parseConfig(readFileSync(args.configPath, 'utf8'))
-      const result = validateResonanceAddition(defaultDb, cfg, args.proposal, {
+      // 本分析的本地登记（<analysis>/local-states.json）也参与查找，但语义仍是
+      // "本地、非 PDG"（只出 warning，不满足 PDG 依据）。
+      const result = validateResonanceAddition(dbWithLocal(defaultDb, analysisRootOf(args.configPath)), cfg, args.proposal, {
         massTolerance: args.massTolerance,
         decayTo: args.decayTo,
       })
