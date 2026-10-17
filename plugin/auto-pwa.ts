@@ -3147,7 +3147,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_history',
-    description: '读迭代日记（每轮决策/NLL/ΔNLL/预测验证/结论/下一步/token），支持按键检索（needle/iter/kind/status）并给出代码折叠出的当前状态。用：新一轮决策前恢复上下文、问"这个态试过吗/当前基线是哪轮"。不要用：看配置文本差异（用 git_log）；看拟合细节（用 diagnose/evaluate）。',
+    description: '读迭代日记（每轮决策/NLL/ΔNLL/预测验证/结论/下一步/token），支持按键检索（needle/iter/kind/status）与 as-of 快照（asOf）并给出代码折叠出的当前状态。用：新一轮决策前恢复上下文、问"这个态试过吗/当前基线是哪轮"。不要用：看配置文本差异（用 git_log）；看拟合细节（用 diagnose/evaluate）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
       needle: { type: 'string', description: '按键检索：只保留标题/结论/下一步/变更里含该文本的记录（如共振态名 X1750）' },
@@ -3155,6 +3155,7 @@ export function apply(ctx: Context) {
       kind: { type: 'string', description: '只取该决策类型（added/removed/float/converged/other）' },
       status: { type: 'string', enum: ['all', 'rejected', 'verified', 'pending'] as const, description: 'rejected=被回退/否决的轮次；verified=带验证结果；pending=有预测但未验证' },
       limit: { type: 'integer', description: '只返回最近 N 条（默认全部）' },
+      asOf: { type: 'integer', description: 'as-of 快照：只看 iter-N 及其之前的记录，并**按该前缀折叠当前状态**（回答“截至 iter-N 时基线是哪轮/现状如何”用；否则要逐轮 iter=0..N 遍历）' },
     },
     output: {
       schema: {
@@ -3237,7 +3238,7 @@ export function apply(ctx: Context) {
           },
         },
       },
-      render: (_args, value: {
+      render: (args, value: {
         records: {
           iter: number
           title: string
@@ -3267,7 +3268,11 @@ export function apply(ctx: Context) {
         }
       }) => {
         const pad = (n: number): string => String(n).padStart(3, '0')
-        const head: string[] = [`迭代历史（${value.records.length}/${value.total} 轮，下一轮 iter-${pad(value.nextIter)}）`]
+        const asOf = (args as { asOf?: number }).asOf
+        const head: string[] = [
+          `迭代历史（${value.records.length}/${value.total} 轮，下一轮 iter-${pad(value.nextIter)}）` +
+            (asOf !== undefined ? ` 〔as-of：只看到 iter-${pad(asOf)} 为止〕` : ''),
+        ]
         const s = value.state
         const base = s.baseIter === undefined ? '未知' : `iter-${pad(s.baseIter)}`
         const disagree = s.naiveAgrees ? '' : ` ⚠️ 最后一条记录是 iter-${pad(s.naiveMaxIter ?? -1)}，"取最新一轮"会答错`
@@ -3300,10 +3305,13 @@ export function apply(ctx: Context) {
         return text([...head, ...lines].join('\n'))
       },
     },
-    async execute(args: { iterationsRoot: string; needle?: string; iter?: number; kind?: string; status?: string; limit?: number }) {
+    async execute(args: { iterationsRoot: string; needle?: string; iter?: number; kind?: string; status?: string; limit?: number; asOf?: number }) {
       noteAnalysisRoot(args.iterationsRoot)
       const log = new IterationLog({ rootDir: args.iterationsRoot })
       const all = log.readAll()
+      // **as-of 快照**：只保留 iter-N 及其之前的记录，折叠/否决/NLL 最低等全部基于该前缀。
+      // 这样"截至 iter-N 的状态"一次调用就能答（此前 agent 只能逐轮 iter=0..N 遍历）。
+      const view = args.asOf !== undefined ? all.filter((r) => r.iter <= args.asOf!) : all
       // "被否决"的文本信号**只看 title**：title 描述本轮结果，而 conclusion 常在叙述
       // **别的**轮次（实测：iter-009 的结论在讲"iter-010 已证伪 → 回退"），用它会把
       // 好轮次误标成被否。
@@ -3322,7 +3330,7 @@ export function apply(ctx: Context) {
         }
       }
       const needle = args.needle?.trim()
-      let kept = all.filter((r) => {
+      let kept = view.filter((r) => {
         if (args.iter !== undefined && r.iter !== args.iter) return false
         if (args.kind !== undefined && r.kind !== args.kind) return false
         if (!matchesStatus(r)) return false
@@ -3334,12 +3342,12 @@ export function apply(ctx: Context) {
       })
       if (args.limit !== undefined && args.limit > 0) kept = kept.slice(-args.limit)
 
-      const fold = modelBaselineFold(all)
-      const naive = naiveAnswers(all)
-      const bestNllIter = all.reduce<number | undefined>((best, r) => {
+      const fold = modelBaselineFold(view)
+      const naive = naiveAnswers(view)
+      const bestNllIter = view.reduce<number | undefined>((best, r) => {
         if (typeof r.nll !== 'number') return best
         if (best === undefined) return r.iter
-        const bestRec = all.find((x) => x.iter === best)
+        const bestRec = view.find((x) => x.iter === best)
         return typeof bestRec?.nll === 'number' && bestRec.nll <= r.nll ? best : r.iter
       }, undefined)
 
@@ -3389,7 +3397,7 @@ export function apply(ctx: Context) {
         if (r.tokens !== undefined) out.tokens = r.tokens
         return out
       })
-      const rejected = all
+      const rejected = view
         .filter(isRejected)
         .slice(-8)
         .map((r) => ({
@@ -3399,9 +3407,9 @@ export function apply(ctx: Context) {
         }))
       return {
         records,
-        nextIter: log.nextIter(),
+        nextIter: args.asOf !== undefined ? args.asOf + 1 : log.nextIter(),
         iterDirs: listIterations(args.iterationsRoot),
-        total: all.length,
+        total: view.length,
         state: {
           ...(fold.baseIter !== null ? { baseIter: fold.baseIter } : {}),
           ...(fold.rule !== undefined ? { rule: fold.rule } : {}),

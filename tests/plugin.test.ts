@@ -988,6 +988,51 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
     expect((out as { summary: { bestNll?: number } }).summary.bestNll).toBeUndefined()
   })
 
+  it('auto_pwa_history：asOf 给出「截至 iter-N」的前缀折叠（替代逐轮遍历）', async () => {
+    const h = harnessCtx()
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-asof-'))
+    try {
+      const iterations = join(root, 'iterations')
+      for (const n of [1, 2, 3, 4]) mkdirSync(join(iterations, `iter-00${n}`), { recursive: true })
+      const diary = [
+        { iter: 1, kind: 'other', title: '基线仍为 iter-001', nll: -100, conclusion: '基线仍为 iter-001' },
+        { iter: 2, kind: 'added', title: '加 X2200', nll: -110, deltaNll: -10, changes: ['R_ppbar [0-] += X2200'] },
+        { iter: 3, kind: 'removed', title: 'X2200 被拒 → 回滚到 iter-001', nll: -95, deltaNll: 15 },
+        { iter: 4, kind: 'added', title: '加 K1_1410', nll: -130, deltaNll: -20, conclusion: '最终模型定为 iter-004' },
+      ]
+      writeFileSync(join(iterations, 'SUMMARY.jsonl'), diary.map((r) => JSON.stringify(r)).join('\n') + '\n')
+
+      const asOf2 = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations, asOf: 2 }, {})) as {
+        records: { iter: number }[]
+        total: number
+        nextIter: number
+        state: { baseIter?: number }
+      }
+      // 前缀过滤 + 前缀折叠：截至 iter-2，基线仍是 iter-001（不是后面的 iter-004）
+      expect(asOf2.records.map((r) => r.iter)).toEqual([1, 2])
+      expect(asOf2.total).toBe(2)
+      expect(asOf2.nextIter).toBe(3)
+      expect(asOf2.state.baseIter).toBe(1)
+
+      const asOf4 = (await run(h, 'auto_pwa_history', { iterationsRoot: iterations, asOf: 4 }, {})) as {
+        records: { iter: number }[]
+        state: { baseIter?: number }
+      }
+      expect(asOf4.records.map((r) => r.iter)).toEqual([1, 2, 3, 4])
+      expect(asOf4.state.baseIter).toBe(4)
+
+      // 渲染出来的头部要明确标注 as-of，避免把快照误读成"当前状态"
+      const def = h.definitions.find((d) => d.name === 'auto_pwa_history') as unknown as {
+        output?: { render?: (a: unknown, v: unknown) => unknown }
+      }
+      const rendered = JSON.stringify(def.output?.render?.({ iterationsRoot: iterations, asOf: 2 }, asOf2) ?? '')
+      expect(rendered).toContain('as-of')
+      expect(rendered).toContain('iter-002')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('auto_pwa_history：按键检索 + 补回被丢弃的字段 + fold 出的当前状态', async () => {
     const h = harnessCtx()
     const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-hist-'))
