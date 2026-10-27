@@ -76,6 +76,7 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 | `auto_pwa_wave_view` | **任意分波组合分布**（干涉视力）：writeResult(waves) 画选中波组合的拟合分布（与全波同归一化直接对比）；`eventWeights` 时才用逐事件 TTree（大文件，慎用）并输出选中波对干涉分布 | 决策·视力 |
 | `auto_pwa_compare` | 基座 vs 候选 trial 的 ΔNLL 显著性裁决 + **AIC/BIC 复杂度惩罚**（ΔAIC=2Δk+2ΔNLL，ΔBIC 需数据事件数），推荐晋级者 | 决策·裁决 |
 | `auto_pwa_validate_add` | "添加共振态"只读门禁（PDG 依据、JPC、阈值、衰变顶点 J^P、C 守恒、全同选择定则、重复、free 结构） | 执行·门禁 |
+| `auto_pwa_trans_suggest` | **trans 关系计算**：任意链的 `steps` + 每个态的 `I/I3/C` → 同位旋 CG 比值、C 逐顶点检查、可直接粘贴的 `Constraints.trans` 条目（通用，不绑定反应道） | 执行·工具 |
 | `auto_pwa_init_config` | **从 0 创建 config**（结构化提案 → 渲染 → 与 edit 同源的门禁 → 原子写 `init_config.yml` + reviewSummary 交人工复核；`preview` 只构建不写） | 执行·起草 |
 | `auto_pwa_edit_config` | config.yml 编辑**快车道**（也可直接编辑任意 yml，跑前门禁兜底）：校验 → 结构化修改 → **写前总闸（全文 validateConfig + 交叉引用）** → 原子写（+ .bak）；支持 `options` 逃生舱（Interp/Custom/GS 等特殊公式原样透传 ctpwa） | 执行 |
 | `auto_pwa_round` | 一轮迭代：评估上一轮（NLL/ΔNLL/最差 pull/收敛提示）+ 迭代 + **跑前门禁**，一次调用完成 | 执行 |
@@ -263,7 +264,7 @@ pull     = residual / sqrt(fit + bkg)  # Pearson；chi2 = Σ residual²/(fit+bkg
 
 ## 设计文档
 
-- [工具真值表](docs/tool-truth-table.md) — 27 个工具：层/实测频次/何时用/何时不要用→改用什么 + 7 条不变式（路由评估的 ground truth）。
+- [工具真值表](docs/tool-truth-table.md) — 28 个工具：层/实测频次/何时用/何时不要用→改用什么 + 7 条不变式（路由评估的 ground truth）。
 - [工具表面与记忆系统：现状、业界做法与待办](docs/tool-and-memory-plan.md) — 实测数据、拆分/合并方案、记忆系统分类、**评测协议 v2**（MemoryAgentBench 四大能力 + 确定性聚合的实证）与反模式（T1/T3/T4 已执行，T2/T5 与记忆系统仍待做）。
 - [IO 与用法](docs/io-and-usage.md) — 完整输入输出、工具清单、跑前门禁与本地 git 记录约定。
 - [能力评估与计划](docs/capability-eval-and-plan.md) — 能力边界与演进路线。

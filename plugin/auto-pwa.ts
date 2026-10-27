@@ -12,6 +12,7 @@
  *   auto_pwa_jpc_check     two-vertex J^PC check (decay ∩ production, C conservation)
  *   auto_pwa_config_view   read-only JSON view of config.yml
  *   auto_pwa_validate_add  gate a resonance addition (PDG/JPC/threshold/duplicate)
+ *   auto_pwa_trans_suggest  generic isospin/CG ratios for Constraints.trans
  *   auto_pwa_validate_config  run-time gate preview (structure/JPC/C + ctpwa --validate-only)
  *   auto_pwa_edit_config   validate + apply + render + atomically write config.yml
  *   auto_pwa_run_fit       gate the config, record provenance, submit via ctx.pwaFit
@@ -32,6 +33,7 @@ import { lookupResonance, lookupC } from '../src/lookup.js'
 import { decayCheck, hasDecayTo } from '../src/decay-check.js'
 import { analyzeIntermediateJPC } from '../src/intermediate-jpc.js'
 import { explicitJp } from '../src/jpc.js'
+import { firstLevelTopologies, type TopologyCoverage } from '../src/topology.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
 import {
   parseConfig,
@@ -43,7 +45,8 @@ import {
   validateConfig,
 } from '../src/config-edit.js'
 import { suggestFree } from '../src/float-policy.js'
-import { gateConfig, renderGate, type GateResult } from '../src/config-gate.js'
+import { suggestTransRatios } from '../src/isospin.js'
+import { gateConfig, productionCErrors, renderGate, type GateResult } from '../src/config-gate.js'
 import {
   buildProvenance,
   writeProvenance,
@@ -117,6 +120,22 @@ export const inject = ['tools', 'pwaFit']
 
 const text = (t: string) => [{ type: 'text' as const, text: t }]
 
+/** One line per first-level partition: `[✓] 1+3 etap + [pip,pim,pi0]`. */
+function renderTopologyCoverage(cov: TopologyCoverage): string[] {
+  const side = (s: TopologyCoverage['topologies'][number]['sides'][number]): string =>
+    s.particles.length === 1 ? (s.particles[0] ?? '?') : `[${s.particles.join(',')}]`
+  const lines = [`第一级拓扑（${cov.finalState.length} 体，已写 ${cov.present}/${cov.total}）:`]
+  for (const t of cov.topologies) {
+    const how =
+      t.realizedBy !== undefined
+        ? `  (${t.realizedBy.chain}: ${t.realizedBy.mother} -> ${t.realizedBy.daughters.join(' + ')})`
+        : ''
+    lines.push(`  ${t.present ? '[✓]' : '[ ]'} ${t.kind} ${side(t.sides[0])} + ${side(t.sides[1])}${how}`)
+  }
+  lines.push('  （[ ] = 未写入模型；数据不一定支持所有过程，但应显式判断是否纳入）')
+  return lines
+}
+
 /**
  * Human-facing review summary for a freshly built initial config: what reaction
  * and chains were written, which [J,P] groups each intermediate has and which
@@ -143,16 +162,33 @@ function renderInitReview(spec: InitialConfigSpec, r: InitialConfigResult): stri
         lines.push(`    ${intName}  ${groups}`)
       }
     }
+    // Multi-body combinatorics: show every first-level partition (1+3/2+2 for
+    // four bodies, ...) and whether the spec realizes it. The data decides
+    // which ones matter, but an omitted partition must be an explicit choice.
+    if (spec.data.order.length >= 3) {
+      try {
+        lines.push('', ...renderTopologyCoverage(firstLevelTopologies(cfg, spec.data.order)))
+      } catch {
+        // The coverage view is advisory; never block the review on it.
+      }
+      if (r.warnings.some((w) => w.code === 'topology-incomplete')) {
+        lines.push(
+          '  ⚠ 第一级拓扑未全覆盖：数据不一定需要所有划分，但请先枚举并显式说明取舍（补链，或用 spec.topology.excluded 记录理由）。',
+        )
+      }
+    }
     lines.push('', '【粒子】')
     for (const [name, p] of Object.entries(cfg.particles)) {
       const info = p.pdgid !== undefined ? getParticleInfo(defaultDb, p.pdgid) : undefined
       const id = p.pdgid !== undefined ? `pdgid=${p.pdgid}${info ? ` (${info.name})` : ' ⚠ 表中无此 id'}` : '无 pdgid'
       const c = info ? cValueOf(info) : undefined
+      const pol = spec.particles.find((x) => x.name === name)?.polarization
       const bits = [
         `  ${name}: ${id}`,
         `J^P=${jpText(p.j, p.p)}`,
         `m=${p.mass}`,
         c !== undefined ? `C=${c > 0 ? '+' : '-'}` : '',
+        pol !== undefined && pol.length > 0 ? `polarization=[${pol.join(',')}]` : '',
       ].filter((x) => x !== '')
       lines.push(bits.join('  '))
     }
@@ -415,7 +451,30 @@ interface DeepValidateResult {
   amplitudeNames?: string[]
   nAmplitudes?: number
   nFreeParams?: number
+  /** ctpwa stderr lines (warnings/notes about trans matching, var_equal, ...). */
+  stderr?: string[]
+  /** Effect of Constraints on the free-parameter count (nFreeParams fallback). */
+  constraintEffect?: {
+    withConstraints: number
+    withoutConstraints: number
+    keys: string[]
+    noOp: boolean
+  }
   error?: string
+}
+
+/** Lines worth surfacing from ctpwa's stderr (not the whole banner). */
+function ctpwaStderrLines(stderr: string | undefined): string[] {
+  if (stderr === undefined) return []
+  const out: string[] = []
+  for (const raw of stderr.split('\n')) {
+    const line = raw.trim()
+    if (line === '') continue
+    if (!/\[ctpwa\]\s*(?:warn|note|error)|(?:^|\s)(?:warning|warn|note|error)\s*[:\]]|未匹配|未配成|两侧组合数|var_equal/i.test(line)) continue
+    if (!out.includes(line)) out.push(line)
+    if (out.length >= 20) break
+  }
+  return out
 }
 
 /**
@@ -424,7 +483,7 @@ interface DeepValidateResult {
  * parameter arity with the engine's own parser. Writes its JSON to a temp file
  * (never to the iteration's results/fit.json).
  */
-function deepValidateConfig(configPath: string): DeepValidateResult {
+function runValidatePath(configPath: string): DeepValidateResult {
   const script = bundledAifitPath()
   if (!existsSync(script)) return { ran: false, ok: false, error: `aifit.py 不存在: ${script}` }
   const tmp = join(tmpdir(), `pwa-validate-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`)
@@ -456,16 +515,30 @@ function deepValidateConfig(configPath: string): DeepValidateResult {
       }
     }
     const cfg = parsed.config
-    const ok = parsed.status === 'ok' && cfg?.valid === true
+    // DecayInfo.isValid() only says "the particles parsed": a config whose
+    // production step is in the wrong compact shape (or whose [J,P] groups are
+    // empty) yields ZERO amplitudes yet isValid() === true. A zero-amplitude
+    // config cannot describe data, so the authoritative gate must reject it.
+    const zeroAmplitudes = cfg?.valid === true && cfg?.nAmplitudes === 0
+    const ok = parsed.status === 'ok' && cfg?.valid === true && !zeroAmplitudes
     return {
       ran: true,
       ok,
-      status: parsed.status,
+      status: zeroAmplitudes ? 'no-amplitudes' : parsed.status,
       ...(cfg?.paramNames !== undefined ? { paramNames: cfg.paramNames } : {}),
       ...(cfg?.amplitudeNames !== undefined ? { amplitudeNames: cfg.amplitudeNames } : {}),
       ...(cfg?.nAmplitudes !== undefined ? { nAmplitudes: cfg.nAmplitudes } : {}),
       ...(cfg?.nFreeParams !== undefined ? { nFreeParams: cfg.nFreeParams } : {}),
-      ...(parsed.error?.message !== undefined ? { message: parsed.error.message } : {}),
+      ...(ctpwaStderrLines(r.stderr).length > 0 ? { stderr: ctpwaStderrLines(r.stderr) } : {}),
+      ...(zeroAmplitudes
+        ? {
+            message:
+              'ctpwa 解析成功但振幅数为 0：产生步必须是模式列表（Jpsi: [[d1, d2]]），' +
+              '且至少有一个 [J,P] 组挂上能产生振幅的共振态；空组本身不是错误，整体振幅为 0 才是。',
+          }
+        : parsed.error?.message !== undefined
+          ? { message: parsed.error.message }
+          : {}),
     }
   } catch (e) {
     return { ran: false, ok: false, error: (e as Error).message }
@@ -475,6 +548,71 @@ function deepValidateConfig(configPath: string): DeepValidateResult {
     } catch {
       // best-effort temp cleanup
     }
+  }
+}
+
+/** Warnings derived from ctpwa stderr + the nFreeParams constraints probe. */
+function deepConstraintWarnings(deep: DeepValidateResult): { code: string; message: string }[] {
+  const out: { code: string; message: string }[] = []
+  for (const line of deep.stderr ?? []) out.push({ code: 'ctpwa-stderr', message: line })
+  const effect = deep.constraintEffect
+  if (effect?.noOp === true) {
+    out.push({
+      code: 'constraints-no-effect',
+      message:
+        `Constraints ${effect.keys.join('/')} 没有减少自由参数数（with=${effect.withConstraints}, ` +
+        `without=${effect.withoutConstraints}）——名字/配对可能没有命中，属于 no-op；` +
+        `引擎 stderr 会给出具体未匹配项。物理效果以 ΔNLL/记录为准，不做硬拦截。`,
+    })
+  }
+  return out
+}
+
+/**
+ * Authoritative check + a **constraints-effect probe**: validate once, then
+ * once with `trans`/`var_equal`/`fix_var`/`free_var` stripped. If nFreeParams
+ * does not drop, the constraints had no effect (no-op) — reported as a warning,
+ * never a hard error. Values/names are ctpwa's job; this is the "nFreeParams
+ * fallback" for semantics.
+ */
+function deepValidateConfig(configPath: string): DeepValidateResult {
+  const main = runValidatePath(configPath)
+  if (!main.ran || !main.ok || main.nFreeParams === undefined) return main
+  try {
+    const text = readFileSync(configPath, 'utf8')
+    const cfg = parseConfig(text)
+    if (typeof cfg.raw.get('Resonances') === 'string') return main
+    const con = (cfg.raw.get('Constraints') ?? cfg.raw.get('constraints')) as Map<unknown, unknown> | undefined
+    if (!(con instanceof Map)) return main
+    const keys = ['trans', 'var_equal', 'fix_var', 'free_var'].filter((k) => con.has(k))
+    if (keys.length === 0) return main
+    const clone = parseConfig(text)
+    const cloneCon = (clone.raw.get('Constraints') ?? clone.raw.get('constraints')) as Map<unknown, unknown> | undefined
+    if (!(cloneCon instanceof Map)) return main
+    for (const k of keys) cloneCon.delete(k)
+    const tmpYml = join(tmpdir(), `pwa-constraints-baseline-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.yml`)
+    try {
+      writeFileSync(tmpYml, dumpConfig(clone))
+      const base = runValidatePath(tmpYml)
+      if (!base.ran || base.nFreeParams === undefined) return main
+      return {
+        ...main,
+        constraintEffect: {
+          withConstraints: main.nFreeParams,
+          withoutConstraints: base.nFreeParams,
+          keys,
+          noOp: main.nFreeParams >= base.nFreeParams,
+        },
+      }
+    } finally {
+      try {
+        rmSync(tmpYml, { force: true })
+      } catch {
+        // best-effort
+      }
+    }
+  } catch {
+    return main
   }
 }
 
@@ -661,6 +799,8 @@ function gateBeforeFit(args: {
     }
   }
 
+  for (const w of deepConstraintWarnings(deep)) warnings.push(w)
+
   // 同目录漂移：config 或拟合设置变了 → 旧结果不再对应（B1 的核心价值）。
   const drift = checkProvenanceDrift(args.iterDir, text, args.scriptArgs, args.fitScript)
   warnings.push(...drift.drift.map((d) => ({ code: d.code, message: d.message })))
@@ -811,18 +951,68 @@ function resolveDigestRoot(agentId?: string): string | undefined {
   // session 记下的 root（那正是跨分析污染的来源）。
   // 有 agent 身份时**只认自己**记下的；全局兜底仅服务"没有 agent 身份"的宿主。
   const remembered = agentId !== undefined ? rootsByAgent.get(agentId) : fallbackAnalysisRoot
-  if (remembered !== undefined && existsSync(join(remembered, 'iterations', 'SUMMARY.jsonl'))) {
+  if (
+    remembered !== undefined &&
+    (existsSync(join(remembered, 'iterations', 'SUMMARY.jsonl')) ||
+      existsSync(join(remembered, 'init_config.yml')) ||
+      existsSync(join(remembered, 'init_config.orig.yml')))
+  ) {
     return remembered
   }
   try {
     const cwd = process.cwd()
-    if (existsSync(join(cwd, 'iterations')) || existsSync(join(cwd, PWA_GIT_DIRNAME)) || existsSync(join(cwd, 'init_config.yml'))) {
+    if (
+      existsSync(join(cwd, 'iterations')) ||
+      existsSync(join(cwd, PWA_GIT_DIRNAME)) ||
+      existsSync(join(cwd, 'init_config.yml')) ||
+      existsSync(join(cwd, 'init_config.orig.yml'))
+    ) {
       return cwd
     }
   } catch {
     /* ignore */
   }
   return undefined
+}
+
+/**
+ * Non-forcing multi-body reminder: enumerate first-level partitions, but let
+ * the physics decide which ones are needed (a radiative decay or a data-driven
+ * analysis may legitimately need only a subset). Injected every turn as a
+ * system reminder when a 4/5-body config exists and is not fully covered.
+ */
+function multiBodyTopologyNote(root: string): string | undefined {
+  try {
+    const candidates = ['init_config.yml', 'init_config.orig.yml']
+    const path = candidates.map((f) => join(root, f)).find((p) => existsSync(p))
+    if (path === undefined) return undefined
+    const cfg = parseConfig(readFileSync(path, 'utf8'))
+    const data = cfg.raw.get('Data')
+    const order = data instanceof Map ? data.get('order') : undefined
+    if (!Array.isArray(order)) return undefined
+    const finalState = order.filter((x): x is string => typeof x === 'string')
+    if (finalState.length < 4) return undefined
+    const cov = firstLevelTopologies(cfg, finalState)
+    if (cov.present >= cov.total) return undefined
+    const side = (s: { particles: string[] }): string =>
+      s.particles.length === 1 ? (s.particles[0] ?? '?') : `[${s.particles.join(',')}]`
+    const missing = cov.topologies.filter((t) => !t.present)
+    const shown = missing
+      .slice(0, 6)
+      .map((t) => `${t.kind} ${side(t.sides[0])}+${side(t.sides[1])}`)
+    const more = missing.length > shown.length ? ` 等 ${missing.length} 个` : ''
+    const file = path.endsWith('init_config.yml') ? 'init_config.yml' : 'init_config.orig.yml'
+    return [
+      '<system-reminder>',
+      `多体拓扑提醒（代码生成）：${finalState.length} 体第一级共有 ${cov.total} 种划分（1+3、2+2、…），` +
+        `当前 ${file} 覆盖 ${cov.present}/${cov.total}；未覆盖：${shown.join('；')}${more}。`,
+      '数据可能不需要全部（例如辐射衰变常只有部分链），但请先枚举并显式说明取舍；' +
+        'auto_pwa_config_view / auto_pwa_init_config preview 会列出同一张表。',
+      '</system-reminder>',
+    ].join('\n')
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -833,8 +1023,9 @@ function stateDigestText(agentId?: string): string {
   try {
     const root = resolveDigestRoot(agentId)
     if (root === undefined) return ''
+    const topology = multiBodyTopologyNote(root)
     const records = new IterationLog({ rootDir: join(root, 'iterations') }).readAll()
-    if (records.length === 0) return ''
+    if (records.length === 0) return topology ?? ''
     let loopState: DigestLoopState | undefined
     const statePath = join(root, 'iterations', '.loop-state.json')
     if (existsSync(statePath)) {
@@ -867,13 +1058,15 @@ function stateDigestText(agentId?: string): string {
     // **程序性记忆注入**（默认关闭）：`PWA_REMINDERS=R1|R2` 打开。
     // 依据 §8.5.5：离线测不出净收益且有"压成不作为"的风险 → 默认关、可 A/B。
     const level = reminderLevelFromEnv()
-    if (level === undefined) return digest
+    if (level === undefined) return [topology, digest].filter((x): x is string => x !== undefined && x !== '').join('\n\n')
     const injection = reminderInjection({
       level,
       action: inferAction(loopState?.phase, records[records.length - 1]?.kind),
       ...(engineFingerprint() !== undefined ? { engine: engineFingerprint()! } : {}),
     })
-    return injection === '' ? digest : `${digest}\n\n${injection}`
+    return [topology, digest, injection === '' ? undefined : injection]
+      .filter((x): x is string => x !== undefined && x !== '')
+      .join('\n\n')
   } catch {
     return ''
   }
@@ -970,7 +1163,7 @@ export function apply(ctx: Context) {
   // ⚠️ `systemPrompt` 是 **agent 级**服务（由 dsh-agent-loop 按 session 提供），
   // 而 cordis 里**访问未声明 inject 的服务属性会直接抛**
   // （`cannot get property "systemPrompt" without inject`）。这个访问若放在 apply
-  // 里，一旦服务当时还没就绪，**整个 auto-pwa entry 都会挂**（27 个工具一起消失，
+  // 里，一旦服务当时还没就绪，**整个 auto-pwa entry 都会挂**（28 个工具一起消失，
   // 且是否踩中取决于 apply 顺序——线上曾因此"装了却没工具"）。
   // 因此这里用 in-box 插件的标准写法 `ctx.inject(['systemPrompt'], scope => …)`：
   // 服务就绪时才注册；缺席时插件照常工作（摘要是增强，不是依赖）。
@@ -1424,6 +1617,16 @@ export function apply(ctx: Context) {
           if (typeof it.filteredAboveThreshold === 'number' && it.filteredAboveThreshold > 0) {
             lines.push(`  （另有 ${it.filteredAboveThreshold} 个候选因超过 on-shell 阈值未列出）`)
           }
+          const req = it.cStatus?.required
+          if ((it.allowed ?? []).length === 0 && (req === 1 || req === -1)) {
+            // Cascade intermediate whose decay step has an intermediate
+            // daughter: no pair C to inspect, but the production vertex still
+            // fixes C(R). Say so instead of showing an empty list.
+            lines.push(
+              `  （衰变顶点无法解析出分波；该组内共振态的 PDG C 必须为 ${req > 0 ? '+' : '-'}，` +
+                `否则 auto_pwa_validate_add 会以 c-violation 拒绝）`,
+            )
+          }
           for (const b of it.cBlocked ?? []) lines.push(`  ✗ ${b} (C 守恒拦截)`)
         }
         if (value.spilled) lines.push(`（完整输出已 spill: ${value.spilled.locator} — ${value.spilled.retrievalHint}）`)
@@ -1577,7 +1780,8 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_init_config',
-    description: '从 0 起草 init_config.yml（spec→渲染→门禁→原子写；preview 只构建）。',
+    description:
+      '从 0 起草 init_config.yml（4/5 体先枚举全部一级拓扑；未写划分建议在 topology.excluded 说明）',
     parameters: {
       dir: { type: 'string', required: true, description: '分析目录（绝对路径）；写入 <dir>/<fileName>' },
       fileName: { type: 'string', description: '文件名，默认 init_config.yml' },
@@ -1586,7 +1790,7 @@ export function apply(ctx: Context) {
         type: 'object',
         required: true,
         additionalProperties: false,
-        description: 'InitialConfigSpec：particles/chains/resonances/constraints/data/plot/precision',
+        description: 'InitialConfigSpec：particles/chains/resonances/constraints/data/plot/topology/precision',
         properties: {
           particles: {
             type: 'array',
@@ -1600,6 +1804,11 @@ export function apply(ctx: Context) {
                 pdgid: { type: 'integer', description: '有符号 MC 编号（π⁰=111、K⁺=321、K⁻=−321、p=2212、Λ=3122）' },
                 j: { type: 'number' }, p: { type: 'integer' }, mass: { type: 'number' },
                 c: { type: 'integer' }, tex: { type: 'string' },
+                polarization: {
+                  type: 'array',
+                  items: { type: 'number' },
+                  description: '初态极化 2m 列表（ctpwa polarization:），如 J/ψ 的 [-1, 1]（仅横向）；省略 = 全部 2J+1 态',
+                },
               },
             },
           },
@@ -1697,7 +1906,13 @@ export function apply(ctx: Context) {
               additionalProperties: false,
               properties: {
                 name: { type: 'string' },
-                expression: { type: 'string' },
+                expression: {
+                  oneOf: [
+                    { type: 'string' as const },
+                    { type: 'array' as const, items: { type: 'string' as const } },
+                  ],
+                  description: '1D 给一个表达式；2D 给两个表达式的数组（ctpwa 读成两个观测），如 ["M2([pip,pim])","M2([pip,pi0])"]',
+                },
                 bins: { type: 'array', items: { type: 'integer' } },
                 ranges: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
                 display: { type: 'array', items: { type: 'string' } },
@@ -1705,6 +1920,31 @@ export function apply(ctx: Context) {
             },
           },
           precision: { type: 'string' },
+          topology: {
+            type: 'object',
+            additionalProperties: false,
+            description:
+              '4/5 体第一级拓扑取舍：未写入 chains 的划分必须在 excluded 中逐条写 kind/particles/reason，否则 preview 警告、写文件被拒',
+            properties: {
+              excluded: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    kind: { type: 'string', required: true, description: '如 "2+2"' },
+                    particles: {
+                      type: 'array',
+                      required: true,
+                      items: { type: 'array', items: { type: 'string' } },
+                      description: '两个 side 的末态粒子名，如 [["etap","pip"],["pim","pi0"]]',
+                    },
+                    reason: { type: 'string', required: true },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -1739,6 +1979,7 @@ export function apply(ctx: Context) {
         warnings: { code: string; message: string }[]
         reviewSummary: string
         requiresHumanReview: boolean
+        configText?: string
         spilled?: { locator: string; retrievalHint: string }
       }) => {
         const lines = [value.reviewSummary]
@@ -1749,6 +1990,12 @@ export function apply(ctx: Context) {
               ? `已写入 ${value.initConfigPath}（requiresHumanReview=true）——请把上面的摘要给用户确认；通过后 auto_pwa_iter_start(baseConfigPath=${value.initConfigPath})`
               : '（preview 模式，未写文件）',
           )
+          // Preview is the "look before you write" path: show the actual YAML.
+          // Without this the caller cannot see the compact-form shape (and a
+          // flat production step used to slip through to a 0-amplitude file).
+          if (value.configText !== undefined) {
+            lines.push('', '--- 渲染结果（config.yml）---', value.configText)
+          }
         } else {
           lines.push('', '存在 errors：已拒绝写文件，请修正 spec 后重试。')
         }
@@ -1757,6 +2004,7 @@ export function apply(ctx: Context) {
       },
     },
     async execute(args: { dir: string; fileName?: string; preview?: boolean; spec: InitialConfigSpec }, exec) {
+      noteAnalysisRoot(args.dir)
       const spec = args.spec
       if (
         spec === null ||
@@ -1776,8 +2024,43 @@ export function apply(ctx: Context) {
         }
       }
       const r = buildInitialConfig(spec, defaultDb, { baseDir: args.dir })
-      const reviewSummary = renderInitReview(spec, r)
       const initConfigPath = join(args.dir, args.fileName ?? 'init_config.yml')
+      // A from-scratch spec that omits a physics-bearing particle field silently
+      // changes the model. The canonical case: the user's J/psi has
+      // `polarization: [-1, 1]` (2 transverse states) but the rewrite omits it,
+      // so ctpwa sums all 2J+1 = 3 states. Warn before overwriting.
+      if (r.errors.length === 0 && existsSync(initConfigPath)) {
+        try {
+          const old = parseConfig(readFileSync(initConfigPath, 'utf8'))
+          const oldParticles = old.raw.get('Particles')
+          const dropped: string[] = []
+          for (const p of spec.particles) {
+            const props = oldParticles instanceof Map ? oldParticles.get(p.name) : undefined
+            if (!(props instanceof Map)) continue
+            for (const key of ['pdgid', 'c', 'polarization', 'tex'] as const) {
+              const oldValue = props.get(key)
+              if (oldValue === undefined) continue
+              const newValue =
+                key === 'pdgid' ? p.pdgid : key === 'c' ? p.c : key === 'polarization' ? p.polarization : p.tex
+              if (newValue === undefined || (Array.isArray(newValue) && newValue.length === 0)) {
+                dropped.push(`Particles.${p.name}.${key}=${JSON.stringify(oldValue)}`)
+              }
+            }
+          }
+          if (dropped.length > 0) {
+            r.warnings.push({
+              code: 'dropped-particle-field',
+              message:
+                `目标 ${args.fileName ?? 'init_config.yml'} 里已有、但 spec 未提供：${dropped.join(', ')}。` +
+                `重写会丢弃这些字段（物理量会变，例如省略 polarization = 全部 2J+1 态）；` +
+                `请在 spec 里显式给出，或确认这是有意的。`,
+            })
+          }
+        } catch {
+          // Unreadable target: the write path backs it up, so no extra warning.
+        }
+      }
+      const reviewSummary = renderInitReview(spec, r)
       if (r.errors.length > 0 || r.text === undefined) {
         return { ok: false, written: false, initConfigPath, changed: r.changed, errors: r.errors, warnings: r.warnings, reviewSummary, requiresHumanReview: true }
       }
@@ -1819,6 +2102,16 @@ export function apply(ctx: Context) {
           resonances: { type: 'array', items: { type: 'object', additionalProperties: true } },
           kinematics: { type: 'array', items: { type: 'object', additionalProperties: true } },
           constraints: { type: 'object', additionalProperties: true },
+          topologyCoverage: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              finalState: { type: 'array', items: { type: 'string' } },
+              topologies: { type: 'array', items: { type: 'object', additionalProperties: true } },
+              present: { type: 'integer' },
+              total: { type: 'integer' },
+            },
+          },
           validation: {
             type: 'object',
             additionalProperties: false,
@@ -1856,11 +2149,13 @@ export function apply(ctx: Context) {
           pdgC?: number | null
           antiparticle?: string | null
           pdgUnknown?: boolean
+          polarization?: number[] | null
         }[]
         chains?: { name: string; intermediates: string; steps: number }[]
         resonances?: { name: string; jp: string; jpSource?: string; model: string; pdg?: string | null; jpcMatch?: boolean | null; thresholdMargin?: { chain: string; margin: number } | null }[]
         kinematics?: { intermediate: string; threshold: number }[]
         constraints?: { identical?: string[][]; maxL?: number; trans?: number }
+        topologyCoverage?: TopologyCoverage
         validation?: { ok: boolean; errors: { code: string; message: string }[]; warnings: { code: string; message: string }[] }
       }) => {
         const lines = [`config 视图: ${value.particles?.length ?? 0} particles, ${value.chains?.length ?? 0} chains, ${value.resonances?.length ?? 0} resonances`]
@@ -1874,11 +2169,17 @@ export function apply(ctx: Context) {
             if (typeof p.pdgC === 'number') bits.push(`C=${p.pdgC > 0 ? '+' : '-'}`)
             if (p.antiparticle !== undefined && p.antiparticle !== null) bits.push(`↔ ${p.antiparticle}`)
           }
+          if (p.polarization !== undefined && p.polarization !== null && p.polarization.length > 0) {
+            bits.push(`polarization=[${p.polarization.join(',')}]`)
+          }
           lines.push(bits.join(' '))
         }
         const con = value.constraints
         if (con && Object.keys(con).length > 0) {
           lines.push(`Constraints: maxL=${con.maxL ?? '-'} identical=${JSON.stringify(con.identical ?? [])} trans=${con.trans ?? 0} 条`)
+        }
+        if (value.topologyCoverage !== undefined) {
+          lines.push('', ...renderTopologyCoverage(value.topologyCoverage))
         }
         for (const r of value.resonances ?? []) {
           const m = r.thresholdMargin
@@ -1899,6 +2200,7 @@ export function apply(ctx: Context) {
       },
     },
     async execute(args: { configPath: string; filter?: string }, exec) {
+      noteAnalysisRoot(args.configPath)
       const cfg = parseConfig(readFileSync(args.configPath, 'utf8'))
       const filter = args.filter ?? 'all'
       const out: Record<string, unknown> = { configPath: args.configPath }
@@ -1911,6 +2213,13 @@ export function apply(ctx: Context) {
             c: p.c ?? null,
             pdgid: p.pdgid ?? null,
           }
+          // `Particle` does not model `polarization` (checks don't use it), but
+          // the view must show it: dropping it silently changes the physics
+          // (J/psi: 3 states instead of the 2 transverse ones).
+          const rawParticles = cfg.raw.get('Particles')
+          const props = rawParticles instanceof Map ? rawParticles.get(name) : undefined
+          const pol = props instanceof Map ? props.get('polarization') : undefined
+          if (Array.isArray(pol)) item.polarization = pol
           if (p.pdgid !== undefined) {
             const info = getParticleInfo(defaultDb, p.pdgid)
             if (info === undefined) {
@@ -1949,6 +2258,21 @@ export function apply(ctx: Context) {
             pBreak: s.pBreak ?? false,
           })),
         }))
+        // First-level combinatorics (1+3 / 2+2 / ...): what the data can
+        // support is a physics choice, but an omitted partition should be
+        // visible, not silent.
+        const dataRaw = cfg.raw.get('Data')
+        const orderRaw = dataRaw instanceof Map ? dataRaw.get('order') : undefined
+        const finalState = Array.isArray(orderRaw)
+          ? orderRaw.filter((x): x is string => typeof x === 'string')
+          : []
+        if (finalState.length >= 3) {
+          try {
+            out.topologyCoverage = firstLevelTopologies(cfg, finalState)
+          } catch {
+            // advisory view only
+          }
+        }
       }
       if (filter === 'all' || filter === 'resonances') {
         out.resonances = Object.entries(cfg.resonances).map(([name, spec]) => {
@@ -1988,7 +2312,11 @@ export function apply(ctx: Context) {
             parameters: spec.parameters,
             free: spec.free ?? null,
             reference: spec.reference ?? null,
-            pdg: hit ? { id: hit.id, jp: `${hit.jp.j}${hit.jp.p > 0 ? '+' : '-'}`, c: hit.c ?? null, mass: hit.mass } : null,
+            pdg: hit
+              ? `${hit.status === 'pdg' ? '' : '[本地] '}${hit.id} ` +
+                `${hit.jp.j}${hit.jp.p > 0 ? '+' : '-'}${hit.c !== undefined ? (hit.c > 0 ? '+' : '-') : ''} ` +
+                `m=${hit.mass.toFixed(3)}`
+              : null,
             jpcMatch: hit !== undefined && exJp !== undefined ? hit.jp.j === exJp.j && hit.jp.p === exJp.p : null,
             thresholdMargin,
           }
@@ -2007,6 +2335,11 @@ export function apply(ctx: Context) {
       }
       if (filter === 'all' || filter === 'validation') {
         const v = validateConfig(cfg, defaultDb)
+        // 2+2 production C: validateConfig keeps the structural layer; the
+        // group-pair check lives in config-gate and must also be visible here.
+        if (typeof cfg.raw.get('Resonances') !== 'string') {
+          for (const e of productionCErrors(cfg, defaultDb)) v.errors.push({ code: e.code, message: e.message })
+        }
         out.validation = { ok: v.errors.length === 0, errors: v.errors, warnings: v.warnings }
       }
       const ref = await maybeSpill(ctx, exec, 'auto_pwa_config_view', JSON.stringify(out), null)
@@ -2050,6 +2383,17 @@ export function apply(ctx: Context) {
               nFreeParams: { type: 'integer' },
               paramNames: { type: 'array', items: { type: 'string' } },
               amplitudeNames: { type: 'array', items: { type: 'string' } },
+              stderr: { type: 'array', items: { type: 'string' } },
+              constraintEffect: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  withConstraints: { type: 'integer' },
+                  withoutConstraints: { type: 'integer' },
+                  keys: { type: 'array', items: { type: 'string' } },
+                  noOp: { type: 'boolean' },
+                },
+              },
               error: { type: 'string' },
             },
           },
@@ -2059,7 +2403,19 @@ export function apply(ctx: Context) {
       render: (_args, value: {
         ok: boolean
         gateReport: string
-        ctpwa?: { ran: boolean; ok: boolean; status?: string; message?: string; nAmplitudes?: number; nFreeParams?: number; paramNames?: string[]; amplitudeNames?: string[]; error?: string }
+        ctpwa?: {
+          ran: boolean
+          ok: boolean
+          status?: string
+          message?: string
+          nAmplitudes?: number
+          nFreeParams?: number
+          paramNames?: string[]
+          amplitudeNames?: string[]
+          stderr?: string[]
+          constraintEffect?: { withConstraints: number; withoutConstraints: number; keys: string[]; noOp: boolean }
+          error?: string
+        }
         error?: string
       }) => {
         const lines = [value.gateReport]
@@ -2079,12 +2435,23 @@ export function apply(ctx: Context) {
             if (c.amplitudeNames !== undefined && c.amplitudeNames.length > 0) {
               lines.push(`  分波(${c.amplitudeNames.length}): ${c.amplitudeNames.slice(0, 20).join(', ')}${c.amplitudeNames.length > 20 ? ' …' : ''}`)
             }
+            if (c.constraintEffect !== undefined) {
+              const e = c.constraintEffect
+              lines.push(
+                `  Constraints 效果（nFreeParams）: ${e.withoutConstraints} → ${e.withConstraints}` +
+                  `${e.noOp ? ' ⚠ no-op（没有减少自由参数）' : ''} [${e.keys.join('/')}]`,
+              )
+            }
+            if (c.stderr !== undefined && c.stderr.length > 0) {
+              lines.push(`  ctpwa stderr: ${c.stderr.slice(0, 5).join(' | ')}${c.stderr.length > 5 ? ` …（共 ${c.stderr.length} 行）` : ''}`)
+            }
           }
         }
         return text(lines.join('\n'))
       },
     },
     async execute(args: { configPath?: string; yamlText?: string; deep?: boolean; maxL?: number }) {
+      if (args.configPath !== undefined) noteAnalysisRoot(args.configPath)
       if (args.configPath === undefined && args.yamlText === undefined) {
         return { ok: false, gateReport: '配置校验: 拒绝 — 需要 configPath 或 yamlText 之一', errors: [], warnings: [] }
       }
@@ -2119,6 +2486,7 @@ export function apply(ctx: Context) {
       } else if (!deep.ran && (args.deep === true || gate.resonancesExternal)) {
         warnings.push({ code: 'deep-check-skipped', message: `ctpwa 深度校验未运行：${deep.error ?? '?'}`, severity: 'warning' })
       }
+      for (const w of deepConstraintWarnings(deep)) warnings.push({ ...w, severity: 'warning' as const })
       const ok = errors.length === 0
       return {
         ok,
@@ -2137,6 +2505,8 @@ export function apply(ctx: Context) {
           ...(deep.nFreeParams !== undefined ? { nFreeParams: deep.nFreeParams } : {}),
           ...(deep.paramNames !== undefined ? { paramNames: deep.paramNames } : {}),
           ...(deep.amplitudeNames !== undefined ? { amplitudeNames: deep.amplitudeNames } : {}),
+          ...(deep.stderr !== undefined ? { stderr: deep.stderr } : {}),
+          ...(deep.constraintEffect !== undefined ? { constraintEffect: deep.constraintEffect } : {}),
           ...(deep.error !== undefined ? { error: deep.error } : {}),
         },
       }
@@ -2237,12 +2607,17 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_validate_add',
-    description: '加态只读门禁：PDG 依据/JPC/阈值/顶点/重复/free，并给 float 建议。',
+    description: '加态只读门禁：PDG 依据/JPC/阈值/顶点/重复/free；首轮默认固定，tune 给范围。',
     parameters: {
       configPath: { type: 'string', required: true, description: 'config.yml 绝对路径' },
       proposal: { ...proposalParam, required: true },
       massTolerance: { type: 'number', description: '运动学阈值容差 GeV' },
       decayTo: { type: 'array', items: { type: 'string' }, description: '末态粒子（用于衰变模式 warning）' },
+      floatPolicy: {
+        type: 'string',
+        enum: ['fixed', 'tune'],
+        description: 'fixed（默认）= 首轮建议固定 mass/width；tune = 给可选的 free/freeRange（后续调节轮）',
+      },
     },
     output: {
       schema: {
@@ -2277,19 +2652,33 @@ export function apply(ctx: Context) {
         for (const e of value.errors) lines.push(`  [error] ${e.code}: ${e.message}`)
         for (const w of value.warnings) lines.push(`  [warn]  ${w.code}: ${w.message}`)
         if (value.floatSuggestion) {
-          lines.push(`float 建议: free=${JSON.stringify(value.floatSuggestion.free ?? [])} range=${JSON.stringify(value.floatSuggestion.freeRange ?? [])}`)
-          lines.push(`  ${value.floatSuggestion.rationale}`)
-          // 落地方式必须写出来：改一个**已定义/已挂链**的态（把参数放开、改 free_range）
-          // 只能带 proposal.update=true —— 否则会被 duplicate/param-conflict 拦下。
-          lines.push(
-            '  落地：edit_config 带同样的 proposal 再加 update=true（+free/freeRange）；' +
-              '只对**新建**的态才不需要 update。',
-          )
+          const fs = value.floatSuggestion
+          if (fs.free !== undefined && fs.free.length > 0) {
+            lines.push(`float 建议: free=${JSON.stringify(fs.free)} range=${JSON.stringify(fs.freeRange ?? [])}`)
+            lines.push(`  ${fs.rationale}`)
+            // 落地方式必须写出来：改一个**已定义/已挂链**的态（把参数放开、改 free_range）
+            // 只能带 proposal.update=true —— 否则会被 duplicate/param-conflict 拦下。
+            lines.push(
+              '  落地：edit_config 带同样的 proposal 再加 update=true（+free/freeRange）；' +
+                '只对**新建**的态才不需要 update。',
+            )
+          } else {
+            const range = fs.freeRange !== undefined && fs.freeRange.length > 0 ? `（可选范围 ${JSON.stringify(fs.freeRange)}）` : ''
+            lines.push(`参数建议: 首轮固定，不 float${range}`)
+            lines.push(`  ${fs.rationale}`)
+            lines.push('  若后续拟合显示质量 pull>2σ 或参数撞 free_range 边界，再用 floatPolicy=tune 取具体 free/freeRange。')
+          }
         }
         return text(lines.join('\n'))
       },
     },
-    async execute(args: { configPath: string; proposal: ResonanceProposal; massTolerance?: number; decayTo?: string[] }) {
+    async execute(args: {
+      configPath: string
+      proposal: ResonanceProposal
+      massTolerance?: number
+      decayTo?: string[]
+      floatPolicy?: 'fixed' | 'tune'
+    }) {
       const cfg = parseConfig(readFileSync(args.configPath, 'utf8'))
       // 本分析的本地登记（<analysis>/local-states.json）也参与查找，但语义仍是
       // "本地、非 PDG"（只出 warning，不满足 PDG 依据）。
@@ -2319,9 +2708,153 @@ export function apply(ctx: Context) {
         out.floatSuggestion = suggestFree(pdg, args.proposal, {
           threshold: kin.threshold,
           centerOnProposal: args.proposal.reference !== undefined && args.proposal.reference.trim() !== '',
+          mode: args.floatPolicy === 'tune' ? 'tune' : 'first-pass',
         })
       }
       return out
+    },
+  }))
+
+  // ---------------------------------------------------------------------
+  // auto_pwa_trans_suggest
+  // ---------------------------------------------------------------------
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_trans_suggest',
+    description: '按同位旋 CG 给 trans 耦合比值，并检查 C 宇称（通用，需给 I/I3）',
+    parameters: {
+      base: { type: 'string', required: true, description: '基准链名（比值 1）' },
+      chains: {
+        type: 'array',
+        required: true,
+        description: '链列表；每条链给出 name + steps（mother, daughters 二元）',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', required: true },
+            steps: {
+              type: 'array',
+              required: true,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  mother: { type: 'string', required: true },
+                  daughters: { type: 'array', required: true, items: { type: 'string' } },
+                },
+              },
+            },
+          },
+        },
+      },
+      particles: {
+        type: 'object',
+        required: true,
+        additionalProperties: true,
+        description: 'name -> {I, I3, C?}；I/I3 必填，C 可选（用于 C 守恒检查）',
+      },
+      checkC: { type: 'boolean', description: '是否做逐顶点 C 检查（默认 true；缺 C 时只 warning）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          errors: {
+            type: 'array',
+            required: true,
+            items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } },
+          },
+          warnings: {
+            type: 'array',
+            required: true,
+            items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } },
+          },
+          ratios: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                base: { type: 'string', required: true },
+                target: { type: 'string', required: true },
+                ratio: { type: 'number', required: true },
+                cgBase: { type: 'number', required: true },
+                cgTarget: { type: 'number', required: true },
+                cStatus: { type: 'string', required: true, enum: ['ok', 'violation', 'unknown'] },
+                vertexFactors: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      mother: { type: 'string', required: true },
+                      daughters: { type: 'array', required: true, items: { type: 'string' } },
+                      cg: { type: 'number', required: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          trans: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              names: { type: 'array', required: true, items: { type: 'string' } },
+              value: { type: 'array', required: true, items: { type: 'number' } },
+            },
+          },
+        },
+      },
+      render: (_args, value) => {
+        const lines = [`trans 建议: ${value.ok ? '✓' : '✗'}（${value.ratios.length} 条目标链）`]
+        for (const e of value.errors) lines.push(`  [error] ${e.code}: ${e.message}`)
+        for (const w of value.warnings) lines.push(`  [warn]  ${w.code}: ${w.message}`)
+        for (const r of value.ratios) {
+          lines.push(
+            `  ${r.target}/${r.base} = ${r.ratio.toPrecision(8)}（CG ${r.cgTarget.toPrecision(6)} / ${r.cgBase.toPrecision(6)}, C=${r.cStatus}）`,
+          )
+        }
+        if (value.trans) {
+          lines.push('')
+          lines.push('可直接放进 Constraints.trans（名字按你的实际链名替换；比值不改）：')
+          lines.push(`  - [${value.trans.names.join(', ')}]: [${value.trans.value.map((v: number) => v.toPrecision(8)).join(', ')}]`)
+        }
+        lines.push('')
+        lines.push('说明：比值是同位旋 CG（Condon–Shortley）；C 只逐顶点检查，不参与比值符号。')
+        lines.push('若 ctpwa 的振幅对 daughter 顺序/相位约定不同，先按此值拟合，再用 ΔNLL 检查 ±1。')
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: {
+      base: string
+      chains: { name: string; steps: { mother: string; daughters: string[] }[] }[]
+      particles: Record<string, { I: number; I3: number; C?: 1 | -1 }>
+      checkC?: boolean
+    }) {
+      const chains = args.chains.map((c) => ({
+        name: c.name,
+        steps: c.steps.map((s) => ({
+          mother: s.mother,
+          daughters: [s.daughters[0] ?? '', s.daughters[1] ?? ''] as [string, string],
+        })),
+      }))
+      const out = suggestTransRatios({
+        base: args.base,
+        chains,
+        particles: args.particles,
+        ...(args.checkC !== undefined ? { checkC: args.checkC } : {}),
+      })
+      return {
+        ok: out.ok,
+        errors: out.errors,
+        warnings: out.warnings,
+        ratios: out.ratios,
+        ...(out.trans !== null ? { trans: out.trans } : {}),
+      }
     },
   }))
 

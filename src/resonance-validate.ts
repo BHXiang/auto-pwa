@@ -32,7 +32,7 @@
  *
  * Pure function; no I/O.
  */
-import { normalizeName } from './lookup.js'
+import { normalizeName, resonanceConfigKey } from './lookup.js'
 import { conventionFor, conventionHint } from './lineshape.js'
 import { hasDecayTo, allowedIntermediateJP } from './decay-check.js'
 import { analyzeIntermediateJPC } from './intermediate-jpc.js'
@@ -234,7 +234,10 @@ export function validateResonanceAddition(
   const pdgHits = isParticle ? db.resonances.filter((r) => normalizeName(r.id) === normalizeName(proposal.name) || r.aliases.some((a) => normalizeName(a) === normalizeName(proposal.name))) : []
   // **只有 status === 'pdg' 才算"有 PDG 依据"**：`seed`/`local` 是本地登记
   // （历史上 agent 往 PDG 表里加过 PDG 没有的态 → 门禁被自己的数据糊弄了）。
-  const pdg = pdgHits.find((r) => r.status === 'pdg')
+  // Prefer an EXACT id match for the charge member: `normalizeName` merges
+  // rho(770)+/- (and K*(892)+/-), so the first hit could be the wrong sign.
+  const exactPdg = pdgHits.find((r) => r.status === 'pdg' && r.id.toLowerCase() === proposal.name.toLowerCase())
+  const pdg = exactPdg ?? pdgHits.find((r) => r.status === 'pdg')
   const local = pdgHits.find((r) => r.status !== 'pdg')
   const hasReference = proposal.reference !== undefined && proposal.reference.trim() !== ''
 
@@ -445,7 +448,7 @@ export function validateResonanceAddition(
       )
     }
   } else {
-    const dup = Object.keys(config.resonances).find((n) => normalizeName(n) === normalizeName(proposal.name))
+    const dup = Object.keys(config.resonances).find((n) => resonanceConfigKey(n) === resonanceConfigKey(proposal.name))
     if (dup !== undefined) {
       errors.push(err('duplicate', `"${proposal.name}" duplicates existing resonance "${dup}"`))
     }
@@ -526,23 +529,81 @@ export function validateResonanceAddition(
       // Rule 11: C(A) = C(R)*C(B) at the production vertex, with C(R) from the pair.
       const required = ana.production?.cRequired ?? null
       if (required !== null) {
+        const jpKey = jpLabel(proposal.jpGroup)
         const conflicts: { label: string; pair: string[]; c: 1 | -1 }[] = []
         for (const step of ana.decaySteps) {
-          const c = step.cOf[jpLabel(proposal.jpGroup)]
+          const c = step.cOf[jpKey]
           if (c !== undefined && c !== 'x' && c !== required) {
-            conflicts.push({ label: `${jpLabel(proposal.jpGroup)}${c > 0 ? '+' : '-'}`, pair: step.daughters, c })
+            conflicts.push({ label: `${jpKey}${c > 0 ? '+' : '-'}`, pair: step.daughters, c })
           }
         }
         if (conflicts.length > 0) {
           const [c] = conflicts
+          const cM = ana.production?.cMother
+          const cD = ana.production?.cDaughter
           errors.push(
             err(
               'c-violation',
-              `C conservation violated for ${proposal.chain}: C(${ana.production?.mother})=${required > 0 ? '+' : '-'}, ` +
-                `C(${ana.production?.daughter})=${required > 0 ? '+' : '-'} require C(R)=${required > 0 ? '+' : '-'}, ` +
+              `C conservation violated for ${proposal.chain}: C(${ana.production?.mother})=${cM !== undefined ? (cM > 0 ? '+' : '-') : '?'}, ` +
+                `C(${ana.production?.daughter})=${cD !== undefined ? (cD > 0 ? '+' : '-') : '?'} require C(R)=${required > 0 ? '+' : '-'}, ` +
                 `but the ${c.label} wave of ${c.pair.join('+')} has C=${c.c > 0 ? '+' : '-'}`,
             ),
           )
+        } else {
+          // The decay vertex can be UNRESOLVED (a cascade step such as
+          // R_3pi -> pi0 + R_pipi has an intermediate daughter, so there is no
+          // pair C to inspect). Previously this silently skipped the C check:
+          // a(1)(1260) [1+] passed under J/psi -> eta' + R even though the
+          // production vertex fixes C(R) = -. Fall back to the proposed
+          // resonance's own PDG C when the decay vertex has no C information.
+          const stepC = ana.decaySteps
+            .map((s) => s.cOf[jpKey])
+            .filter((c): c is 1 | -1 => c === 1 || c === -1)
+          if (stepC.length === 0) {
+            if (pdg?.c !== undefined) {
+              if (pdg.c !== required) {
+                errors.push(
+                  err(
+                    'c-violation',
+                    `C conservation violated for ${proposal.chain}: the production vertex ` +
+                      `${ana.production?.mother} -> R + ${ana.production?.daughter} fixes C(R)=${required > 0 ? '+' : '-'} ` +
+                      `(C(${ana.production?.mother})=${ana.production?.cMother !== undefined ? (ana.production.cMother > 0 ? '+' : '-') : '?'}, ` +
+                      `C(${ana.production?.daughter})=${ana.production?.cDaughter !== undefined ? (ana.production.cDaughter > 0 ? '+' : '-') : '?'}), ` +
+                      `but PDG gives C(${proposal.name}) = ${pdg.c > 0 ? '+' : '-'} (${pdg.id}). ` +
+                      `The decay vertex is unresolved (cascade intermediate daughter), so this check uses the resonance's PDG C.`,
+                  ),
+                )
+              }
+            } else if (isParticle) {
+              // No pair C and no PDG C: be explicit instead of looking clean.
+              // If the name DID match a PDG entry whose C is undefined, the
+              // entry is charged (or C is a data gap): a charged state cannot
+              // sit in a neutral intermediate at all, and treating it as
+              // "unverified" would let a C-violating wave through. Reject;
+              // only a genuinely local state (no PDG match) stays a warning.
+              if (pdg !== undefined) {
+                errors.push(
+                  err(
+                    'c-unverified',
+                    `C conservation for ${proposal.chain} [${jpKey}] cannot be verified: the production vertex ` +
+                      `fixes C(R)=${required > 0 ? '+' : '-'}, but ${proposal.name} matched PDG entry ` +
+                      `${pdg.id} whose C is undefined (charged state or missing PDG data) and the decay vertex ` +
+                      `is unresolved. Use the neutral spelling (e.g. a(1)(1260)0); a reference records provenance ` +
+                      `but does not define C.`,
+                  ),
+                )
+              } else {
+                warnings.push(
+                  warn(
+                    'c-unverified',
+                    `C conservation for ${proposal.chain} [${jpKey}] could not be verified: the production vertex ` +
+                      `fixes C(R)=${required > 0 ? '+' : '-'}, but the decay vertex is unresolved and ` +
+                      `${proposal.name} has no PDG C value (local/unknown state). Verify the C assignment by hand.`,
+                  ),
+                )
+              }
+            }
+          }
         }
       }
       // Rule 12: daughters that are the SAME SPECIES must be declared in one

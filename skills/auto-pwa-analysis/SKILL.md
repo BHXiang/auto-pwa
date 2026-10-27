@@ -26,11 +26,18 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 **全新项目且没有 config/init_config.yml（从 0 起草）**：不要凭空手写 YAML——优先用 `auto_pwa_init_config`（结构化 spec，程序渲染 + 物理门禁）。走这条链：
 1. **问用户**（`ask_user_question`，一轮一组）：反应道与母粒子、末态、数据与 MC 的路径/格式(`dat`|`ROOT`)/树名/branch 顺序、是否含本底、`maxL` 与势垒半径约定。**数据路径必须用户给，不要猜。**
 2. **研究可达性**（不需要 config）：对每个假想中间态跑 `auto_pwa_decay_check`（A→R+B 允许的 J^P + 阈值 + 阈值下的 PDG 候选），用 `auto_pwa_lookup` 确认候选真实存在（J^P/质量/宽度/衰变模式）。想要"每个中间态到底能放哪些 [J,P] 波、有哪些 PDG 候选"的完整答案：先用 `auto_pwa_init_config` 以 `preview: true` + **空 `resonances`** 生成骨架（或直接写文件），再对骨架跑 `auto_pwa_jpc_check`——它给出两顶点交集 J^PC、C 三态，以及**按阈值过滤**的候选（含 `thresholdMargin` on-shell 余量、`decaysTo`、C 是否已知；超阈值候选被排除并报 `filteredAboveThreshold`）。
-3. **生成**：`auto_pwa_init_config`（结构化 spec）。粒子**优先只写 pdgid**（π⁰=111、K⁺=321、K⁻=−321、p=2212、Λ=3122…），J/P/质量自动取自 PDG，并自动获得全同/正反/自共轭/C 校验。不写 `plot` 会自动生成每个中间态的 1D 质量谱 + 衰变角分布（写 `plot: []` 才关掉）——**不要**关掉，否则拟合输出没有分布可供 `auto_pwa_evaluate` 判断。传 `dir` 后还会检查 Data/MC 文件是否存在（缺文件只 warning）。先 `preview: true` 看文本与 reviewSummary，确认无误再写。
+3. **生成**：`auto_pwa_init_config`（结构化 spec）。粒子**优先只写 pdgid**（π⁰=111、K⁺=321、K⁻=−321、p=2212、Λ=3122…），J/P/质量自动取自 PDG，并自动获得全同/正反/自共轭/C 校验。**用户原 `Particles` 里的 `polarization` 必须原样写进 spec**（典型：e⁺e⁻ 产生的 J/ψ 为 `[-1, 1]`，仅横向；省略 = ctpwa 用全部 2J+1 态，物理不同）——覆盖已有 `init_config.yml` 却漏写时工具会报 `dropped-particle-field`。不写 `plot` 会自动生成每个**末态**二体步的 1D 质量谱 + 衰变角分布（写 `plot: []` 才关掉）——**不要**关掉，否则拟合输出没有分布可供 `auto_pwa_evaluate` 判断。传 `dir` 后还会检查 Data/MC 文件是否存在（缺文件只 warning）。先 `preview: true` 看文本与 reviewSummary，确认无误再写。
+   **多体第一级拓扑（4/5 体先枚举，不要求全写）**：n 体末态的第一级产生也是二体，先枚举所有可能划分——
+   - n=4：`C(4,1)=4` 个 **1+3**（A + R_BCD、B + R_ACD…）+ `3` 个 **2+2**（R_AB + R_CD、R_AC + R_BD、R_AD + R_BC）；
+   - n=5：`5` 个 **1+4** + `10` 个 **2+3**；n=6 还加 `15` 个 **2+4** 和 `10` 个 **3+3**。
+   1+3 里 bachelor 的 J^P 已知（用 `auto_pwa_decay_check`）；2+2/多中间态侧用 `auto_pwa_jpc_check`，注意 `A -> R1 + R2` 的产生顶点两侧都是中间态。**数据不一定增强所有划分，但“省略某个划分”必须是有意识的物理决定，不能因为没想到而漏掉**。`auto_pwa_init_config` 的 preview/review 和 `auto_pwa_config_view` 现在都会打印 `第一级拓扑（n 体，已写 x/y）`，`[ ]` 行就是尚未纳入的划分。**不强制**：写文件不会被拒；未覆盖时会打 `topology-incomplete` warning，建议在 `spec.topology.excluded` 里逐条写 `{kind, particles:[sideA, sideB], reason}` 记录排除理由，至少在回答里说明取舍。不要用一句“数据不一定支持”带过。
+   **2+2 的产生顶点 C 必须逐组对检查**：`A -> R1 + R2`，要求 `C(R1)·C(R2)=C(A)`。例如 `J/ψ -> f0(0^+) + a0(0^+)` 是 `(+1)(+1)=+1 ≠ -1`，**C 禁戒**；不能因为两侧都是中间态、单个 R 的 `cRequired` 为 null 就放行。C(R) 从各自衰变顶点推导，不要用带电别名去猜 C。
+   **一个 `decay1` 标签可以放多个产生模式**（如 `Jpsi: [[etap,R_3pi],[pi0,R_etaprho]]`），ctpwa 会按模式展开成内部多条链；写成 `decay1`/`decay2` 只是组织/可读性选择，**不是工具限制**。只有要表达交换拓扑的 `Constraints.trans` 时，按 gate 建议拆成独立链更清晰（ctpwa 按链名/中间态子串匹配，与 label 无关）。
+   **Constraints 的设计（2026）**：**键白名单 + 形状检查，名字/语义不预检**。允许键：`maxL / bf_d / has_bf / identical / trans / fix_var / free_var / var_range / var_equal / gauss_constr / free_phsp_amplitudes`。`trans` 可以写完整链代号、中间态名、任意片段、3 个以上名称；ctpwa 自己匹配，未匹配/没配对的项由 stderr 报告，并用 `nFreeParams`（有/无 Constraints 的对比）兜底 no-op。物理对错交给 ΔNLL + 记录，**不做名字白名单硬拦**。
 4. **人工复核闸门**：把 `reviewSummary` 交给用户确认（`requiresHumanReview`）。用户可能要改反应道/J^P 组/共振态——改完重跑第 3 步。
 5. **开跑**：`auto_pwa_iter_start(baseConfigPath=<dir>/init_config.yml)` 建 `iter-000` → 立即 `auto_pwa_run_fit`；之后进 §5.1 主循环。
 
-要点：`resonances[]` 里每个态都会过与 `auto_pwa_validate_add` 同源的门禁（PDG 依据/JPC/阈值/衰变顶点 J^P/C 守恒/全同选择定则），errors 非空**不会写文件**；`intermediates[].groups` 的**顺序即振幅块索引**（`trans` 引用 `R_x_0` 按此顺序）。
+要点：`resonances[]` 里每个态都会过与 `auto_pwa_validate_add` 同源的门禁（PDG 依据/JPC/阈值/衰变顶点 J^P/C 守恒/全同选择定则），errors 非空**不会写文件**；`intermediates[].groups` 的**顺序即振幅块索引**（`trans` 引用 `R_x_0` 按此顺序；也接受完整链代号，不受此限制）。
 
 **禁止手动调试环境**：GPU/CUDA/ctpwa/ROOT 环境由 `auto_pwa_run_fit` 自动探测并给出权威诊断。**不要**手动跑 `nvidia-smi`、`torch.cuda.is_available()`、查 `/dev/dxg`、拼 `LD_LIBRARY_PATH`、翻 ctpwa 源码——这是最常见的整段浪费。**transport 自动路由**：`auto_pwa_run_fit` 探测到本机无 CUDA 但有 `sbatch`/`squeue`/`sacct`（集群登录节点）时会 **交作业到 SLURM**（写 `fit.slurm`、`sbatch`、登录节点轮询，跑完唤醒——无需本地 GPU）。若 `auto_pwa_run_fit` 报 no-gpu/找不到 torch，多半是宿主进程没有运行在插件要求的 python 环境里（设 `PWA_CTPWA_PYTHON` 与 `PWA_LD_LIBRARY_PATH`，或在对应环境里重启 harness）——把这条提示给用户即可，不要自己修环境。
 
@@ -53,6 +60,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 | 看 config 里有什么 | `auto_pwa_config_view` | — |
 | 校验配置能否跑、要权威参数清单 | `auto_pwa_validate_config`（`deep: true`） | `validate_add`（那只是单态预检） |
 | 加/挂一个态 | `auto_pwa_validate_add` → `auto_pwa_edit_config` | 直接手改 YAML（允许，但跑前必过门禁） |
+| 写 trans 耦合关系（C/CG） | `auto_pwa_trans_suggest` | 手算后硬猜；它只给比值，不替你选链 |
 | 删一个态 | `auto_pwa_remove_resonance` | `edit_config` |
 | 从零起草配置 | `auto_pwa_init_config` | 手写 YAML |
 | 查 PDG 有没有这个态 | `auto_pwa_lookup` | — |
@@ -65,6 +73,9 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 | 并行试多个候选再裁决 | `auto_pwa_try_candidates` → `auto_pwa_compare` | 连续多轮 `run_fit` |
 | 记录本轮结论 | `auto_pwa_note` | 自己写 md |
 | 查历史 / 能否复现 | `auto_pwa_history`（结论）/ `auto_pwa_git_log`（配置与 commit） | — |
+
+**trans 关系工具（通用）**：`auto_pwa_trans_suggest` 接受任意 `chains`（每条链给 `mother -> d1 + d2` 的 `steps`）和 `particles`（每个态的 `I/I3/C`），按同位旋 CG 算出 target/base 的耦合比值，并给可直接粘贴的 `Constraints.trans` 条目。它不绑定 J/ψ→η′3π，也不替你猜链名；缺 I/I3 时会明确报 `missing-isospin`。C 只做逐顶点检查（`cStatus`），**不参与比值符号**；daughter 顺序/相位约定不同时，先按输出值拟合，再用 ΔNLL 检查 ±1。
+
 
 ## 2. 加共振态的标准流程（强约束链）
 
@@ -93,12 +104,14 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 ## 4. float（共振态参数是否自由）决策策略
 
 
-- **窄共振、PDG 测定良好的态**（宽度 ≲ 50 MeV，如 φ(1020)）：**固定**，float 会与耦合参数退化。
-- **新加入的共振态**：第一轮建议 float 质量（free:[0]），区间以 PDG 质量为中心 ± max(0.5Γ, 30 MeV)。
-- **宽态**（Γ > 0.2 GeV）或**接近运动学阈值**：质量+宽度都 float（free:[0,1]），宽度区间 ±50%Γ。
-- **拟合后参数撞边界**（float 值贴住 free_range 端点）：下一轮要么放宽区间，要么考虑这个态没被数据支持，删除。
+- **首轮（模型还没稳定）：所有共振态的 mass/width 固定**，只拟合耦合。首轮 float 会让质量/宽度吸收缺失的波/拓扑，ΔNLL 也难解释。
+- **新加入的共振态**：首轮同样固定。等模型稳定后，只有 `auto_pwa_diagnose`/拟合显示质量 pull > 2σ 或参数撞 `free_range` 边界，才在下一轮**一次放开一个**质量（必要时再放宽度）。
+- **宽态**（Γ > 0.2 GeV）或**接近运动学阈值**：首轮仍固定；不要用 float 宽度掩盖缺失的波。确实需要时，先质量、后宽度，并逐状态做 ΔNLL 归因。
+- **拟合后参数撞边界**（float 值贴住 `free_range` 端点）：下一轮要么放宽区间，要么考虑这个态没被数据支持，删除。
+- **窄共振、PDG 测定良好的态**（宽度 ≲ 50 MeV，如 φ(1020)）：固定；通常没有 float 的理由。
 - **ONE 相空间项**：参数固定（不参与振幅，float 无意义）。
-- `auto_pwa_validate_add` 会返回 `floatSuggestion` 建议，模型可采纳或调整，但结构必须合法。
+- **ONE 是逃生舱，不是默认填充**：插件/ctpwa 不对 ONE 做 PDG 依据与 C 守恒检查，所以它很容易让一个本该被 C 禁戒的组看起来“干净”。只在**确实没有 PDG 态、且该组 C 允许**时用 ONE；不要为了填满 `[J,P]` 组或 7/7 拓扑而加 ONE。空组本身不是错误（整体振幅非零即可），NR 份额高时先找缺失的共振态/Topology，不要用 NR 吸收高 mass 结构。每个 ONE 都要在 note 里写物理理由（哪个相空间波、为什么 C 允许）。
+- `auto_pwa_validate_add` 默认 `floatPolicy='fixed'`，只给“首轮固定”的建议；需要具体 free/freeRange 时显式 `floatPolicy='tune'`。结构必须合法。
 
 ## 5. 迭代文件夹与拟合执行规则
 
@@ -128,7 +141,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - `skill auto-pwa-jpc` —— 两顶点 J^PC、衰变顶点门禁、C 守恒、阈值、maxL（**起草新链/加态前读**）
 - `debug-auto-pwa` —— 插件本地安装与调试（开发者用）
 
-## 全部工具索引（27）
+## 全部工具索引（28）
 
-`auto_pwa_lookup` · `auto_pwa_decay_check` · `auto_pwa_jpc_check` · `auto_pwa_init_config` · `auto_pwa_config_view` · `auto_pwa_validate_config` · `auto_pwa_suggest` · `auto_pwa_validate_add` · `auto_pwa_edit_config` · `auto_pwa_remove_resonance` · `auto_pwa_round` · `auto_pwa_iter_start` · `auto_pwa_note` · `auto_pwa_git_log` · `auto_pwa_history` · `auto_pwa_iterate` · `auto_pwa_evaluate` · `auto_pwa_diagnose` · `auto_pwa_root_view` · `auto_pwa_wave_view` · `auto_pwa_run_fit` · `auto_pwa_fit_status` · `auto_pwa_try_candidates` · `auto_pwa_compare` · `auto_pwa_loop_next` · `auto_pwa_loop_status` · `auto_pwa_loop_decide`
+`auto_pwa_lookup` · `auto_pwa_decay_check` · `auto_pwa_jpc_check` · `auto_pwa_init_config` · `auto_pwa_config_view` · `auto_pwa_validate_config` · `auto_pwa_suggest` · `auto_pwa_validate_add` · `auto_pwa_trans_suggest` · `auto_pwa_edit_config` · `auto_pwa_remove_resonance` · `auto_pwa_round` · `auto_pwa_iter_start` · `auto_pwa_note` · `auto_pwa_git_log` · `auto_pwa_history` · `auto_pwa_iterate` · `auto_pwa_evaluate` · `auto_pwa_diagnose` · `auto_pwa_root_view` · `auto_pwa_wave_view` · `auto_pwa_run_fit` · `auto_pwa_fit_status` · `auto_pwa_try_candidates` · `auto_pwa_compare` · `auto_pwa_loop_next` · `auto_pwa_loop_status` · `auto_pwa_loop_decide`
 

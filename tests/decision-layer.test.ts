@@ -589,11 +589,15 @@ Resonances:
   it('parses kinematics for intermediates whose mother is another intermediate', () => {
     const cfg = parseConfig(CASCADE)
     const rk = cfg.kinematics['R_KK']!
-    expect(rk.threshold).toBeCloseTo(3.51 - 0.5478, 6)
+    // The bound is propagated from the production vertex, not taken from the
+    // first resonance of R_chic1: psip (3.0686) -> gamma + R_chic1 caps
+    // m(R_chic1), so R_KK <= 3.0686 - m(eta). The toy's chic1 mass (3.51) is
+    // above the psip, so using it would invent an unreachable window.
+    expect(rk.threshold).toBeCloseTo(3.0686 - 0.5478, 6)
     expect(rk.mother.j).toBe(1)
     expect(rk.mother.p).toBe(1)
     const rketa = cfg.kinematics['R_Keta']!
-    expect(rketa.threshold).toBeCloseTo(3.51 - 0.4937, 6)
+    expect(rketa.threshold).toBeCloseTo(3.0686 - 0.4937, 6)
   })
 
   it('validate_add accepts a resonance on a cascade intermediate (no unknown-chain)', () => {
@@ -617,12 +621,13 @@ Resonances:
     expect(v.errors.filter((e) => e.code === 'trans-group-index')).toHaveLength(0)
   })
 
-  it('validateConfig still rejects genuinely out-of-range trans indices', () => {
+  it('does not name/index-check trans at the config layer (ctpwa owns matching)', () => {
     const cfg = parseConfig(CASCADE)
     const bad = { ...cfg, constraints: { ...cfg.constraints, trans: [{ names: ['R_KK_1'], value: [-1] }] } }
     const v = validateConfig(bad)
-    const errs = v.errors.filter((e) => e.code === 'trans-group-index')
-    expect(errs).toHaveLength(1)
-    expect(errs[0]!.message).toContain('1 amplitude block')
+    // A wrong index is a no-op, not a structural error: the fit gate reports it
+    // via ctpwa stderr / nFreeParams; physics is judged by ΔNLL + records.
+    expect(v.errors.filter((e) => e.code === 'trans-group-index')).toHaveLength(0)
+    expect(v.errors.filter((e) => e.code === 'trans-bad-name')).toHaveLength(0)
   })
 })

@@ -43,6 +43,7 @@ description: 'Use when checking quantum-number reachability before adding a reso
 
 - **运动学阈值**：m_R ≤ m_A − m_B（on-shell）。接近阈值 → off-shell 风险 → 建议 float 质量；具体阈值随通道而变，用 `auto_pwa_decay_check` 查你的通道。
 - **J^P 可达性**：J/ψ(1⁻) → 0⁻ + R 时，可达 J^P 为 0⁻, 1±, 2±, 3±, 4±, 5⁺（maxL=4）。**0⁺ 不可达**（需要 L=0 但角动量要求 L=1）。
+- **多体第一级（1+3 / 2+2）**：4 体末态先枚举 4 个 **1+3** 与 3 个 **2+2** 划分（5 体再加 5 个 1+4、10 个 2+3）。1+3 用 bachelor 的 J^P 查 R_BCD 可达性；2+2 的产生顶点 A→R1+R2 **两侧都是中间态**，要同时枚举 pairJPC(R1)、pairJPC(R2)，并逐**组对**要求 C(R1)·C(R2)=C(A)（C(R) 从各自衰变顶点推导）。例如 `J/ψ(1^-) → f0(0^+) + a0(0^+)`：C = (+1)(+1)=+1 ≠ −1，**C 禁戒**；不能因为它“两侧都是中间态、单个 R 的 cRequired 为 null”就放行。`auto_pwa_config_view` 会打印第一级拓扑覆盖（`[ ]` = 尚未纳入）。
 - **衰变顶点门禁（规则 10）**：提案 J^P 必须在 R→d1+d2 的 pairJPC 集合里（见 §2.1），否则振幅恒为零（ctpwa 零-SL 诊断同源）。
 - **C 守恒（规则 11）**：产生顶点 A→R+B 若母子均自共轭（如 J/ψ、η），C(R)=C(A)·C(B) 强制；K⁺η 这类无 C 系统只查 J^P。
 - **maxL 来源**：优先 config `Constraints.maxL`；未设置时工具默认 4（与 skill 一致；ctpwa 引擎默认不限，注意 config 显式设置后工具与引擎同步）。

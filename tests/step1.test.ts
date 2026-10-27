@@ -391,7 +391,7 @@ describe('suggestFree', () => {
   it('floats the mass for a newly added wide state', () => {
     const pdg = defaultDb.resonances.find((r) => r.id === 'K*(1410)0')
     expect(pdg).toBeDefined()
-    const s = suggestFree(pdg, { model: 'BWR', parameters: [1.414, 0.232] }, { threshold: 2.6 })
+    const s = suggestFree(pdg, { model: 'BWR', parameters: [1.414, 0.232] }, { threshold: 2.6, mode: 'tune' })
     expect(s.free).toEqual([0, 1])
     expect(s.freeRange).toHaveLength(2)
     expect(s.freeRange![0][0]).toBeLessThan(s.freeRange![0][1])
@@ -412,10 +412,18 @@ describe('suggestFree', () => {
   })
 
   it('still suggests a mass window when PDG has no entry (custom name)', () => {
-    const s = suggestFree(undefined, { model: 'BWR', parameters: [1.75, 0.08], name: 'X1750' })
+    const s = suggestFree(undefined, { model: 'BWR', parameters: [1.75, 0.08], name: 'X1750' }, { mode: 'tune' })
     expect(s.free).toEqual([0])
     expect(s.freeRange![0][0]).toBeLessThan(1.75)
     expect(s.freeRange![0][1]).toBeGreaterThan(1.75)
+  })
+
+  it('first-pass default: fixed, with an optional tuning range', () => {
+    const pdg = defaultDb.resonances.find((r) => r.id === 'K*(1410)0')
+    const s = suggestFree(pdg, { model: 'BWR', parameters: [1.414, 0.232] }, { threshold: 2.6 })
+    expect(s.free).toBeUndefined()
+    expect(s.freeRange).toHaveLength(2)
+    expect(s.rationale).toMatch(/首轮建议固定|tune/)
   })
 })
 

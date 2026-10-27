@@ -244,10 +244,20 @@ export function configWriteGuard(exec: ToolExecution): string | undefined {
     const cmd = args.command
     // Explicit write operators targeting init_config.yml only:
     // `>`/`>>` redirection, `tee`, and in-place `sed -i`.
-    if (/(?:>>?|tee)\s*[^;&|\n]{0,160}init_config\.ya?ml|sed\s+-i\s*[^;&|\n]{0,160}init_config\.ya?ml/i.test(cmd)) {
+    // `(?<![-0-9])` keeps arrows (`->`) and fd redirects (`2>&1`) from
+    // matching as writes; `tee` must be a command boundary.
+    if (
+      /(?<![-0-9])>>?\s*[^;&|\n]{0,160}init_config\.ya?ml|(?:^|[\s;&|])tee\s+[^;&|\n]{0,160}init_config\.ya?ml|sed\s+-i\s*[^;&|\n]{0,160}init_config\.ya?ml/i.test(
+        cmd,
+      )
+    ) {
       return GUARD_BASH_REASON
     }
-    if (/(?:>>?|tee|sed\s+-i\s*)[^;&|\n]{0,160}(?:pdg\.json|pdg\.manifest\.json|lineshape-conventions\.json)/i.test(cmd)) {
+    if (
+      /(?<![-0-9])>>?\s*[^;&|\n]{0,160}(?:pdg\.json|pdg\.manifest\.json|lineshape-conventions\.json)|(?:^|[\s;&|])tee\s+[^;&|\n]{0,160}(?:pdg\.json|pdg\.manifest\.json|lineshape-conventions\.json)|sed\s+-i\s*[^;&|\n]{0,160}(?:pdg\.json|pdg\.manifest\.json|lineshape-conventions\.json)/i.test(
+        cmd,
+      )
+    ) {
       return GUARD_TRUST_REASON
     }
   }

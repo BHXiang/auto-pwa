@@ -153,6 +153,7 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_validate_config',
       'auto_pwa_suggest',
       'auto_pwa_validate_add',
+      'auto_pwa_trans_suggest',
       'auto_pwa_edit_config',
       'auto_pwa_remove_resonance',
       'auto_pwa_round',
@@ -471,7 +472,7 @@ Resonances:
       const out = (await execute('auto_pwa_config_view', { configPath } as never)) as {
         particles: unknown[]
         chains: unknown[]
-        resonances: { name: string; pdg: { id: string } | null; jpcMatch: boolean; thresholdMargin: { chain: string; margin: number } | null }[]
+        resonances: { name: string; pdg: string | null; jpcMatch: boolean; thresholdMargin: { chain: string; margin: number } | null }[]
         constraints: { maxL?: number; trans?: unknown[]; identical?: unknown[] }
         validation: { ok: boolean; errors: unknown[]; warnings: unknown[] }
       }
@@ -480,19 +481,19 @@ Resonances:
       expect(out.constraints.trans).toHaveLength(1)
       expect(out.validation.ok).toBe(true)
       const phi = out.resonances.find((r) => r.name === 'phi1020')!
-      expect(phi.pdg?.id).toBe('phi(1020)')
+      expect(phi.pdg).toContain('phi(1020)')
       expect(phi.jpcMatch).toBe(true)
       expect(phi.thresholdMargin?.chain).toBe('decay1')
     })
   })
 
   it('auto_pwa_config_view output conforms to its declared schema when validation fails', async () => {
-    // A bad trans index makes validateConfig emit errors: the tool result then
+    // A Constraints key typo (`maxl`) is a key-whitelist error: the tool result
     // carries validation.errors items whose {code,message} fields MUST be
     // declared in the output schema (the harness rejects undeclared fields).
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-plugin-'))
     const configPath = join(dir, 'config.yml')
-    writeFileSync(configPath, CONFIG.replace('[R_Keta_0, R_Keta_1]', '[R_Keta_9, R_Keta_1]'))
+    writeFileSync(configPath, CONFIG.replace('maxL: 3', 'maxl: 3'))
     try {
       const def = collectDefinitions().find((d) => d.name === 'auto_pwa_config_view')!
       const out = (await def.execute!({ configPath } as never, {} as never)) as {
@@ -502,6 +503,57 @@ Resonances:
       expect(out.validation.errors.length).toBeGreaterThan(0)
       expect(out.validation.errors[0]).toHaveProperty('code')
       expect(out.validation.errors[0]).toHaveProperty('message')
+      assertSchema(out, def.output?.schema)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_config_view lists first-level topology coverage for a 4-body final state', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-topo-'))
+    const configPath = join(dir, 'config.yml')
+    writeFileSync(
+      configPath,
+      `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.957784, pdgid: 331}
+  pip: {J: 0, P: -1, mass: 0.13957, pdgid: 211}
+  pim: {J: 0, P: -1, mass: 0.13957, pdgid: -211}
+  pi0: {J: 0, P: -1, mass: 0.134977, pdgid: 111}
+Data:
+  order: [etap, pip, pim, pi0]
+  data: [dat, ./data.dat]
+DecayChains:
+  decay1:
+    Jpsi: [[etap, R_3pi]]
+    R_3pi: [[pi0, R_pipi]]
+    R_pipi: [pip, pim]
+    intermediates:
+      R_3pi:
+        - [J: 1, P: -1]: []
+      R_pipi:
+        - [J: 1, P: -1]: []
+  decay2:
+    Jpsi: [[pi0, R_etaprho]]
+    R_etaprho: [etap, R_pipi2]
+    R_pipi2: [pip, pim]
+    intermediates:
+      R_etaprho:
+        - [J: 1, P: -1]: []
+      R_pipi2:
+        - [J: 1, P: -1]: []
+Resonances: {}
+`,
+    )
+    try {
+      const def = collectDefinitions().find((d) => d.name === 'auto_pwa_config_view')!
+      const out = (await def.execute!({ configPath } as never, {} as never)) as {
+        topologyCoverage?: { total: number; present: number; topologies: { kind: string; present: boolean }[] }
+      }
+      expect(out.topologyCoverage?.total).toBe(7)
+      expect(out.topologyCoverage?.present).toBe(2)
+      expect(out.topologyCoverage?.topologies.filter((t) => t.kind === '2+2')).toHaveLength(3)
+      expect(out.topologyCoverage?.topologies.filter((t) => t.present).map((t) => t.kind)).toEqual(['1+3', '1+3'])
       assertSchema(out, def.output?.schema)
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -808,6 +860,101 @@ Resonances:
   })
 })
 
+// The authoritative layer needs the real ctpwa python env; skip elsewhere.
+const HAS_CTPWA = spawnSync(defaultFitRunnerConfig().python, ['-c', 'import ctpwa'], { encoding: 'utf8' }).status === 0
+
+describe.skipIf(!HAS_CTPWA)('auto_pwa_validate_config: deep (ctpwa) layer', () => {
+  it('rejects a config that ctpwa parses but builds 0 amplitudes', async () => {
+    // Flat production pair: ctpwa's compact detector requires a mode list, so
+    // it silently builds no amplitude. DecayInfo.isValid() is still true.
+    const dir = mkdtempSync(join(tmpdir(), 'auto-pwa-zeroamp-'))
+    try {
+      const p = join(dir, 'config.yml')
+      writeFileSync(p, `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  eta: {J: 0, P: -1, mass: 0.5478, pdgid: 221}
+  Kp: {J: 0, P: -1, mass: 0.4937, pdgid: 321}
+  Km: {J: 0, P: -1, mass: 0.4937, pdgid: -321}
+Data:
+  order: [Kp, Km, eta]
+  data: [dat, ./data.dat]
+DecayChains:
+  decay1:
+    Jpsi: [eta, R_KK]
+    R_KK: [Kp, Km]
+    intermediates:
+      R_KK:
+        - [J: 1, P: -1]: [phi1020]
+Resonances:
+  phi1020: {model: BWR, parameters: [1.0195, 0.0045]}
+`)
+      const tool = collectDefinitions().find((d) => d.name === 'auto_pwa_validate_config')!
+      const out = (await tool.execute!({ configPath: p, deep: true } as never, {} as never)) as {
+        ok: boolean
+        errors: { code: string; message: string }[]
+        ctpwa?: { ran: boolean; ok: boolean; nAmplitudes?: number; status?: string }
+      }
+      expect(out.ctpwa?.ran).toBe(true)
+      expect(out.ctpwa?.nAmplitudes).toBe(0)
+      expect(out.ok).toBe(false)
+      expect(out.errors.map((e) => e.code)).toContain('ctpwa-config-invalid')
+      expect(out.errors.map((e) => e.message).join(' ')).toMatch(/0 amplitudes|振幅数为 0/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('forwards ctpwa stderr and flags a trans constraint that does not change nFreeParams', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'auto-pwa-trans-noop-'))
+    try {
+      const p = join(dir, 'config.yml')
+      writeFileSync(p, `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  eta: {J: 0, P: -1, mass: 0.547862, pdgid: 221}
+  Kp: {J: 0, P: -1, mass: 0.493677, pdgid: 321}
+  Km: {J: 0, P: -1, mass: 0.493677, pdgid: -321}
+Data:
+  order: [Kp, Km, eta]
+  data: [dat, ./data.dat]
+DecayChains:
+  decay1:
+    Jpsi: [[eta, R_KK]]
+    R_KK: [Kp, Km]
+    intermediates:
+      R_KK:
+        - [J: 1, P: -1]: [phi1020]
+  decay2:
+    Jpsi: [[eta, R_KK2]]
+    R_KK2: [Kp, Km]
+    intermediates:
+      R_KK2:
+        - [J: 1, P: -1]: [phi1020]
+Constraints:
+  trans:
+    - [R_nonexistent_A, R_nonexistent_B]: 1
+Resonances:
+  phi1020: {model: BWR, parameters: [1.0195, 0.0045]}
+`)
+      const def = collectDefinitions().find((d) => d.name === 'auto_pwa_validate_config')!
+      const out = (await def.execute!({ configPath: p, deep: true } as never, {} as never)) as {
+        ok: boolean
+        warnings: { code: string; message: string }[]
+        ctpwa?: { constraintEffect?: { noOp: boolean; withConstraints: number; withoutConstraints: number }; stderr?: string[] }
+      }
+      // A no-op trans is a warning, not a hard error: names/semantics belong to
+      // ctpwa; the effect is judged by nFreeParams and ΔNLL/records.
+      expect(out.ok).toBe(true)
+      expect(out.ctpwa?.constraintEffect?.noOp).toBe(true)
+      expect(out.ctpwa?.constraintEffect?.withConstraints).toBe(out.ctpwa?.constraintEffect?.withoutConstraints)
+      expect(out.warnings.map((w) => w.code)).toContain('constraints-no-effect')
+      expect(out.warnings.map((w) => w.code)).toContain('ctpwa-stderr')
+      expect(out.warnings.map((w) => w.message).join(' ')).toMatch(/R_nonexistent|未匹配|trans/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 /** ctx with a fake pwaFit service + guard recorder + session-event hook. */
 function harnessCtx() {
   const definitions: {
@@ -886,6 +1033,16 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
     }
     expect(h.guards[0]!({ name: 'bash', arguments: { command: 'echo "{}" > data/pdg.json' } })).toMatch(/信任锚/)
     expect(h.guards[0]!({ name: 'bash', arguments: { command: 'sed -i "s/x/y/" data/lineshape-conventions.json' } })).toMatch(/信任锚/)
+    // Arrows in a prompt (`J/psi -> ...`) and fd redirects (`2>&1`) are not writes.
+    expect(
+      h.guards[0]!({
+        name: 'bash',
+        arguments: { command: 'echo "J/psi -> eta\' pi+ pi- pi0" && cat init_config.orig.yml 2>&1' },
+      }),
+    ).toBeUndefined()
+    expect(
+      h.guards[0]!({ name: 'bash', arguments: { command: 'printf "%s" x > init_config.yml' } }),
+    ).toMatch(/auto_pwa_init_config/)
   })
 
   it('auto_pwa_run_fit runs the pre-fit gate first and refuses a missing config', async () => {
@@ -1981,10 +2138,10 @@ describe('apply 健壮性与摘要按 session 隔离（cordis 严格语义回归
     return { ctx: base, tools, contexts, sp, fire, agentCreated }
   }
 
-  it('没有 systemPrompt（且未 inject）时不抛，27 个工具仍全部注册', () => {
+  it('没有 systemPrompt（且未 inject）时不抛，28 个工具仍全部注册', () => {
     const { ctx, tools } = makeCtx()
     expect(() => apply(ctx as never)).not.toThrow()
-    expect(tools).toHaveLength(27)
+    expect(tools).toHaveLength(28)
   })
 
   it('agent 创建时注册 auto-pwa:state 摘要 context（按 agent，不是插件级）', () => {
@@ -2017,6 +2174,52 @@ describe('apply 健壮性与摘要按 session 隔离（cordis 严格语义回归
     expect(texts.filter((t) => t.includes(A))).toHaveLength(1)
     expect(texts.filter((t) => t.length > 0)).toHaveLength(1)
   })
+
+  it('4-body 摘要注入：没有 iterations 也提醒第一级拓扑覆盖（非强制）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pwa-topo-digest-'))
+    try {
+      writeFileSync(
+        join(dir, 'init_config.yml'),
+        `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.957784, pdgid: 331}
+  pip: {J: 0, P: -1, mass: 0.13957, pdgid: 211}
+  pim: {J: 0, P: -1, mass: 0.13957, pdgid: -211}
+  pi0: {J: 0, P: -1, mass: 0.134977, pdgid: 111}
+Data:
+  order: [etap, pip, pim, pi0]
+  data: [dat, ./data.dat]
+DecayChains:
+  decay1:
+    Jpsi: [[etap, R_3pi]]
+    R_3pi: [[pi0, R_pipi]]
+    R_pipi: [pip, pim]
+    intermediates:
+      R_3pi:
+        - [J: 1, P: -1]: []
+      R_pipi:
+        - [J: 1, P: -1]: []
+Resonances: {}
+`,
+      )
+      const probe = makeCtx({ inject: true })
+      apply(probe.ctx as never)
+      probe.fire('session/event', { id: 'sess-topo' }, {
+        type: 'tool/call',
+        data: { name: 'auto_pwa_config_view', arguments: JSON.stringify({ configPath: join(dir, 'init_config.yml') }) },
+      })
+      probe.agentCreated('sess-topo')
+      const text = probe.contexts.map((c) => { try { return c.text?.() ?? '' } catch { return '' } }).join('\n')
+      expect(text).toContain('多体拓扑提醒')
+      expect(text).toContain('4 体')
+      expect(text).toContain('2+2')
+      expect(text).toContain('数据可能不需要全部')
+      // 不是硬门禁：只是 reminder，不产生 errors/拒绝
+      expect(text).not.toContain('拒绝')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('auto_pwa_init_config (from-scratch config authoring)', () => {
@@ -2046,6 +2249,33 @@ describe('auto_pwa_init_config (from-scratch config authoring)', () => {
   const tmp = (): string => mkdtempSync(join(tmpdir(), 'auto-pwa-init-'))
   const tool = () => collectDefinitions().find((d) => d.name === 'auto_pwa_init_config')!
 
+  /** J/psi -> eta' pi+ pi- pi0 with only one of the seven first-level partitions. */
+  const FOUR_BODY_PARTIAL = {
+    particles: [
+      { name: 'Jpsi', pdgid: 443 },
+      { name: 'etap', pdgid: 331 },
+      { name: 'pip', pdgid: 211 },
+      { name: 'pim', pdgid: -211 },
+      { name: 'pi0', pdgid: 111 },
+    ],
+    chains: [
+      {
+        name: 'decay1',
+        steps: [
+          { mother: 'Jpsi', daughters: ['etap', 'R_3pi'] },
+          { mother: 'R_3pi', daughters: ['pi0', 'R_pipi'] },
+          { mother: 'R_pipi', daughters: ['pip', 'pim'] },
+        ],
+        intermediates: [
+          { name: 'R_3pi', groups: [{ j: 1, p: -1 }] },
+          { name: 'R_pipi', groups: [{ j: 1, p: -1 }] },
+        ],
+      },
+    ],
+    resonances: [],
+    data: { order: ['etap', 'pip', 'pim', 'pi0'], data: ['dat', './data.dat'] },
+  }
+
   it('preview builds and validates without writing', async () => {
     const dir = tmp()
     try {
@@ -2061,8 +2291,42 @@ describe('auto_pwa_init_config (from-scratch config authoring)', () => {
       expect(out.configText).toContain('R_KK')
       expect(out.reviewSummary).toContain('phi1020')
       expect(out.reviewSummary).toContain('pdgid=321')
+      // Multi-body first-level coverage is shown before the file is written.
+      expect(out.reviewSummary).toContain('第一级拓扑')
+      expect(out.reviewSummary).toContain('1+2')
       expect(out.requiresHumanReview).toBe(true)
       expect(existsSync(join(dir, 'init_config.yml'))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('4-body preview and write both warn about missing partitions (non-blocking)', async () => {
+    const dir = tmp()
+    try {
+      const preview = (await tool().execute!({ dir, preview: true, spec: FOUR_BODY_PARTIAL } as never, {} as never)) as {
+        ok: boolean
+        written: boolean
+        warnings: { code: string; message: string }[]
+        reviewSummary: string
+      }
+      expect(preview.ok).toBe(true)
+      expect(preview.written).toBe(false)
+      expect(preview.warnings.map((w) => w.code)).toContain('topology-incomplete')
+      expect(preview.reviewSummary).toContain('第一级拓扑')
+      expect(preview.reviewSummary).toContain('数据不一定需要所有划分')
+
+      const write = (await tool().execute!({ dir, spec: FOUR_BODY_PARTIAL } as never, {} as never)) as {
+        ok: boolean
+        written: boolean
+        warnings: { code: string; message: string }[]
+      }
+      expect(write.ok).toBe(true)
+      expect(write.written).toBe(true)
+      const warn = write.warnings.find((w) => w.code === 'topology-incomplete')!
+      expect(warn).toBeDefined()
+      expect(warn.message).toContain('2+2')
+      expect(existsSync(join(dir, 'init_config.yml'))).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -2091,6 +2355,28 @@ describe('auto_pwa_init_config (from-scratch config authoring)', () => {
       // second write backs the previous file up
       await tool().execute!({ dir, spec: SPEC } as never, {} as never)
       expect(existsSync(`${p}.bak`)).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('warns when a re-write drops a physics-bearing particle field', async () => {
+    // The real-run failure: the user's J/psi had polarization [-1, 1], the
+    // from-scratch spec omitted it, and the rewrite silently switched ctpwa to
+    // all 2J+1 = 3 states.
+    const dir = tmp()
+    try {
+      const withPol = structuredClone(SPEC)
+      ;(withPol.particles[0] as unknown as { polarization?: number[] }).polarization = [-1, 1]
+      await tool().execute!({ dir, spec: withPol } as never, {} as never)
+      const out = (await tool().execute!({ dir, spec: SPEC } as never, {} as never)) as {
+        ok: boolean
+        warnings: { code: string; message: string }[]
+      }
+      expect(out.ok).toBe(true)
+      const dropped = out.warnings.find((w) => w.code === 'dropped-particle-field')!
+      expect(dropped).toBeDefined()
+      expect(dropped.message).toContain('polarization')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -2148,5 +2434,36 @@ describe('auto_pwa_validate_add 的 float 建议附带落地方式', () => {
     const rendered = (def.output as { render: (a: unknown, v: unknown) => { text: string }[] }).render({}, out)
     expect(rendered[0]!.text).toContain('float 建议')
     expect(rendered[0]!.text).toContain('update=true')
+  })
+})
+
+describe('auto_pwa_trans_suggest (generic isospin/CG)', () => {
+  it('returns a trans entry and conforms to the declared schema', async () => {
+    const def = collectDefinitions().find((d) => d.name === 'auto_pwa_trans_suggest')!
+    const out = (await def.execute!(
+      {
+        base: 'a',
+        chains: [
+          { name: 'a', steps: [{ mother: 'A', daughters: ['B', 'C'] }] },
+          { name: 'b', steps: [{ mother: 'A', daughters: ['D', 'E'] }] },
+        ],
+        particles: {
+          A: { I: 0, I3: 0 },
+          B: { I: 1, I3: 1 },
+          C: { I: 1, I3: -1 },
+          D: { I: 1, I3: 0 },
+          E: { I: 1, I3: 0 },
+        },
+      } as never,
+      {} as never,
+    )) as {
+      ok: boolean
+      ratios: { ratio: number }[]
+      trans?: { names: string[]; value: number[] }
+    }
+    expect(out.ok).toBe(true)
+    expect(out.ratios[0]!.ratio).toBeCloseTo(-1, 12)
+    expect(out.trans).toEqual({ names: ['a', 'b'], value: [-1] })
+    assertSchema(out, def.output?.schema)
   })
 })

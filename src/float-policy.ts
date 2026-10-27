@@ -5,18 +5,24 @@
  * structural legality of whatever it chooses.
  *
  * Heuristics (physics-grounded, conservative):
+ *   - FIRST PASS (default): keep every resonance mass/width fixed at PDG; fit
+ *     only the couplings. Floating early can absorb missing waves/topologies
+ *     and makes ΔNLL comparisons uninterpretable.
+ *   - TUNE mode (`mode: 'tune'`): after the model is stable and a fit shows a
+ *     mass pull / free_range boundary, float one state at a time. Wide states
+ *     (Gamma > 0.2 GeV) or states near threshold get a width window too.
  *   - ONE (phase-space): the mass parameter does not enter the amplitude
  *     (ctpwa ResModel.cu) — floating it is meaningless.
  *   - Well-measured narrow states (small PDG width): fix.
- *   - Newly added states: float the mass first round, within
- *     max(0.5*Gamma, 30 MeV) of the PDG mass.
- *   - Wide states (Gamma > 0.2 GeV) or states near the kinematic threshold:
- *     also float the width, and widen the mass window toward the threshold.
- *   - A state at/near threshold is off-shell-prone: widen the window.
+ *   - Newly added states: fix on the first pass; tune later with a window
+ *     within max(0.5*Gamma, 30 MeV) of the PDG mass.
  */
 import type { FreeSuggestion, ResonanceEntry, ResonanceProposal } from './types.js'
 
 export interface FreePolicyOptions {
+  /** 'first-pass' (default) advises keeping parameters fixed; 'tune' returns
+   * concrete free/freeRange suggestions for a later tuning round. */
+  mode?: 'first-pass' | 'tune'
   /** Threshold proximity (GeV) that triggers the wide/off-shell policy. Default 0.2. */
   nearThresholdMargin?: number
   /** Mass window = max(massMarginFraction * width, minMassMargin). Default 0.5. */
@@ -35,7 +41,7 @@ export interface FreePolicyOptions {
 }
 
 /** Pure decision function; returns a suggestion plus its rationale. */
-export function suggestFree(
+function suggestFreeTune(
   pdg: ResonanceEntry | undefined,
   proposal: { model: ResonanceProposal['model']; parameters: number[]; name?: string },
   options: FreePolicyOptions = {},
@@ -142,4 +148,37 @@ export function suggestFree(
 
 function round3(x: number): number {
   return Math.round(x * 1000) / 1000
+}
+
+/**
+ * Default wrapper: the FIRST-PASS advice is to keep every resonance parameter
+ * fixed at its PDG value and fit only the couplings. Floating masses/widths in
+ * the initial model can absorb missing waves/topologies and makes ΔNLL
+ * comparisons less interpretable. Tune later, one state at a time, when a fit
+ * shows a mass pull or a free_range boundary; call with `mode: 'tune'` to get
+ * the concrete free/freeRange values.
+ */
+export function suggestFree(
+  pdg: ResonanceEntry | undefined,
+  proposal: { model: ResonanceProposal['model']; parameters: number[]; name?: string },
+  options: FreePolicyOptions = {},
+): FreeSuggestion {
+  const mode = options.mode ?? 'first-pass'
+  const tuned = suggestFreeTune(pdg, proposal, options)
+  if (mode === 'tune' || tuned.free === undefined) return tuned
+  const ranges: string[] = []
+  for (const [i, r] of (tuned.freeRange ?? []).entries()) {
+    if (r === undefined) continue
+    ranges.push(`${i === 0 ? '质量' : '宽度'} [${r[0]}, ${r[1]}]`)
+  }
+  return {
+    ...(tuned.freeRange !== undefined ? { freeRange: tuned.freeRange } : {}),
+    rationale:
+      `首轮建议固定：${proposal.name ?? '该态'} 的 mass/width 按 PDG 取值，先只拟合耦合；` +
+      `首轮 float 会吸收缺失的波/拓扑，也让 ΔNLL 难解释。` +
+      (ranges.length > 0
+        ? `若后续拟合出现质量 pull>2σ 或参数撞 free_range 边界，再逐个调节；可选范围 ${ranges.join('、')}。`
+        : '') +
+      `（需要具体 free/freeRange 时用 mode='tune'。）`,
+  }
 }

@@ -374,10 +374,66 @@ describe('buildInitialConfig: auto-generated Plot', () => {
       { name: 'phi1020', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.0195, 0.0045] },
       { name: 'K1_1410', chain: 'R_Keta', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.403, 0.174] },
     ]
-    const names = plotEntries(buildInitialConfig(spec, defaultDb).text!).map((p) => p.name)
+    const r = buildInitialConfig(spec, defaultDb)
+    const names = plotEntries(r.text!).map((p) => p.name)
     expect(names).toContain('m_R_Keta_0')
     expect(names).toContain('m_R_Keta_1')
     expect(new Set(names).size).toBe(names.length)
+    // Several production modes may live under ONE chain label: ctpwa expands
+    // the mode list into its own internal chains. Splitting into decay1/decay2
+    // is organizational, not a tool requirement.
+    const cfg = parseConfig(r.text!)
+    expect(Object.keys(cfg.decayChains)).toEqual(['decay1'])
+    const rawChains = cfg.raw.get('DecayChains') as Map<unknown, unknown>
+    const chain = rawChains.get('decay1') as Map<unknown, unknown>
+    expect(chain.get('Jpsi')).toEqual([
+      ['eta', 'R_KK'],
+      ['Kp', 'R_Keta'],
+    ])
+  })
+
+  it('does not auto-plot a cascade step whose daughter is an intermediate', () => {
+    // ctpwa plot expressions resolve names against FINAL-STATE particles; an
+    // expression such as M([Kp,R_Keta]) is skipped at fill time.
+    const spec = minimal()
+    spec.chains[0]!.steps = [
+      { mother: 'Jpsi', daughters: ['eta', 'R_KK'] },
+      { mother: 'R_KK', daughters: ['Kp', 'R_Keta'] },
+      { mother: 'R_Keta', daughters: ['Km', 'eta'] },
+    ]
+    spec.chains[0]!.intermediates = [
+      { name: 'R_KK', groups: [{ j: 1, p: -1 }] },
+      { name: 'R_Keta', groups: [{ j: 1, p: -1 }] },
+    ]
+    spec.resonances = []
+    const r = buildInitialConfig(spec, defaultDb)
+    expect(r.errors).toEqual([])
+    const plot = plotEntries(r.text!)
+    expect(plot.map((p) => p.name)).toEqual(['m_R_Keta', 'cosbeta_R_Keta'])
+    expect(plot.some((p) => p.expression!.includes('R_Keta'))).toBe(false)
+  })
+})
+
+describe('buildInitialConfig: compact ctpwa form and polarization', () => {
+  it('writes a single production mode as a mode list (Jpsi: [[eta, R_KK]])', () => {
+    // ctpwa's compact-format detector requires kv.second[0].IsSequence() for
+    // the production key. A flat pair parses "valid" but yields 0 amplitudes.
+    const r = buildInitialConfig(minimal(), defaultDb)
+    expect(r.errors).toEqual([])
+    const chains = parseConfig(r.text!).raw.get('DecayChains') as Map<unknown, unknown>
+    const chain = chains.get('decay1') as Map<unknown, unknown>
+    expect(chain.get('Jpsi')).toEqual([['eta', 'R_KK']])
+    expect(chain.get('R_KK')).toEqual([['Kp', 'Km']])
+  })
+
+  it('carries polarization through to the Particles block', () => {
+    const spec = minimal()
+    spec.particles[0]!.polarization = [-1, 1]
+    const r = buildInitialConfig(spec, defaultDb)
+    expect(r.errors).toEqual([])
+    const particles = parseConfig(r.text!).raw.get('Particles') as Map<unknown, unknown>
+    const jpsi = particles.get('Jpsi') as Map<unknown, unknown>
+    expect(jpsi.get('polarization')).toEqual([-1, 1])
   })
 })
 
@@ -413,5 +469,69 @@ describe('buildInitialConfig: Data file check (baseDir)', () => {
   it('no file check without baseDir (buildInitialConfig stays I/O-free by default)', () => {
     const r = buildInitialConfig(minimal(), defaultDb)
     expect(r.warnings.map((w) => w.code)).not.toContain('data-file-missing')
+  })
+})
+
+describe('buildInitialConfig: 4-body first-level topology gate', () => {
+  /** J/psi -> eta' pi+ pi- pi0 with only ONE of the seven first-level partitions. */
+  const partial = (): InitialConfigSpec => ({
+    particles: [
+      { name: 'Jpsi', pdgid: 443 },
+      { name: 'etap', pdgid: 331 },
+      { name: 'pip', pdgid: 211 },
+      { name: 'pim', pdgid: -211 },
+      { name: 'pi0', pdgid: 111 },
+    ],
+    chains: [
+      {
+        name: 'decay1',
+        steps: [
+          { mother: 'Jpsi', daughters: ['etap', 'R_3pi'] },
+          { mother: 'R_3pi', daughters: ['pi0', 'R_pipi'] },
+          { mother: 'R_pipi', daughters: ['pip', 'pim'] },
+        ],
+        intermediates: [
+          { name: 'R_3pi', groups: [{ j: 1, p: -1 }] },
+          { name: 'R_pipi', groups: [{ j: 1, p: -1 }] },
+        ],
+      },
+    ],
+    resonances: [],
+    data: { order: ['etap', 'pip', 'pim', 'pi0'], data: ['dat', './data.dat'] },
+  })
+
+  const missingExclusions = (): { kind: string; particles: string[][]; reason: string }[] => [
+    { kind: '1+3', particles: [['pip'], ['etap', 'pim', 'pi0']], reason: 'test' },
+    { kind: '1+3', particles: [['pim'], ['etap', 'pip', 'pi0']], reason: 'test' },
+    { kind: '1+3', particles: [['pi0'], ['etap', 'pip', 'pim']], reason: 'test' },
+    { kind: '2+2', particles: [['etap', 'pip'], ['pim', 'pi0']], reason: 'test' },
+    { kind: '2+2', particles: [['etap', 'pim'], ['pip', 'pi0']], reason: 'test' },
+    { kind: '2+2', particles: [['etap', 'pi0'], ['pip', 'pim']], reason: 'test' },
+  ]
+
+  it('preview warns but stays non-blocking', () => {
+    const r = buildInitialConfig(partial(), defaultDb)
+    expect(r.errors).toEqual([])
+    const w = r.warnings.find((x) => x.code === 'topology-incomplete')!
+    expect(w).toBeDefined()
+    expect(w.message).toContain('2+2')
+    expect(w.message).toContain('topology.excluded')
+  })
+
+  it('write path also stays advisory (no hard block)', () => {
+    const r = buildInitialConfig(partial(), defaultDb)
+    expect(r.errors).toEqual([])
+    expect(r.warnings.map((w) => w.code)).toContain('topology-incomplete')
+    expect(r.warnings.find((w) => w.code === 'topology-incomplete')!.message).toContain('2+2')
+    expect(r.text).toBeDefined()
+  })
+
+  it('accepts an incomplete model when every missing partition is explicitly excluded', () => {
+    const spec = partial()
+    spec.topology = { excluded: missingExclusions() }
+    const r = buildInitialConfig(spec, defaultDb)
+    expect(r.errors).toEqual([])
+    expect(r.warnings.map((w) => w.code)).toContain('topology-excluded')
+    expect(r.text).toBeDefined()
   })
 })

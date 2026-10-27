@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { defaultDb } from '../src/db.js'
-import { lookupResonance, lookupC, normalizeName } from '../src/lookup.js'
+import { lookupResonance, lookupC, normalizeName, resonanceConfigKey } from '../src/lookup.js'
 
 describe('normalizeName', () => {
   it('strips case, spaces and symbols', () => {
     expect(normalizeName('phi(1020)')).toBe('phi1020')
     expect(normalizeName("f2'(1525)")).toBe('f21525')
     expect(normalizeName('K*_1410')).toBe('k1410')
+  })
+})
+
+describe('resonanceConfigKey', () => {
+  it('keeps the charge sign after a mass parenthesis', () => {
+    expect(resonanceConfigKey('rho(770)+')).toBe('rho770p')
+    expect(resonanceConfigKey('rho(770)-')).toBe('rho770m')
+    expect(resonanceConfigKey('rho(770)0')).toBe('rho7700')
+    expect(resonanceConfigKey('K*(892)+')).not.toBe(resonanceConfigKey('K*(892)-'))
   })
 })
 

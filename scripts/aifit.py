@@ -286,10 +286,18 @@ def run_interference_only(args: argparse.Namespace) -> int:
 def config_view(config_path: str) -> dict:
     import ctpwa
     di = ctpwa.DecayInfo(config_path)
+    n_amp = int(di.nAmplitudes())
+    ctpwa_valid = bool(di.isValid())
+    # DecayInfo::isValid() only checks initialized_ (the Particles section
+    # parsed). A config whose production step is flat instead of a mode list
+    # (`Jpsi: [d1, d2]` instead of `Jpsi: [[d1, d2]]`) parses "valid" but builds
+    # ZERO amplitudes, so a fit would silently describe nothing. Zero
+    # amplitudes is not a usable config.
     return {
-        "valid": bool(di.isValid()),
+        "valid": ctpwa_valid and n_amp > 0,
+        "ctpwaValid": ctpwa_valid,
         "path": config_path,
-        "nAmplitudes": int(di.nAmplitudes()),
+        "nAmplitudes": n_amp,
         "nFreeParams": int(di.nFreeParams()),
         "amplitudeNames": list(di.amplitudeNames()),
         "resonanceNames": list(di.resonanceNames()),
@@ -308,13 +316,24 @@ def run_validate_only(args: argparse.Namespace) -> int:
             "config": {"path": args.config, "valid": False},
             "error": {"code": "config-parse-failed", "message": f"{type(e).__name__}: {e}"},
         }, args.json, EXIT_CONFIG)
+    if view["valid"]:
+        error = None
+    elif view["nAmplitudes"] == 0:
+        error = {
+            "code": "no-amplitudes",
+            "message": (
+                f"ctpwa parsed {args.config} but built 0 amplitudes. The production step must be "
+                "a mode list (`Jpsi: [[d1, d2]]`), and every intermediate [J,P] group needs at "
+                "least one resonance."
+            ),
+        }
+    else:
+        error = {"code": "config-invalid", "message": f"DecayInfo.isValid() = false for {args.config}"}
     return finish({
         "schemaVersion": SCHEMA_VERSION,
         "status": "ok" if view["valid"] else "config-error",
         "config": view,
-        "error": None if view["valid"] else {
-            "code": "config-invalid", "message": f"DecayInfo.isValid() = false for {args.config}",
-        },
+        "error": error,
     }, args.json, EXIT_OK if view["valid"] else EXIT_CONFIG)
 
 
@@ -610,9 +629,19 @@ def _run_fit(args: argparse.Namespace) -> int:
                        "error": {"code": "config-parse-failed", "message": f"{type(e).__name__}: {e}"}},
                       args.json, EXIT_CONFIG)
     if not view["valid"]:
+        if view.get("nAmplitudes") == 0:
+            error = {
+                "code": "no-amplitudes",
+                "message": (
+                    f"ctpwa parsed {args.config} but built 0 amplitudes. The production step must be "
+                    "a mode list (`Jpsi: [[d1, d2]]`), and every intermediate [J,P] group needs at "
+                    "least one resonance."
+                ),
+            }
+        else:
+            error = {"code": "config-invalid", "message": f"DecayInfo.isValid() = false for {args.config}"}
         return finish({"schemaVersion": SCHEMA_VERSION, "status": "config-error",
-                       "config": view,
-                       "error": {"code": "config-invalid", "message": f"DecayInfo.isValid() = false for {args.config}"}},
+                       "config": view, "error": error},
                       args.json, EXIT_CONFIG)
 
     opts = optimizer_options(args)

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseConfig } from '../src/config-edit.js'
 import { analyzeIntermediateJPC } from '../src/intermediate-jpc.js'
+import { validateResonanceAddition } from '../src/resonance-validate.js'
 import { defaultDb } from '../src/db.js'
 
 /**
@@ -97,5 +98,88 @@ Resonances:
     expect(ana).toBeDefined()
     expect(ana!.chain).toBe('decay2')
     expect(ana!.decaySteps.length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * J/psi -> eta' + R(3pi), R(3pi) -> rho + pi: the C of the intermediate is
+ * fixed by the production vertex even though the decay step's sister is an
+ * intermediate. The gate must use that (and, at R(3pi) itself, the resonance's
+ * PDG C) instead of silently skipping the check.
+ */
+const JPSI_ETAP_3PI = `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.957784, pdgid: 331}
+  pip: {J: 0, P: -1, mass: 0.13957, pdgid: 211}
+  pim: {J: 0, P: -1, mass: 0.13957, pdgid: -211}
+  pi0: {J: 0, P: -1, mass: 0.134977, pdgid: 111}
+DecayChains:
+  decay1:
+    Jpsi: [[etap, R_3pi]]
+    R_3pi: [[pi0, R_pipi]]
+    R_pipi: [[pip, pim]]
+    intermediates:
+      R_3pi:
+        - [J: 1, P: -1]: [omega1420]
+      R_pipi:
+        - [J: 1, P: -1]: [rho770]
+Resonances:
+  omega1420: {model: BWR, parameters: [1.41, 0.29]}
+  rho770: {model: BWR, parameters: [0.7753, 0.1474]}
+`
+
+describe("cascade C parity (J/psi -> eta' + 3pi)", () => {
+  it('propagates C(R_3pi) = - into R_pipi and blocks the C = +1 pi+pi- waves', () => {
+    const cfg = parseConfig(JPSI_ETAP_3PI)
+    const ana = analyzeIntermediateJPC(cfg, defaultDb, 'R_pipi')!
+    expect(ana.cStatus.status).toBe('enforced')
+    expect(ana.cStatus.required).toBe(-1)
+    // 0++, 2++, 4++ of pi+pi- have C=+1; the production vertex forbids them.
+    expect(ana.cBlocked).toContain('2++')
+  })
+
+  it('uses the resonance PDG C when the decay vertex is unresolved (a1(1260))', () => {
+    const cfg = parseConfig(JPSI_ETAP_3PI)
+    const r = validateResonanceAddition(defaultDb, cfg, {
+      name: 'a(1)(1260)0',
+      chain: 'R_3pi',
+      jpGroup: { j: 1, p: 1 },
+      model: 'BWR',
+      parameters: [1.23, 0.42],
+    })
+    expect(r.errors.map((e) => e.code)).toContain('c-violation')
+  })
+
+  it('threshold is the propagated production bound, not the first resonance mass', () => {
+    const cfg = parseConfig(JPSI_ETAP_3PI)
+    // R_pipi <= m(J/psi) - m(eta') - m(pi0) = 2.0041, not 1.41 - 0.135.
+    expect(cfg.kinematics['R_pipi']!.threshold).toBeCloseTo(3.0969 - 0.957784 - 0.134977, 4)
+    const r = validateResonanceAddition(defaultDb, cfg, {
+      name: 'f(2)(1270)',
+      chain: 'R_pipi',
+      jpGroup: { j: 2, p: 1 },
+      model: 'BWR',
+      parameters: [1.2754, 0.1867],
+    })
+    // Mass is well below the kinematic bound now; the rejection is the real C
+    // violation (f2(1270) has C=+1, R_pipi requires C=-1), not a 0.4 MeV
+    // kinematic artefact.
+    expect(r.errors.map((e) => e.code)).not.toContain('above-threshold')
+    expect(r.errors.map((e) => e.code)).toContain('c-violation')
+  })
+
+  it('rejects an ambiguous charge spelling when the PDG C cannot be resolved', () => {
+    const cfg = parseConfig(JPSI_ETAP_3PI)
+    // `a1(1260)` normalizes onto the charged PDG entries a(1)(1260)+/- (whose C
+    // is undefined), not the neutral a(1)(1260)0 (C=+1). A silent "unverified"
+    // warning would let it through; require the neutral spelling instead.
+    const r = validateResonanceAddition(defaultDb, cfg, {
+      name: 'a1(1260)',
+      chain: 'R_3pi',
+      jpGroup: { j: 1, p: 1 },
+      model: 'BWR',
+      parameters: [1.23, 0.42],
+    })
+    expect(r.errors.map((e) => e.code)).toContain('c-unverified')
   })
 })

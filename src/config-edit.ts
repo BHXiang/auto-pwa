@@ -13,7 +13,7 @@
  * verbatim in structure.
  */
 import { isMap, isScalar, isSeq, parseDocument, stringify, type Document } from 'yaml'
-import { normalizeName } from './lookup.js'
+import { normalizeName, resonanceConfigKey } from './lookup.js'
 import { explicitJp, jpLabel } from './jpc.js'
 import { parameterStructureError } from './resonance-validate.js'
 import {
@@ -301,62 +301,161 @@ export function rebuildViews(
         // Carried through so the gate can report that ctpwa ignores this key.
         ...(chain.has('symmetrize') ? { symmetrize: true as const } : {}),
       }
+    }
+  }
 
-      // --- kinematics: production steps A -> R + B ------------------------
-      /**
-       * J/P/mass of an intermediate, resolved from its first group and that
-       * group's first resonance spec — the same convention the cascade-mother
-       * lookup below uses (chic1: parameters [3.51]). Parameter-less models
-       * (Interp/Custom) carry no mass and resolve to undefined.
-       */
-      const intermediateParticle = (name: string): Particle | undefined => {
-        const groups = intermediates[name]?.groups
-        const first = groups?.[0]
-        const resName = first?.names?.[0]
-        const spec = resName !== undefined ? resonances[resName] : undefined
-        const mass = spec?.parameters[0]
-        if (first === undefined || mass === undefined) return undefined
-        return { j: first.jp.j, p: first.jp.p, mass }
+  // --- kinematics: production steps A -> R + B ----------------------------
+  // The upper bound of an intermediate's invariant mass is NOT a resonance
+  // mass: a [J,P] group may hold several states (or an NR term), and the
+  // system is produced anywhere below m(grandmother) - m(sister). Propagate
+  // that bound down the cascade:
+  //   A -> R + B  =>  m(R) <= bound(A) - m(B)
+  // The old code used the first resonance of the group as the mother mass,
+  // which made a broad 3pi system look like a 1.41 GeV particle: f2(1270) was
+  // rejected in rho*pi by 0.4 MeV, while a parameterless ONE placeholder
+  // (mass 2.5) made the same bound arbitrarily loose.
+  const upperMass = new Map<string, number>()
+  for (const [name, p] of Object.entries(particles)) upperMass.set(name, p.mass)
+  /** Minimum invariant mass of an intermediate: sum of the final-state masses,
+   * minimized over its decay modes. Used for A -> R1 + R2 when a side has no
+   * resonance with a definite mass (a parameterless ONE): the other side's
+   * threshold must use a physical lower bound, not an invented placeholder. */
+  const minMassOf = (intName: string, chainName: string): number | undefined => {
+    const chain = decayChains[chainName]
+    if (chain === undefined) return undefined
+    const memo = new Map<string, number | undefined>()
+    const visit = (name: string, seen: Set<string>): number | undefined => {
+      const particle = particles[name]
+      if (particle !== undefined) return particle.mass
+      if (chain.intermediates[name] === undefined) return undefined
+      if (memo.has(name)) return memo.get(name)
+      if (seen.has(name)) return undefined
+      seen.add(name)
+      let best: number | undefined
+      for (const step of chain.steps) {
+        if (step.mother !== name) continue
+        const a = visit(step.daughters[0], seen)
+        const b = visit(step.daughters[1], seen)
+        if (a === undefined || b === undefined) continue
+        const sum = a + b
+        if (best === undefined || sum < best) best = sum
       }
-
-      for (const step of decayChains[chainName].steps) {
-        const intermediatesNames = new Set(Object.keys(intermediates))
-        let motherParticle = particles[step.mother] ?? intermediateParticle(step.mother)
-        if (!motherParticle) continue
-        const res = step.daughters.filter((d) => intermediatesNames.has(d))
-        const siblings = step.daughters.filter((d) => !intermediatesNames.has(d))
-        // ctpwa's production vertex is two-body. Two shapes exist:
-        //   A -> R + B    : the sibling is a plain particle;
-        //   A -> R1 + R2  : BOTH daughters are intermediates — the usual
-        //                   four-body topology (e.g. J/psi -> R1 + R2).
-        // The second shape used to be skipped (`res.length !== 1`), which left
-        // `kinematics` incomplete and, through it, silently disabled the
-        // two-vertex C check for those intermediates (intermediate-jpc reads
-        // its production row from here). Each side's threshold uses the OTHER
-        // side's mass, resolved from that side's group.
-        const against: { self: string; name: string; particle: Particle }[] = []
-        if (res.length === 1 && siblings.length === 1) {
-          const sibling = particles[siblings[0]!]
-          if (sibling !== undefined) against.push({ self: res[0]!, name: siblings[0]!, particle: sibling })
-        } else if (res.length === 2 && siblings.length === 0) {
-          const [a, b] = res as [string, string]
-          const pa = intermediateParticle(a)
-          const pb = intermediateParticle(b)
-          if (pa !== undefined && pb !== undefined) {
-            against.push({ self: a, name: b, particle: pb }, { self: b, name: a, particle: pa })
+      seen.delete(name)
+      memo.set(name, best)
+      return best
+    }
+    return visit(intName, new Set())
+  }
+  /** Representative mass: first group's first resonance (the old convention,
+   * kept ONLY for the A -> R1 + R2 shape, where neither side has a fixed
+   * production bound yet). Falls back to the minimum final-state mass for
+   * parameterless models (NR/ONE), so no placeholder mass is needed. */
+  const representativeMass = (intName: string): number | undefined => {
+    for (const chain of Object.values(decayChains)) {
+      const first = chain.intermediates[intName]?.groups[0]
+      const resName = first?.names?.[0]
+      const m = resName !== undefined ? resonances[resName]?.parameters[0] : undefined
+      if (first !== undefined && m !== undefined && Number.isFinite(m)) return m
+    }
+    for (const [chainName, chain] of Object.entries(decayChains)) {
+      if (chain.intermediates[intName] === undefined) continue
+      const m = minMassOf(intName, chainName)
+      if (m !== undefined && Number.isFinite(m)) return m
+    }
+    return upperMass.get(intName)
+  }
+  // Fixed point: a cascade mother may itself be an intermediate whose bound is
+  // only known after its own production step has been processed.
+  for (let pass = 0; pass < 32; pass++) {
+    let changed = false
+    for (const chain of Object.values(decayChains)) {
+      for (const step of chain.steps) {
+        const motherMass = particles[step.mother]?.mass ?? upperMass.get(step.mother)
+        if (motherMass === undefined) continue
+        const ints = step.daughters.filter((d) => chain.intermediates[d] !== undefined)
+        const parts = step.daughters.filter((d) => chain.intermediates[d] === undefined)
+        const pairs: [string, number][] = []
+        if (ints.length === 1 && parts.length === 1) {
+          const sisterMass = particles[parts[0]!]?.mass
+          if (sisterMass !== undefined) pairs.push([ints[0]!, sisterMass])
+        } else if (ints.length === 2) {
+          const [a, b] = ints as [string, string]
+          const ma = representativeMass(a)
+          const mb = representativeMass(b)
+          if (ma !== undefined) pairs.push([b, ma])
+          if (mb !== undefined) pairs.push([a, mb])
+        }
+        for (const [self, otherMass] of pairs) {
+          const bound = motherMass - otherMass
+          if (!Number.isFinite(bound)) continue
+          const old = upperMass.get(self)
+          if (old === undefined || bound < old) {
+            upperMass.set(self, bound)
+            changed = true
           }
         }
-        for (const { self, name, particle } of against) {
-          const threshold = motherParticle.mass - particle.mass
-          const existing = kinematics[self]
-          if (!existing || threshold < existing.threshold) {
-            kinematics[self] = {
-              mother: motherParticle,
-              daughter: particle,
-              threshold,
-              motherName: step.mother,
-              daughterName: name,
-            }
+      }
+    }
+    if (!changed) break
+  }
+  const intermediateJp = (intName: string): { j: number; p: 1 | -1 } | undefined => {
+    for (const chain of Object.values(decayChains)) {
+      const first = chain.intermediates[intName]?.groups[0]
+      if (first !== undefined) return { j: first.jp.j, p: first.jp.p }
+    }
+    return undefined
+  }
+  /** Mother of a cascade step: J/P from its first group, mass from the
+   * propagated production bound (falls back to the representative mass). */
+  const intermediateParticle = (intName: string): Particle | undefined => {
+    const jp = intermediateJp(intName)
+    const mass = upperMass.get(intName) ?? representativeMass(intName)
+    if (jp === undefined || mass === undefined) return undefined
+    return { j: jp.j, p: jp.p, mass }
+  }
+  /** Same, but with the representative-mass convention (A -> R1 + R2 only). */
+  const representativeParticle = (intName: string): Particle | undefined => {
+    const jp = intermediateJp(intName)
+    const mass = representativeMass(intName)
+    if (jp === undefined || mass === undefined) return undefined
+    return { j: jp.j, p: jp.p, mass }
+  }
+
+  for (const chain of Object.values(decayChains)) {
+    for (const step of chain.steps) {
+      const motherParticle = particles[step.mother] ?? intermediateParticle(step.mother)
+      if (!motherParticle) continue
+      const ints = step.daughters.filter((d) => chain.intermediates[d] !== undefined)
+      const parts = step.daughters.filter((d) => chain.intermediates[d] === undefined)
+      // ctpwa's production vertex is two-body. Two shapes exist:
+      //   A -> R + B    : the sibling is a plain particle;
+      //   A -> R1 + R2  : BOTH daughters are intermediates — the usual
+      //                   four-body topology (e.g. J/psi -> R1 + R2).
+      // For the second shape each side's threshold uses the OTHER side's
+      // representative mass (neither has a production bound of its own until
+      // both are known).
+      const against: { self: string; name: string; particle: Particle }[] = []
+      if (ints.length === 1 && parts.length === 1) {
+        const sibling = particles[parts[0]!]
+        if (sibling !== undefined) against.push({ self: ints[0]!, name: parts[0]!, particle: sibling })
+      } else if (ints.length === 2 && parts.length === 0) {
+        const [a, b] = ints as [string, string]
+        const pa = representativeParticle(a)
+        const pb = representativeParticle(b)
+        if (pa !== undefined && pb !== undefined) {
+          against.push({ self: a, name: b, particle: pb }, { self: b, name: a, particle: pa })
+        }
+      }
+      for (const { self, name, particle } of against) {
+        const threshold = motherParticle.mass - particle.mass
+        const existing = kinematics[self]
+        if (!existing || threshold < existing.threshold) {
+          kinematics[self] = {
+            mother: motherParticle,
+            daughter: particle,
+            threshold,
+            motherName: step.mother,
+            daughterName: name,
           }
         }
       }
@@ -718,7 +817,7 @@ export function applyResonanceAddition(config: PwaConfig, proposal: ResonancePro
     // and the definition is replaced further down.
   }
   const alreadyDefined = config.resonances[proposal.name] !== undefined
-  if (!alreadyDefined && Object.keys(config.resonances).some((n) => normalizeName(n) === normalizeName(proposal.name))) {
+  if (!alreadyDefined && Object.keys(config.resonances).some((n) => resonanceConfigKey(n) === resonanceConfigKey(proposal.name))) {
     errors.push({ code: 'duplicate', message: `"${proposal.name}" duplicates existing resonance "${dupName(config, proposal.name)}"` })
     return { config, changed, errors }
   }
@@ -1098,11 +1197,22 @@ export function crossReferenceErrors(config: PwaConfig): { errors: ValidationIss
 
 /** Find the existing key that normalizes to the same name. */
 function dupName(config: { resonances: Record<string, unknown> }, name: string): string {
-  return Object.keys(config.resonances).find((n) => normalizeName(n) === normalizeName(name)) ?? name
+  return Object.keys(config.resonances).find((n) => resonanceConfigKey(n) === resonanceConfigKey(name)) ?? name
 }
 
 /** First line of every rendered config — kept stable for downstream tooling. */
 const CONFIG_HEADER = '# config.yml — regenerated by dsh-pwa (auto_pwa_config_edit)'
+const CONFIG_HEADER_LINE = `${CONFIG_HEADER}\n`
+
+/** Drop the header line(s) a previous dump left at the top of the parsed
+ * document, so each render has exactly one (comments are preserved by the
+ * Document round-trip, including our own header — without this every dump
+ * appended another copy). */
+function stripConfigHeader(text: string): string {
+  let out = text
+  while (out.startsWith(CONFIG_HEADER_LINE)) out = out.slice(CONFIG_HEADER_LINE.length)
+  return out
+}
 
 /**
  * Render the config back to YAML text (parseable by ctpwa/yaml-cpp).
@@ -1119,7 +1229,7 @@ export function dumpConfig(config: PwaConfig): string {
   if (doc !== undefined) {
     try {
       syncNode(doc.contents, config.raw, doc)
-      const rendered = `${CONFIG_HEADER}\n${doc.toString({ lineWidth: 0, flowCollectionPadding: false })}`
+      const rendered = `${CONFIG_HEADER}\n${stripConfigHeader(doc.toString({ lineWidth: 0, flowCollectionPadding: false }))}`
       const back = parseDocument(rendered).toJS({ mapAsMap: true })
       if (sameValue(back, config.raw)) return rendered
     } catch {
@@ -1224,15 +1334,228 @@ export function parseConstraints(raw: YamlMap): PwaConstraints {
     }
     if (Object.keys(gaussConstr).length > 0) out.gaussConstr = gaussConstr
   }
+  const freePhsp = conRaw.get('free_phsp_amplitudes')
+  if (typeof freePhsp === 'boolean') out.freePhspAmplitudes = freePhsp
 
   return out
 }
 
 /**
+ * ctpwa `Constraints:` keys (Config.cu parseConstraints). Keys are whitelisted
+ * and values shape-checked; **names/semantics are not**. A trans constraint may
+ * reference a full chain id, an intermediate, or an arbitrary substring; ctpwa
+ * owns matching and reports no-ops on stderr. This keeps the config layer
+ * generous for multi-body chains while still catching typos (`maxl`) and
+ * malformed matrices before a GPU run.
+ */
+export const CONSTRAINT_KEYS = [
+  'maxL',
+  'bf_d',
+  'has_bf',
+  'identical',
+  'trans',
+  'fix_var',
+  'free_var',
+  'var_range',
+  'var_equal',
+  'gauss_constr',
+  'free_phsp_amplitudes',
+] as const
+
+const CONSTRAINT_KEY_SET = new Set<string>(CONSTRAINT_KEYS)
+
+const isConstraintNumber = (v: unknown): boolean => asNum(v) !== undefined
+
+/** trans value: scalar, [r1,r2,...], or [[re,im], ...]. */
+function isTransValue(v: unknown): boolean {
+  if (isConstraintNumber(v)) return true
+  const rows = asArr(v)
+  if (rows === undefined) return false
+  if (rows.every(isConstraintNumber)) return true
+  return rows.every((row) => {
+    const pair = asArr(row)
+    return pair !== undefined && pair.length >= 2 && pair.every(isConstraintNumber)
+  })
+}
+
+/**
+ * Key whitelist + value shape checks for the raw `Constraints` section.
+ * No particle/chain/parameter-name lookups: those are ctpwa's job and a wrong
+ * name is a no-op, not a structural error.
+ */
+export function validateConstraintShapes(raw: YamlMap): {
+  errors: ValidationIssue[]
+  warnings: ValidationIssue[]
+} {
+  const errors: ValidationIssue[] = []
+  const warnings: ValidationIssue[] = []
+  const conRaw = asMap(raw.get('Constraints')) ?? asMap(raw.get('constraints'))
+  if (conRaw === undefined) return { errors, warnings }
+  if (!(conRaw instanceof Map)) {
+    errors.push({ code: 'constraint-section-shape', message: 'Constraints must be a mapping (key: value)' })
+    return { errors, warnings }
+  }
+
+  const shapeError = (key: string, expected: string): void => {
+    errors.push({
+      code: 'constraint-shape',
+      message: `Constraints.${key} has the wrong shape — expected ${expected}; check the YAML nesting (a missed newline silently miscounts keys)`,
+    })
+  }
+
+  for (const [keyRaw, value] of conRaw) {
+    if (typeof keyRaw !== 'string') {
+      errors.push({ code: 'constraint-key-shape', message: `Constraints has a non-string key: ${JSON.stringify(keyRaw)}` })
+      continue
+    }
+    const key = keyRaw
+    if (!CONSTRAINT_KEY_SET.has(key)) {
+      const lower = key.toLowerCase()
+      const suggest = CONSTRAINT_KEYS.find((k) => k.toLowerCase() === lower)
+      errors.push({
+        code: 'constraint-key-unknown',
+        message:
+          `Constraints.${key} is not a ctpwa constraint key. Allowed: ${CONSTRAINT_KEYS.join(', ')}` +
+          (suggest !== undefined ? ` — did you mean "${suggest}"?` : ''),
+      })
+      continue
+    }
+
+    switch (key) {
+      case 'maxL': {
+        const n = asNum(value)
+        if (!Number.isInteger(n) || (n as number) <= 0) shapeError(key, 'a positive integer')
+        break
+      }
+      case 'bf_d':
+        if (!isConstraintNumber(value)) shapeError(key, 'a number')
+        break
+      case 'has_bf':
+      case 'free_phsp_amplitudes':
+        if (typeof value !== 'boolean') shapeError(key, 'true or false')
+        break
+      case 'identical': {
+        const groups = asArr(value)
+        if (groups === undefined) {
+          shapeError(key, 'a list of groups, e.g. [[pi01, pi02]]')
+          break
+        }
+        for (const groupRaw of groups) {
+          const group = asArr(groupRaw)
+          if (group === undefined || group.length < 2 || !group.every((n) => typeof n === 'string')) {
+            shapeError(key, 'each group to be a list of >= 2 particle names')
+            break
+          }
+        }
+        break
+      }
+      case 'trans': {
+        const entries = asArr(value)
+        if (entries === undefined) {
+          shapeError(key, 'a list of { [names...]: ratios } entries')
+          break
+        }
+        for (const entryRaw of entries) {
+          const entry = asMap(entryRaw)
+          if (entry === undefined || entry.size === 0) {
+            shapeError(key, 'each entry to be a mapping { [chain/intermediate names...]: ratios }')
+            break
+          }
+          for (const [namesRaw, ratio] of entry) {
+            const names = asArr(namesRaw)
+            if (names === undefined || names.length < 2 || !names.every((n) => typeof n === 'string')) {
+              shapeError(key, 'the key to be a list of >= 2 chain/intermediate names')
+              break
+            }
+            if (!isTransValue(ratio)) {
+              shapeError(key, 'the value to be a number, [r1, r2, ...], or [[re, im], ...]')
+              break
+            }
+          }
+        }
+        break
+      }
+      case 'fix_var': {
+        const map = asMap(value)
+        if (map === undefined) {
+          shapeError(key, 'a mapping {parameterName: number}')
+          break
+        }
+        for (const [name, v] of map) {
+          if (typeof name !== 'string' || !isConstraintNumber(v)) {
+            shapeError(key, 'a mapping {parameterName: number}')
+            break
+          }
+        }
+        break
+      }
+      case 'free_var': {
+        const names = asArr(value)
+        if (names === undefined || !names.every((n) => typeof n === 'string')) {
+          shapeError(key, 'a list of parameter names')
+        }
+        break
+      }
+      case 'var_range': {
+        const map = asMap(value)
+        if (map === undefined) {
+          shapeError(key, 'a mapping {parameterName: [lower, upper]}')
+          break
+        }
+        for (const [name, rangeRaw] of map) {
+          const range = asArr(rangeRaw)
+          if (typeof name !== 'string' || range === undefined || range.length < 2 || !range.every(isConstraintNumber)) {
+            shapeError(key, 'a mapping {parameterName: [lower, upper]}')
+            break
+          }
+        }
+        break
+      }
+      case 'var_equal': {
+        const groups = asArr(value)
+        if (groups === undefined) {
+          shapeError(key, 'a list of groups of >= 2 parameter names')
+          break
+        }
+        for (const groupRaw of groups) {
+          const group = asArr(groupRaw)
+          if (group === undefined || group.length < 2 || !group.every((n) => typeof n === 'string')) {
+            shapeError(key, 'each group to be a list of >= 2 parameter names')
+            break
+          }
+        }
+        break
+      }
+      case 'gauss_constr': {
+        const map = asMap(value)
+        if (map === undefined) {
+          shapeError(key, 'a mapping {parameterName: sigma}')
+          break
+        }
+        for (const [name, sigma] of map) {
+          const n = asNum(sigma)
+          if (typeof name !== 'string' || n === undefined) {
+            shapeError(key, 'a mapping {parameterName: sigma}')
+            break
+          }
+          if (n <= 0) {
+            errors.push({ code: 'constraint-shape', message: `Constraints.gauss_constr.${name} must be positive (sigma > 0)` })
+            break
+          }
+        }
+        break
+      }
+    }
+  }
+  return { errors, warnings }
+}
+
+/**
  * Structural validation of a whole config (auto_pwa_config_view gate):
- *   - Constraints.identical groups: members exist in Particles, same spin;
- *   - Constraints.trans references <intermediate>_<groupIndex> that exist;
- *   - Constraints.maxL is a positive integer;
+ *   - Constraints keys are whitelisted and values shape-checked (NO name
+ *     whitelist: trans may name full chains/intermediates; ctpwa matches);
+ *   - identical member names/spins are warnings (physics evidence, not shape);
+ *   - maxL shape is a positive integer;
  *   - Data.order entries exist in Particles;
  *   - per-step sl whitelist entries are legal (2S+1, L).
  * Errors indicate the config is structurally broken; warnings are hygiene.
@@ -1249,88 +1572,65 @@ export function validateConfig(
   // three-body step, a malformed mode) means the model is NOT what the file
   // says, so nothing downstream — least of all a fit — may run on it.
   errors.push(...(config.stepIssues ?? []))
+  // Constraints: key whitelist + shape only. No name whitelist — ctpwa matches
+  // trans names against chain keys and reports no-ops on stderr; that is a
+  // physics/no-op question for ΔNLL + records, not a structural error.
+  const shape = validateConstraintShapes(config.raw)
+  errors.push(...shape.errors)
+  warnings.push(...shape.warnings)
 
+  // identical membership/spin: physics evidence, not shape. ctpwa simply
+  // ignores unknown names; a wrong group is a no-op, so warn and let the fit
+  // record expose it.
   for (const group of constraints.identical ?? []) {
-    if (group.length < 2) {
-      errors.push({
-        code: 'identical-group-too-small',
-        message: `Constraints.identical group ${JSON.stringify(group)} has fewer than 2 members — ctpwa needs >= 2 to symmetrize`,
-      })
-      continue
-    }
     const spins = new Set<number>()
     for (const name of group) {
       const p = config.particles[name]
       if (!p) {
-        errors.push({
+        warnings.push({
           code: 'identical-unknown-particle',
-          message: `identical group member "${name}" is not in the Particles section`,
+          message: `identical group member "${name}" is not in the Particles section — ctpwa will ignore it (no-op); check the name`,
         })
       } else {
         spins.add(p.j)
       }
     }
     if (spins.size > 1) {
-      errors.push({
+      warnings.push({
         code: 'identical-spin-mismatch',
-        message: `identical group ${JSON.stringify(group)} mixes different spins ${[...spins].join(', ')} — identical particles must share one spin`,
+        message: `identical group ${JSON.stringify(group)} mixes different spins ${[...spins].join(', ')} — identical particles should share one spin`,
       })
     }
   }
 
-  for (const t of constraints.trans ?? []) {
-    // A trans reference may be either form ctpwa accepts
-    // (Parameters.cu buildWithTrans):
-    //   - a bare intermediate name ("R_pbareta") — substring/instance match,
-    //     the usual charge-conjugation coupling constraint; or
-    //   - "<intermediate>_<blockIndex>" — explicit amplitude-block index.
-    const isIntermediate = (n: string): boolean =>
-      Object.values(config.decayChains).some((c) => c.intermediates[n] !== undefined)
-    for (const name of t.names) {
-      if (isIntermediate(name)) continue
-      const m = /^(.+)_(\d+)$/.exec(name)
-      if (!m) {
-        errors.push({
-          code: 'trans-bad-name',
-          message: `trans references "${name}" — expected an intermediate name (e.g. R_Keta) or <intermediate>_<groupIndex> (e.g. R_Keta_0)`,
-        })
-        continue
-      }
-      const intName = m[1]
-      const idx = Number(m[2])
-      const found = Object.values(config.decayChains).find((c) => c.intermediates[intName])
-      if (!found) {
-        errors.push({
-          code: 'trans-unknown-intermediate',
-          message: `trans references "${name}" but no intermediate "${intName}" is defined in any chain`,
-        })
-      } else {
-        // Amplitude blocks = [J,P] groups × production channels: cascade
-        // chains expand one group into one block per production step
-        // (e.g. R_Keta produced via both chic1→Kp+R_Keta and
-        // chic1→Km+R_Keta → indices 0..1, as fit.json's per-channel
-        // coupling names confirm).
-        const nGroups = found.intermediates[intName].groups.length
-        const nChannels = Math.max(
-          Object.values(config.decayChains)
-            .flatMap((c) => c.steps)
-            .filter((s) => s.daughters.includes(intName)).length,
-          1,
-        )
-        const nBlocks = nGroups * nChannels
-        if (idx >= nBlocks) {
-          errors.push({
-            code: 'trans-group-index',
-            message: `trans references "${name}" but ${intName} has only ${nBlocks} amplitude block(s) (${nGroups} [J,P] group(s) × ${nChannels} production channel(s), indices 0..${nBlocks - 1})`,
-          })
-        }
-      }
+  // ONE is an escape hatch, not a filler. It bypasses PDG-backed and C checks
+  // (resonance-validate.ts only checks particle models), so a C-forbidden
+  // group can look "gate-clean" with ONE. Warn once per config; never block —
+  // the physics call belongs to the analyser + ΔNLL/records.
+  const resonanceEntries = Object.entries(config.resonances)
+  const oneEntries = resonanceEntries.filter(([, r]) => r.model === 'ONE')
+  if (oneEntries.length > 0) {
+    warnings.push({
+      code: 'one-c-unchecked',
+      message:
+        `${oneEntries.length} 个 ONE 相空间项：插件/ctpwa 不对 ONE 做 PDG 依据与 C 守恒检查；` +
+        `ONE 只能用于该 [J,P] 组确实允许的相空间波，不能用它绕过 C 禁戒` +
+        `（例如 J/ψ→η′+3π 要求 3π 的 C=-1，0^-+/2^-+ 是 C=+1）。`,
+    })
+    if (oneEntries.length >= 3 || (resonanceEntries.length >= 4 && oneEntries.length / resonanceEntries.length >= 0.3)) {
+      warnings.push({
+        code: 'nr-budget',
+        message:
+          `ONE 占 ${oneEntries.length}/${resonanceEntries.length} 个共振态，比例偏高：` +
+          `NR 项会吸收缺失的共振/高 mass 结构，且没有质量/宽度自由度可作为模型证据。` +
+          `先确认每个 ONE 是否必要，优先用 PDG 态或减少不必要的拓扑，不要把 [J,P] 组“填满”当成目标。`,
+      })
     }
   }
 
-  if (constraints.maxL !== undefined && (!Number.isInteger(constraints.maxL) || constraints.maxL <= 0)) {
-    errors.push({ code: 'maxl-invalid', message: `Constraints.maxL must be a positive integer, got ${constraints.maxL}` })
-  }
+  // Data order / sl checks below; trans names and group indices are NOT
+  // validated here (chain ids, intermediate names and arbitrary substrings are
+  // all legal ctpwa inputs).
 
   const dataRaw = asMap(config.raw.get('Data')) ?? asMap(config.raw.get('data'))
   const order = asArr(dataRaw?.get('order'))?.map(asStr).filter((s): s is string => s !== undefined) ?? []

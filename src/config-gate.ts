@@ -32,7 +32,7 @@ import { validateConfig, crossReferenceErrors } from './config-edit.js'
 import { analyzeIntermediateJPC } from './intermediate-jpc.js'
 import { lookupResonance, normalizeName } from './lookup.js'
 import { explicitJp } from './jpc.js'
-import { classifyPairPhysics } from './particle-info.js'
+import { classifyPairPhysics, resolveC } from './particle-info.js'
 import { PARTICLE_MODELS } from './resonance-validate.js'
 import type { PwaConfig, ResonanceDb, ValidationIssue } from './types.js'
 
@@ -122,6 +122,96 @@ function groupOccurrences(
   for (const [chain, spec] of Object.entries(config.decayChains)) {
     for (const [intermediate, int] of Object.entries(spec.intermediates)) {
       for (const g of int.groups) out.push({ chain, intermediate, jp: g.jp, names: g.names })
+    }
+  }
+  return out
+}
+
+/**
+ * C of a decay group, derived from the **decay vertex** rather than the
+ * resonance name: `R[J,P] -> d1 + d2` fixes C(R) once both daughters' C are
+ * known; `pairJPC` supplies C for conjugate/identical pairs (e.g. ππ gives
+ * (-1)^L per J), and the product C(d1)C(d2) covers η′π0-like pairs.
+ * Name-based PDG lookup is ambiguous for charged-family aliases (rho770 ->
+ * rho(770)+ has no C), so it is deliberately not used as the primary source.
+ */
+function groupCFromAnalysis(
+  ana: NonNullable<ReturnType<typeof analyzeIntermediateJPC>>,
+  jp: { j: number; p: 1 | -1 },
+  config: PwaConfig,
+  db: ResonanceDb,
+): 1 | -1 | undefined {
+  const label = jpLabel(jp)
+  const fromDecay = new Set<number>()
+  for (const step of ana.decaySteps) {
+    const c = step.cOf[label]
+    if (c === 1 || c === -1) fromDecay.add(c)
+  }
+  if (fromDecay.size === 1) return [...fromDecay][0] as 1 | -1
+  if (fromDecay.size > 1) return undefined
+  // e.g. a0/a2 -> η′ + π0: pairJPC leaves C undefined for a distinct pair, but
+  // both daughters are C eigenstates; C conservation gives C(R)=C(d1)C(d2).
+  const fromDaughters = new Set<number>()
+  for (const step of ana.decaySteps) {
+    if (step.daughters.length !== 2) continue
+    const p1 = config.particles[step.daughters[0]!]
+    const p2 = config.particles[step.daughters[1]!]
+    if (p1 === undefined || p2 === undefined) continue
+    const c1 = resolveC(db, { ...p1, name: step.daughters[0] })
+    const c2 = resolveC(db, { ...p2, name: step.daughters[1] })
+    if (c1 !== undefined && c2 !== undefined) fromDaughters.add(c1 * c2)
+  }
+  return fromDaughters.size === 1 ? ([...fromDaughters][0] as 1 | -1) : undefined
+}
+
+/**
+ * Production-vertex C check for **two intermediate daughters** (2+2 and
+ * cascade 2+2): `A -> R1 + R2` with C(A) = C(R1)*C(R2). The per-intermediate
+ * loop above cannot do this: `R1`'s sibling `R2` is an intermediate whose C is
+ * not derivable from its own production (circular), so `cRequired` is null and
+ * a forbidden pair silently passes. This function checks every group pair.
+ */
+export function productionCErrors(config: PwaConfig, db: ResonanceDb): GateIssue[] {
+  const out: GateIssue[] = []
+  const seen = new Set<string>()
+  const sign = (c: number): string => (c > 0 ? '+' : '-')
+  for (const [chainName, chain] of Object.entries(config.decayChains)) {
+    for (const step of chain.steps) {
+      if (step.daughters.length !== 2) continue
+      const d1 = step.daughters[0]
+      const d2 = step.daughters[1]
+      if (d1 === undefined || d2 === undefined) continue
+      const i1 = chain.intermediates[d1]
+      const i2 = chain.intermediates[d2]
+      if (i1 === undefined || i2 === undefined) continue
+      const mother = config.particles[step.mother]
+      if (mother === undefined) continue
+      const cA = resolveC(db, { ...mother, name: step.mother })
+      if (cA === undefined) continue
+      const ana1 = analyzeIntermediateJPC(config, db, d1)
+      const ana2 = analyzeIntermediateJPC(config, db, d2)
+      if (ana1 === undefined || ana2 === undefined) continue
+      for (const g1 of i1.groups) {
+        for (const g2 of i2.groups) {
+          const c1 = groupCFromAnalysis(ana1, g1.jp, config, db)
+          const c2 = groupCFromAnalysis(ana2, g2.jp, config, db)
+          if (c1 === undefined || c2 === undefined) continue
+          const product = (c1 * c2) as 1 | -1
+          if (product === cA) continue
+          const key = [chainName, step.mother, d1, jpLabel(g1.jp), d2, jpLabel(g2.jp)].join('|')
+          if (seen.has(key)) continue
+          seen.add(key)
+          out.push(
+            err(
+              'production-c-violation',
+              `产生顶点 ${step.mother} -> ${d1} + ${d2} C 不守恒：C(${step.mother})=${sign(cA)}，` +
+                `但 ${d1}[${jpLabel(g1.jp)}] C=${sign(c1)} × ${d2}[${jpLabel(g2.jp)}] C=${sign(c2)} ` +
+                `= ${sign(product)}。该组合 C 禁戒（ctpwa 不做 C 检查，必须在这里拦下；` +
+                `删掉/限制该组，或换 C 允许的组合）。`,
+            ),
+          )
+        }
+      }
     }
   }
   return out
@@ -251,6 +341,9 @@ export function gateConfig(
         )
       }
     }
+    // 2+2 / cascade 2+2: both daughters are intermediates, so the per-
+    // intermediate cRequired above is null (circular). Check every group pair.
+    physErrors.push(...productionCErrors(config, db))
     push({ name: 'two-vertex-jpc', ran: true, note: `maxL=${maxL}` }, { errors: physErrors, warnings: physWarnings })
   } else {
     checks.push({

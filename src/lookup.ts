@@ -18,6 +18,17 @@ export function normalizeName(s: string): string {
     .replace(/[^a-z0-9]/g, '')
 }
 
+/**
+ * Config-key identity for resonance definitions: `normalizeName` PLUS a
+ * trailing charge sign after a mass parenthesis is kept (`rho(770)+` ->
+ * `rho770p`, `rho(770)-` -> `rho770m`). Used ONLY for duplicate detection:
+ * `normalizeName` deliberately merges multiplet members for PDG lookups, but
+ * the config must be able to define both charge states side by side.
+ */
+export function resonanceConfigKey(s: string): string {
+  return normalizeName(s.replace(/(?<=\))([+-])\s*$/, (c) => (c === '+' ? '_p' : '_m')))
+}
+
 function matchesName(entry: ResonanceEntry, query: string): boolean {
   const q = normalizeName(query)
   if (normalizeName(entry.id) === q) return true

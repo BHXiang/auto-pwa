@@ -233,3 +233,47 @@ Resonances:
     expect(r.warnings.map((w) => w.code)).toContain('not-on-pdg')
   })
 })
+
+describe('2+2 production C (both daughters are intermediates)', () => {
+  const TWO_BY_TWO = `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.9578, pdgid: 331}
+  pip: {J: 0, P: -1, mass: 0.13957, pdgid: 211}
+  pim: {J: 0, P: -1, mass: 0.13957, pdgid: -211}
+  pi0: {J: 0, P: -1, mass: 0.1349, pdgid: 111}
+Data:
+  order: [pip, pim, etap, pi0]
+  data: [dat, ./data.dat]
+DecayChains:
+  decay1:
+    Jpsi: [[R_pipim, R_etappi0]]
+    R_pipim: [pip, pim]
+    R_etappi0: [etap, pi0]
+    intermediates:
+      R_pipim:
+        - [J: 1, P: -1]: [rho(770)0]
+        - [J: 0, P: +1]: [f0(500)]
+      R_etappi0:
+        - [J: 0, P: +1]: [a0(1450)0]
+Resonances:
+  rho(770)0: {model: BWR, parameters: [0.7753, 0.1474]}
+  f0(500): {model: BWR, parameters: [0.6, 0.45]}
+  a0(1450)0: {model: BWR, parameters: [1.4387, 0.258]}
+`
+
+  it('rejects J/psi -> f0(500) + a0(1450) even though the sibling C is circular', () => {
+    const cfg = parseConfig(TWO_BY_TWO)
+    const out = gateConfig(cfg, TWO_BY_TWO, defaultDb, { maxL: 2 })
+    const errs = out.errors.filter((e) => e.code === 'production-c-violation')
+    expect(errs).toHaveLength(1)
+    expect(errs[0]!.message).toContain('R_pipim[0+]')
+    expect(errs[0]!.message).toContain('R_etappi0[0+]')
+    expect(errs[0]!.message).toContain('C 不守恒')
+  })
+
+  it('keeps the C-allowed rho + a0 pair', () => {
+    const allowed = TWO_BY_TWO.replace('        - [J: 0, P: +1]: [f0(500)]\n', '')
+    const out = gateConfig(parseConfig(allowed), allowed, defaultDb, { maxL: 2 })
+    expect(out.errors.filter((e) => e.code === 'production-c-violation')).toHaveLength(0)
+  })
+})

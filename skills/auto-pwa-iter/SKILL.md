@@ -40,7 +40,7 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
 
 
 - **拟合完成自动唤醒（background job 机制）**：`pwa-fit-local` 把拟合注册为 `ctx.jobs` 的后台任务，**owner = 当前 Agent**。这带来三件事：① 完成时 `dsh-tool-jobs` 向 owner 会话投递通知——owner 空闲就**直接开一个新回合**（唤醒），忙就注入下一步；② 会话结束/被销毁时任务被取消（不再有无主孤儿任务）；③ `job_output`/`job_list`/`job_kill` 按会话围栏只看得见自己的任务。**前提是 owner 接对了**：DSH 的 `Agent` 用 `id` 表示会话（没有 `sessionId` 字段），owner 传错会让任务变成"无主"——任务照跑、`job_list` 也看得到，但**通知永远不投递**，表现就是"提交完就停、必须人来催"。
-- **config.yml 写门禁已改为"跑前门禁"（2026）**：`pwa-guard` 现在只拦 `init_config.yml`；config.yml 与任意变体 yml 都可直接编辑（结构化工具仍是快车道）。**提交拟合前**门禁强制跑一遍：`gateConfig`（YAML 结构 / 交叉引用 / trans 块索引 / identical / 两顶点 J^PC + C / 阈值 / 预算）→ 有 error 直接拒绝提交；无 error 再跑 ctpwa `--validate-only`（能解 `Resonances: <file>` include、模型名、参数结构）。想让门禁更严可设 `PWA_GATE_REQUIRE_DEEP=1`（把"deep 跑不起来"从 warning 升级为 error）。
+- **config.yml 写门禁已改为"跑前门禁"（2026）**：`pwa-guard` 现在只拦 `init_config.yml`；config.yml 与任意变体 yml 都可直接编辑（结构化工具仍是快车道）。**提交拟合前**门禁强制跑一遍：`gateConfig`（YAML 结构 / Constraints 键与形状 / 交叉引用 / identical / 两顶点 J^PC + C / 阈值 / 预算）→ 有 error 直接拒绝提交；无 error 再跑 ctpwa `--validate-only`（能解 `Resonances: <file>` include、模型名、参数结构），并转发 ctpwa stderr（trans 未匹配/未配对、var_equal 无槽等）与 `nFreeParams` 对比的 no-op warning。trans 的**名字**不做白名单：完整链代号、中间态名、3+ 名称都允许，物理效果看 ΔNLL/记录。想让门禁更严可设 `PWA_GATE_REQUIRE_DEEP=1`（把"deep 跑不起来"从 warning 升级为 error）。
 - **拟合记录（B1）**：每次提交写 `<iterDir>/results/provenance.json`：config md5（含外部 include 的 md5）、态清单/参数/free、初值来源（random seed 或 warm 起点）、fit.py + md5、`scriptArgs`（runs/max-iter）、Data 样本路径。`auto_pwa_note` 自动把它带进日记；同一目录里 config 或运行设置变了会给 `config-changed-since-record` / `run-settings-changed` warning——**两次条件不同的拟合不许直接比 ΔNLL**。
 - **/pwa-status 命令**：用户在 GUI 直接输入 `/pwa-status <iterationsRoot>` 看后台任务 + 最近 5 轮日记（不占模型消息）；模型无需主动汇报。
 - **token-meter**：`auto_pwa_note` 带 `includeTokens: true` 时记录本轮 token 差值（上次记账以来），`auto_pwa_history` 可回看每轮成本——长会话成本透明，不需要人工查账。
@@ -65,7 +65,7 @@ md5 只能**发现**配置变过，git 能**还原**任意一轮的原文。
 
 | 类别 | 硬 error（拒绝提交） | warning（只提示） |
 |---|---|---|
-| 配置正确性 | YAML 结构、交叉引用、trans 块索引、identical 组、产生阈值、两顶点 J^PC、C 守恒、外部 include 无法校验（`PWA_GATE_REQUIRE_DEEP=1` 时） | PDG 无依据/显式 J^P 与 PDG 不符/宽度偏离、定义未引用、重复 PDG id、态数与放开参数超软预算、无声明 identical、组内成员 >6 |
+| 配置正确性 | YAML 结构、Constraints 键白名单/形状、交叉引用、identical 组、产生阈值、两顶点 J^PC、C 守恒、外部 include 无法校验（`PWA_GATE_REQUIRE_DEEP=1` 时） | PDG 无依据/显式 J^P 与 PDG 不符/宽度偏离、定义未引用、重复 PDG id、态数与放开参数超软预算、无声明 identical、组内成员 >6、Constraints 名字未匹配/trans no-op（ctpwa stderr + nFreeParams） |
 
 **"自由度"是自由，"下结论"不自由**：加多少态、用什么模型/公式都由模型决定（这是实验设计）；但
 

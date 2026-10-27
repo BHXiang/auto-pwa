@@ -372,6 +372,8 @@ export interface PwaConstraints {
   varEqual?: string[][]
   /** `gauss_constr`: {paramName: sigma} Gaussian penalties. */
   gaussConstr?: Record<string, number>
+  /** `free_phsp_amplitudes`: keep phase-space amplitudes out of memory (ctpwa option). */
+  freePhspAmplitudes?: boolean
 }
 
 /** One chain of a parsed config. */
@@ -536,6 +538,12 @@ export interface InitialParticleSpec {
   mass?: number
   /** Explicit C, for states where the config wants to override the PDG value. */
   c?: 1 | -1
+  /**
+   * Initial-state polarization as 2m values (ctpwa `polarization:`), e.g.
+   * [-1, 1] for a transversely polarized J/psi from e+e-. Omitted = all 2J+1
+   * states. ctpwa's ConfigParser::parseParticles reads this key.
+   */
+  polarization?: number[]
   /** LaTeX label (optional). */
   tex?: string
 }
@@ -620,6 +628,26 @@ export interface InitialResonanceSpec {
   reference?: string
 }
 
+/** One explicitly rejected first-level partition (4/5-body combinatorics). */
+export interface InitialTopologyExclusion {
+  /** Partition arity, e.g. "1+3", "2+2". */
+  kind: string
+  /** The two sides' final-state particles, e.g. [["etap","pip"],["pim","pi0"]]. */
+  particles: string[][]
+  /** Why this partition is not in the model (data, no PDG state, ...). */
+  reason: string
+}
+
+/** Explicit first-level topology decisions for a multi-body initial config. */
+export interface InitialTopologySpec {
+  /**
+   * Every first-level partition that is NOT written into `chains` must be
+   * listed here with a reason. `auto_pwa_init_config` refuses to write a
+   * 4/5-body model that silently omits partitions.
+   */
+  excluded?: InitialTopologyExclusion[]
+}
+
 /** A full from-scratch config proposal (structured — never free-form YAML). */
 export interface InitialConfigSpec {
   particles: InitialParticleSpec[]
@@ -629,6 +657,8 @@ export interface InitialConfigSpec {
   constraints?: PwaConstraints
   data: InitialDataSpec
   plot?: InitialPlotSpec[]
+  /** First-level topology acknowledgements (4/5-body). */
+  topology?: InitialTopologySpec
   /** Optional root key `precision: auto|hybrid|float|double`. */
   precision?: string
 }

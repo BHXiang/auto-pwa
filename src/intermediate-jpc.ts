@@ -125,6 +125,44 @@ function named(
 }
 
 /**
+ * C of every cascade intermediate that is *derivable* from its production
+ * vertex: C(A) = C(R) * C(B) => C(R) = C(A) * C(B). The fixed point lets C
+ * propagate down a chain (J/psi -> eta' + R, R -> rho + pi0, ...).
+ *
+ * A name that is not in `Particles` is treated as an intermediate; when its C
+ * is not derivable it stays absent (never invented).
+ */
+export function deriveIntermediateC(config: JpcConfig, db: ResonanceDb): Map<string, 1 | -1> {
+  const out = new Map<string, 1 | -1>()
+  const intNames = new Set<string>()
+  for (const chain of Object.values(config.decayChains ?? {})) {
+    for (const n of Object.keys(chain.intermediates)) intNames.add(n)
+  }
+  const cOf = (name: string | undefined): 1 | -1 | undefined => {
+    if (name === undefined) return undefined
+    const p = config.particles[name]
+    if (p !== undefined) return resolveC(db, { ...p, name })
+    return out.get(name)
+  }
+  for (let pass = 0; pass < intNames.size + 1; pass++) {
+    let changed = false
+    for (const intName of intNames) {
+      if (out.has(intName)) continue
+      const kin = config.kinematics[intName]
+      if (kin === undefined) continue
+      const cMother = cOf(kin.motherName)
+      const cDaughter = cOf(kin.daughterName)
+      if (cMother !== undefined && cDaughter !== undefined) {
+        out.set(intName, (cMother * cDaughter) as 1 | -1)
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+  return out
+}
+
+/**
  * Analyze one intermediate across every chain that defines it (usually one).
  * Returns the full two-vertex view described above.
  */
@@ -147,6 +185,15 @@ export function analyzeIntermediateJPC(
   const identicalGroups = config.constraints?.identical
   const kin = config.kinematics[intName]
 
+  // C of an intermediate can be derived from its own production vertex when
+  // both ends are C eigenstates; propagate that down the chain so a cascade
+  // daughter (e.g. rho in R_3pi -> rho + pi0) is not treated as "C unknown".
+  const derivedC = deriveIntermediateC(config, db)
+  const cOfName = (name: string | undefined): 1 | -1 | undefined => {
+    if (name === undefined) return undefined
+    const p = config.particles[name]
+    return p !== undefined ? resolveC(db, { ...p, name }) : derivedC.get(name)
+  }
   const refOf = (name: string | undefined): { name?: string; pdgid?: number; c?: 1 | -1 } => {
     if (name === undefined) return {}
     const p = config.particles[name]
@@ -157,8 +204,8 @@ export function analyzeIntermediateJPC(
   let cStatus: CStatusView = { status: 'unknown', required: null, reason: 'no production kinematics' }
   if (kin !== undefined) {
     const allowedJP = allowedIntermediateJP(kin.mother, kin.daughter, maxL).map((a) => a.jp)
-    const motherC = resolveC(db, refOf(kin.motherName))
-    const daughterC = resolveC(db, refOf(kin.daughterName))
+    const motherC = cOfName(kin.motherName)
+    const daughterC = cOfName(kin.daughterName)
     production = {
       mother: kin.motherName,
       daughter: kin.daughterName,
@@ -178,10 +225,6 @@ export function analyzeIntermediateJPC(
       const missing: string[] = []
       if (motherC === undefined) missing.push(`${kin.motherName} (no C)`)
       if (daughterC === undefined) missing.push(`${kin.daughterName} (no C)`)
-      // A -> R1 + R2: the "sibling" is an INTERMEDIATE, so its C is not fixed by
-      // the config — it depends on which resonance inside that group contributes
-      // (a group may hold states of different C). Say so instead of leaving a
-      // bare "no C", which reads like the vertex was checked and passed.
       const siblingIsIntermediate = chainCfg.intermediates[kin.daughterName ?? ''] !== undefined
       cStatus = {
         status: 'not-applicable',
@@ -189,7 +232,7 @@ export function analyzeIntermediateJPC(
         reason:
           `${missing.join(' and ')} — not a C eigenstate, so C conservation does not constrain this vertex` +
           (siblingIsIntermediate
-            ? `（${kin.daughterName} 是中间态而非 Particles 里的粒子：它的 C 取决于该组内哪个共振态贡献，` +
+            ? `（${kin.daughterName} 是中间态且其 C 无法从其产生顶点导出：` +
               `所以此处不做 C 判据 —— 这不等于 C 守恒已通过）`
             : ''),
       }
