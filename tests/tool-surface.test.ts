@@ -33,7 +33,7 @@ function collect(): Def[] {
   return definitions
 }
 
-/** 规范里冻结的工具清单（28 个）。增删工具必须同时更新此表与文档。 */
+/** 规范里冻结的工具清单（25 个）。增删工具必须同时更新此表与文档。 */
 const EXPECTED_TOOLS = [
   'auto_pwa_lookup',
   'auto_pwa_decay_check',
@@ -46,12 +46,10 @@ const EXPECTED_TOOLS = [
   'auto_pwa_trans_suggest',
   'auto_pwa_edit_config',
   'auto_pwa_remove_resonance',
-  'auto_pwa_round',
   'auto_pwa_iter_start',
   'auto_pwa_note',
   'auto_pwa_git_log',
   'auto_pwa_history',
-  'auto_pwa_iterate',
   'auto_pwa_evaluate',
   'auto_pwa_diagnose',
   'auto_pwa_root_view',
@@ -61,12 +59,11 @@ const EXPECTED_TOOLS = [
   'auto_pwa_try_candidates',
   'auto_pwa_compare',
   'auto_pwa_loop_next',
-  'auto_pwa_loop_status',
   'auto_pwa_loop_decide',
 ]
 
 /** 已弃用工具：描述必须以 [已弃用 开头并给出替代者。 */
-const DEPRECATED = ['auto_pwa_round']
+const DEPRECATED: string[] = []
 
 /** 描述长度上限（规范值）。 */
 const MAX_DESC = 200
@@ -77,10 +74,6 @@ const MAX_PARAM_DESC = 200
 
 /** 必须互相点名的易混对（至少一个方向提到对方的裸名）。 */
 const ROUTING_PAIRS: [string, string][] = [
-  ['auto_pwa_round', 'iterate'],
-  ['auto_pwa_round', 'loop_decide'],
-  ['auto_pwa_iterate', 'loop_decide'],
-  ['auto_pwa_iterate', 'loop_next'],
   ['auto_pwa_run_fit', 'fit_status'],
   ['auto_pwa_run_fit', 'try_candidates'],
   ['auto_pwa_try_candidates', 'compare'],

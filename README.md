@@ -79,13 +79,12 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 | `auto_pwa_trans_suggest` | **trans 关系计算**：任意链的 `steps` + 每个态的 `I/I3/C` → 同位旋 CG 比值、C 逐顶点检查、可直接粘贴的 `Constraints.trans` 条目（通用，不绑定反应道） | 执行·工具 |
 | `auto_pwa_init_config` | **从 0 创建 config**（结构化提案 → 渲染 → 与 edit 同源的门禁 → 原子写 `init_config.yml` + reviewSummary 交人工复核；`preview` 只构建不写） | 执行·起草 |
 | `auto_pwa_edit_config` | config.yml 编辑**快车道**（也可直接编辑任意 yml，跑前门禁兜底）：校验 → 结构化修改 → **写前总闸（全文 validateConfig + 交叉引用）** → 原子写（+ .bak）；支持 `options` 逃生舱（Interp/Custom/GS 等特殊公式原样透传 ctpwa） | 执行 |
-| `auto_pwa_round` | 一轮迭代：评估上一轮（NLL/ΔNLL/最差 pull/收敛提示）+ 迭代 + **跑前门禁**，一次调用完成 | 执行 |
 | `auto_pwa_iter_start` | 创建 `iterations/iter-N/`（config 副本 + 脚本软链；Data 路径绝对化告警） | 执行 |
 | `auto_pwa_run_fit` / `auto_pwa_fit_status` | 提交/查询 ctpwa 拟合（DSH 后台任务 `ctpwa-N`，完成自动通知；**提交前强制跑前门禁，errors 非空拒绝提交**；支持 `config`/`scriptArgs` 变体实验，并写 `results/provenance.json`） | 执行 |
 | `auto_pwa_try_candidates` | **并行候选短拟合**：基座上试 2–5 个候选（`_trials/` 目录，`--runs 1 --max-iter 500`），每个 trial 都过跑前门禁 | 执行·探索 |
 | `auto_pwa_git_log` | **本地 git 记录（无远端）**：`<分析目录>/.pwa-git` 里每轮 config 改动 + 结果 NLL 各一条提交；log/show/search(pickaxe)/status——"谁改了哪一条""这个态哪轮进来的""结果能否由 HEAD 复现" | 执行·审计 |
 | `auto_pwa_note` / `auto_pwa_history` | 追加/读取迭代日记（SUMMARY.jsonl + 渲染 HTML；含每轮 token 成本） | 执行·审计 |
-| `auto_pwa_loop_next` / `auto_pwa_loop_status` / `auto_pwa_loop_decide` | **循环状态机**：评估→收敛判定（pull/ΔNLL/预算）→ FINAL-REPORT.md；决策落盘（iterate/rollback/converge）；状态持久化 `.loop-state.json` 重启可续 | 执行·自动化 |
+| `auto_pwa_loop_next` / `auto_pwa_loop_decide` | **可选循环评估**：评估→收敛判定（pull/ΔNLL/预算）→ FINAL-REPORT.md；`loop_decide` 只做可选加/删/回滚；主路径仍是 `run_fit` | 执行·可选 |
 
 ## 迭代闭环
 
@@ -264,7 +263,7 @@ pull     = residual / sqrt(fit + bkg)  # Pearson；chi2 = Σ residual²/(fit+bkg
 
 ## 设计文档
 
-- [工具真值表](docs/tool-truth-table.md) — 28 个工具：层/实测频次/何时用/何时不要用→改用什么 + 7 条不变式（路由评估的 ground truth）。
+- [工具真值表](docs/tool-truth-table.md) — 25 个工具：层/实测频次/何时用/何时不要用→改用什么 + 7 条不变式（路由评估的 ground truth）。
 - [工具表面与记忆系统：现状、业界做法与待办](docs/tool-and-memory-plan.md) — 实测数据、拆分/合并方案、记忆系统分类、**评测协议 v2**（MemoryAgentBench 四大能力 + 确定性聚合的实证）与反模式（T1/T3/T4 已执行，T2/T5 与记忆系统仍待做）。
 - [IO 与用法](docs/io-and-usage.md) — 完整输入输出、工具清单、跑前门禁与本地 git 记录约定。
 - [能力评估与计划](docs/capability-eval-and-plan.md) — 能力边界与演进路线。

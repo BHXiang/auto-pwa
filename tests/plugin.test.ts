@@ -156,12 +156,10 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_trans_suggest',
       'auto_pwa_edit_config',
       'auto_pwa_remove_resonance',
-      'auto_pwa_round',
       'auto_pwa_iter_start',
       'auto_pwa_note',
       'auto_pwa_git_log',
       'auto_pwa_history',
-      'auto_pwa_iterate',
       'auto_pwa_evaluate',
       'auto_pwa_diagnose',
       'auto_pwa_root_view',
@@ -171,7 +169,6 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_try_candidates',
       'auto_pwa_compare',
       'auto_pwa_loop_next',
-      'auto_pwa_loop_status',
       'auto_pwa_loop_decide',
     ])
   })
@@ -1744,11 +1741,6 @@ Resonances:
       expect(state.verifications).toHaveLength(1)
       expect(state.verifications![0]).toMatchObject({ iter: 1, passed: false, hypothesis: 'omega1420 会吸收 ΔNLL 大改善' })
 
-      const status = (await run(h, 'auto_pwa_loop_status', { iterationsRoot }, {})) as {
-        verifications: { iter: number; passed: boolean; actual: number | null }[]
-      }
-      expect(status.verifications).toHaveLength(1)
-      expect(status.verifications[0]).toMatchObject({ iter: 1, passed: false, actual: -2 })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -2138,10 +2130,10 @@ describe('apply 健壮性与摘要按 session 隔离（cordis 严格语义回归
     return { ctx: base, tools, contexts, sp, fire, agentCreated }
   }
 
-  it('没有 systemPrompt（且未 inject）时不抛，28 个工具仍全部注册', () => {
+  it('没有 systemPrompt（且未 inject）时不抛，25 个工具仍全部注册', () => {
     const { ctx, tools } = makeCtx()
     expect(() => apply(ctx as never)).not.toThrow()
-    expect(tools).toHaveLength(28)
+    expect(tools).toHaveLength(25)
   })
 
   it('agent 创建时注册 auto-pwa:state 摘要 context（按 agent，不是插件级）', () => {

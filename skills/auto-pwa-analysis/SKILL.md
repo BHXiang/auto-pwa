@@ -22,7 +22,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 5. **立即** `auto_pwa_iter_start`（基座 = init_config.yml）建 `iter-000` → `auto_pwa_run_fit` 提交首轮拟合。
 6. 等拟合期间再补物理检查（`jpc_check`/`decay_check`/`suggest`）——**不要**先做完所有检查才开跑；拟合完成后 `evaluate`/`diagnose`/`note`，再用 `loop_next` 判收敛（它只做评估，不控制 AI 能改什么）。
 
-**已有 iterations/（续跑）**：`auto_pwa_history` + `auto_pwa_loop_status` 恢复上下文（上一轮结论 → 本轮方向），直接进 §5.1 主循环；不重新探索目录、不看旧项目。
+**已有 iterations/（续跑）**：`auto_pwa_history` + `auto_pwa_loop_next` 恢复上下文（上一轮结论 → 本轮方向），直接进 §5.1 主循环；不重新探索目录、不看旧项目。
 
 **全新项目且没有 config/init_config.yml（从 0 起草）**：不要凭空手写 YAML——优先用 `auto_pwa_init_config`（结构化 spec，程序渲染 + 物理门禁）。走这条链：
 1. **问用户**（`ask_user_question`，一轮一组）：反应道与母粒子、末态、数据与 MC 的路径/格式(`dat`|`ROOT`)/树名/branch 顺序、是否含本底、`maxL` 与势垒半径约定。**数据路径必须用户给，不要猜。**
@@ -71,7 +71,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 | 查拟合跑完没 | 收到通知后 `auto_pwa_fit_status` | 反复轮询 `job_output` |
 | 判断拟合好坏 | `auto_pwa_evaluate` → `auto_pwa_diagnose` | 只看 NLL |
 | 看某个波的形状 | `auto_pwa_root_view` / `auto_pwa_wave_view` | `evaluate`（那是整体指标） |
-| 跑一轮迭代 | `auto_pwa_run_fit` → `evaluate`/`diagnose` → `note`；`loop_next` 只判收敛 | `loop_decide` 当唯一入口；`auto_pwa_round`（**已弃用**） |
+| 跑一轮迭代 | `auto_pwa_run_fit` → `evaluate`/`diagnose` → `note`；`loop_next` 只判收敛 | `loop_decide` 当唯一入口；`round`（已移除） |
 | 并行试多个候选再裁决 | `auto_pwa_try_candidates` → `auto_pwa_compare` | 连续多轮 `run_fit` |
 | 记录本轮结论 | `auto_pwa_note` | 自己写 md |
 | 查历史 / 能否复现 | `auto_pwa_history`（结论）/ `auto_pwa_git_log`（配置与 commit） | — |
@@ -99,7 +99,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 - **`auto_pwa_remove_resonance`**：独立删除工具（`removals: [{name, chain?, jpGroup?, dropDefinition?}]`）。先 dry-run 校验（存在性/作用域/删除后交叉引用）→ 结构化摘除 → 全 config 写前总闸 → 原子写（自动 `.bak`）。errors 非空绝不写。
 - **语义（重要）**：删除是**按名摘除**，`[J,P]` 组**即使变空也保留**——因为组顺序决定振幅块索引，`Constraints.trans` 引用的是索引（删组会让后面全部错位）。`Resonances.<name>` 定义只在**已无任何组引用**时删除；`dropDefinition: false` 保留参数以便再挂回。只会影响指定 `chain`/`jpGroup` 的那一处（共轭链可以只删一边）。
-- **迭代内删除**：`auto_pwa_round` / `auto_pwa_iterate` / `auto_pwa_loop_decide`(action=iterate) 都接受 `removals`，可与 `proposal` 同时给（先删后加）；只给 `removals` 也能开一轮（纯剪枝轮）。
+- **迭代内删除**：`auto_pwa_loop_decide`(action=iterate) 仍接受 `removals`；主路径也可以直接 `auto_pwa_remove_resonance` 后 `run_fit`。
 - **并行显著性试探**：`auto_pwa_try_candidates` 也接受 `removals`（每个删除候选一个 trial），跑完用 `auto_pwa_compare` 看 ΔNLL——**删掉后 ΔNLL 显著变差 ⇒ 该态不可删；ΔNLL 变化在阈值内 ⇒ 可删**。
 - **何时删**：`auto_pwa_diagnose` 报份额 < 2σ、参数撞 `free_range` 边界、或强简并（|ρ|>0.8）时。删完必须重拟合并用 ΔNLL/份额确认。
 
@@ -143,7 +143,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - `skill auto-pwa-jpc` —— 两顶点 J^PC、衰变顶点门禁、C 守恒、阈值、maxL（**起草新链/加态前读**）
 - `debug-auto-pwa` —— 插件本地安装与调试（开发者用）
 
-## 全部工具索引（28）
+## 全部工具索引（25）
 
-`auto_pwa_lookup` · `auto_pwa_decay_check` · `auto_pwa_jpc_check` · `auto_pwa_init_config` · `auto_pwa_config_view` · `auto_pwa_validate_config` · `auto_pwa_suggest` · `auto_pwa_validate_add` · `auto_pwa_trans_suggest` · `auto_pwa_edit_config` · `auto_pwa_remove_resonance` · `auto_pwa_round` · `auto_pwa_iter_start` · `auto_pwa_note` · `auto_pwa_git_log` · `auto_pwa_history` · `auto_pwa_iterate` · `auto_pwa_evaluate` · `auto_pwa_diagnose` · `auto_pwa_root_view` · `auto_pwa_wave_view` · `auto_pwa_run_fit` · `auto_pwa_fit_status` · `auto_pwa_try_candidates` · `auto_pwa_compare` · `auto_pwa_loop_next` · `auto_pwa_loop_status` · `auto_pwa_loop_decide`
+`auto_pwa_lookup` · `auto_pwa_decay_check` · `auto_pwa_jpc_check` · `auto_pwa_init_config` · `auto_pwa_config_view` · `auto_pwa_validate_config` · `auto_pwa_suggest` · `auto_pwa_validate_add` · `auto_pwa_trans_suggest` · `auto_pwa_edit_config` · `auto_pwa_remove_resonance` · `auto_pwa_iter_start` · `auto_pwa_note` · `auto_pwa_git_log` · `auto_pwa_history` · `auto_pwa_evaluate` · `auto_pwa_diagnose` · `auto_pwa_root_view` · `auto_pwa_wave_view` · `auto_pwa_run_fit` · `auto_pwa_fit_status` · `auto_pwa_try_candidates` · `auto_pwa_compare` · `auto_pwa_loop_next` · `auto_pwa_loop_decide`
 

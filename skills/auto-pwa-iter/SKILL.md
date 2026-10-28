@@ -35,7 +35,7 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
   9. 拟合完成通知后回到 1；`auto_pwa_note` 写审计记录（**includeTokens: true** 记本轮 token 消耗；结论 + hypothesis/prediction/verification + 下一步计划）
 - 收敛（loop 判定 done）或轮数耗尽 → `update_goal complete`，读 `FINAL-REPORT.md` 给用户总结。
 - `auto_pwa_git_log`：本地历史（哪些轮改了什么、某态何时进入、是否已提交）——"审计 + 复现"的第一入口。
-- `auto_pwa_note` / `auto_pwa_history` 的角色：**审计日志 + 崩溃/中断恢复**（新会话里用 `auto_pwa_history` + `auto_pwa_loop_status` 恢复上下文，含每轮 token 成本）+ 用户阅读（HTML 日记）。决策主通道始终是连续会话上下文。
+- `auto_pwa_note` / `auto_pwa_history` 的角色：**审计日志 + 崩溃/中断恢复**（新会话里用 `auto_pwa_history` + `auto_pwa_loop_next` 恢复上下文，含每轮 token 成本）+ 用户阅读（HTML 日记）。决策主通道始终是连续会话上下文。
 
 ## 5.2 harness 机制（少人工，多自主）
 
