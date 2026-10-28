@@ -3077,7 +3077,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_round',
-    description: '[已弃用] 用 iterate 或 loop_decide。',
+    description: '[已弃用] 用 run_fit；iterate/loop_decide 仅可选。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-004），其 config.yml 为基座、results/ 被评估' },
       proposal: { ...proposalParam, description: '要添加/挂载的共振态（省略 = 纯评估模式，不创建新轮）' },
@@ -3317,7 +3317,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_iter_start',
-    description: '建 iterations/iter-N/（复制基座 config、软链 fit.py、Data 绝对化）。',
+    description: '[仅新 baseline] 建 iterations/iter-N/（复制基座 config、软链 fit.py）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录（如 <分析目录>/iterations）' },
       baseConfigPath: { type: 'string', required: true, description: '本轮基座 config.yml（上一轮的 config 或项目初始 config）' },
@@ -4009,7 +4009,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_iterate',
-    description: '一轮完整迭代：验证→建轮→写 config→门禁→提交拟合。',
+    description: '[可选] 一轮完整迭代：验证→建轮→写 config→门禁→提交拟合。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '上一轮迭代目录（如 .../iterations/iter-000），其 config.yml 作为本轮基座' },
       proposal: proposalParam,
@@ -4729,7 +4729,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_run_fit',
-    description: '提交拟合：跑前门禁→记录 provenance→后台任务（完成自动唤醒）。',
+    description: '[主路径] 提交拟合：门禁→provenance→后台任务（完成自动唤醒；等待时可做其他尝试）。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录绝对路径（须含 fit.py；配置默认取 <iterDir>/config.yml）' },
       configPath: { type: 'string', description: '要拟合的配置文件（默认 <iterDir>/config.yml）；变体实验可指向 <dir>/variant_xxx.yml —— 门禁一视同仁' },
@@ -4777,6 +4777,7 @@ export function apply(ctx: Context) {
             `${value.gate?.report ?? ''}`
           : `拟合已提交: job ${value.jobId} (${value.state}, ${value.transport ?? '?'} transport), 日志: ${value.logPath}\n` +
             '拟合完成时 DSH 会自动唤醒本会话（通知里带 job id）——**不要轮询**；收到通知后用 auto_pwa_fit_status 取结果。\n' +
+            '等待期间可以继续做其他尝试（不同变体/其他 iterDir/其他分析），但不要对同一 iterDir 重复提交，也不要 bash 跑 fit。\n' +
             `${value.gate?.report ?? ''}`),
     },
     async execute(
@@ -5784,7 +5785,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_status',
-    description: '只读循环状态：阶段/轮次预算/最近一次评估。',
+    description: '[可选] 只读循环状态：阶段/轮次预算/最近一次评估。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
     },
@@ -5868,7 +5869,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_loop_decide',
-    description: '落盘决策：iterate / rollback / converge。',
+    description: '[可选] 落盘决策：iterate / rollback / converge。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
       action: { type: 'string', required: true, enum: ['iterate', 'rollback', 'converge'], description: '决策动作' },

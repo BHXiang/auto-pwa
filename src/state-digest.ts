@@ -97,6 +97,7 @@ export function buildStateDigest(input: DigestInput): string {
     lines.push(`未决预测: ${h === undefined ? '（本轮提交的预测尚未验证）' : cut(h, 90)}`)
   }
   if (input.loopState?.phase !== undefined) lines.push(`循环阶段: ${input.loopState.phase}${input.loopState.iter === undefined ? '' : `（iter-${pad(input.loopState.iter)}）`}`)
+  else lines.push('轨迹提示: 主路径是 run_fit（门禁+提交）→ evaluate/diagnose → note；loop_next 只判收敛，不是控制器。不要用 bash 跑 fit。')
   if (input.noise !== undefined && input.noise.spread > 0) {
     lines.push(
       `噪声地板: iter-${pad(input.noise.iter)} 的 ${input.noise.nRuns} 个随机初值 NLL 极差=${input.noise.spread.toFixed(0)}；|ΔNLL| 远小于它时**不可信**（要 warm start + 多次重复）`,
