@@ -18,8 +18,9 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 1. `auto_pwa_config_view` 读 `init_config.yml` 全文（一次调用覆盖 Particles/DecayChains/intermediates/Resonances/Constraints）。
 2. 用一两句话向自己复述衰变链与已有模型（形式如"母→子1+子2；中间态 X 经哪些 [J,P] 组、各组含哪些共振态"；具体粒子以 config.yml 为准）——复述不出来就是没读懂，重读视图。
 3. `auto_pwa_lookup` 核对已有共振态的 J^P/质量/宽度（读懂了才谈得上加新的）。
-4. **立即** `auto_pwa_iter_start`（基座 = init_config.yml）建 `iter-000` → `auto_pwa_run_fit` 提交首轮拟合。
-5. 等拟合期间再补物理检查（`jpc_check`/`decay_check`/`suggest`）——**不要**先做完所有检查才开跑。
+4. **先 `create_goal`**：objective 写清收敛判据（逐分布 chi2/ndf ≤ 2、max|pull| < 5、|ΔNLL| 阈值）、时间/轮数预算；没有 goal 很容易跑一轮就收工。
+5. **立即** `auto_pwa_iter_start`（基座 = init_config.yml）建 `iter-000` → `auto_pwa_run_fit` 提交首轮拟合。
+6. 等拟合期间再补物理检查（`jpc_check`/`decay_check`/`suggest`）——**不要**先做完所有检查才开跑；拟合完成后 `evaluate`/`diagnose`/`note`，再用 `loop_next` 判收敛（它只做评估，不控制 AI 能改什么）。
 
 **已有 iterations/（续跑）**：`auto_pwa_history` + `auto_pwa_loop_status` 恢复上下文（上一轮结论 → 本轮方向），直接进 §5.1 主循环；不重新探索目录、不看旧项目。
 
@@ -39,7 +40,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 要点：`resonances[]` 里每个态都会过与 `auto_pwa_validate_add` 同源的门禁（PDG 依据/JPC/阈值/衰变顶点 J^P/C 守恒/全同选择定则），errors 非空**不会写文件**；`intermediates[].groups` 的**顺序即振幅块索引**（`trans` 引用 `R_x_0` 按此顺序；也接受完整链代号，不受此限制）。
 
-**禁止手动调试环境**：GPU/CUDA/ctpwa/ROOT 环境由 `auto_pwa_run_fit` 自动探测并给出权威诊断。**不要**手动跑 `nvidia-smi`、`torch.cuda.is_available()`、查 `/dev/dxg`、拼 `LD_LIBRARY_PATH`、翻 ctpwa 源码——这是最常见的整段浪费。**transport 自动路由**：`auto_pwa_run_fit` 探测到本机无 CUDA 但有 `sbatch`/`squeue`/`sacct`（集群登录节点）时会 **交作业到 SLURM**（写 `fit.slurm`、`sbatch`、登录节点轮询，跑完唤醒——无需本地 GPU）。若 `auto_pwa_run_fit` 报 no-gpu/找不到 torch，多半是宿主进程没有运行在插件要求的 python 环境里（设 `PWA_CTPWA_PYTHON` 与 `PWA_LD_LIBRARY_PATH`，或在对应环境里重启 harness）——把这条提示给用户即可，不要自己修环境。
+**禁止手动调试环境**：GPU/CUDA/ctpwa/ROOT 环境由 `auto_pwa_run_fit` 自动探测并给出权威诊断。**不要**手动跑 `nvidia-smi`、`torch.cuda.is_available()`、查 `/dev/dxg`、拼 `LD_LIBRARY_PATH`、翻 ctpwa 源码——这是最常见的整段浪费。**尤其不要用 bash 里的 `nvidia-smi`/`which sbatch` 判断 transport**：bash 在沙箱里，GPU/调度器可能被屏蔽，但 `run_fit` 的宿主插件进程能看到；先调用 `auto_pwa_run_fit` 的 `preflight: true`。**transport 自动路由**：`auto_pwa_run_fit` 探测到本机无 CUDA 但有 `sbatch`/`squeue`/`sacct`（集群登录节点）时会 **交作业到 SLURM**（写 `fit.slurm`、`sbatch`、登录节点轮询，跑完唤醒——无需本地 GPU）。若 `auto_pwa_run_fit` 报 no-gpu/找不到 torch，多半是宿主进程没有运行在插件要求的 python 环境里（设 `PWA_CTPWA_PYTHON` 与 `PWA_LD_LIBRARY_PATH`，或在对应环境里重启 harness）——把这条提示给用户即可，不要自己修环境。
 
 ## 1. 分波基本框架
 
@@ -66,10 +67,11 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 | 查 PDG 有没有这个态 | `auto_pwa_lookup` | — |
 | 确认某 J^P 物理可达 | `auto_pwa_decay_check` / `auto_pwa_jpc_check` | 凭经验判断 |
 | 提交一次拟合 | `auto_pwa_run_fit` | `try_candidates`（那是多候选短拟合） |
+| 判断 GPU / 作业提交 transport | `auto_pwa_run_fit` + `preflight: true`（宿主插件进程探测） | bash 里的 `nvidia-smi`/`which sbatch`（那是沙箱，不是宿主） |
 | 查拟合跑完没 | 收到通知后 `auto_pwa_fit_status` | 反复轮询 `job_output` |
 | 判断拟合好坏 | `auto_pwa_evaluate` → `auto_pwa_diagnose` | 只看 NLL |
 | 看某个波的形状 | `auto_pwa_root_view` / `auto_pwa_wave_view` | `evaluate`（那是整体指标） |
-| 跑一轮迭代 | `auto_pwa_iterate`（单步）/ `auto_pwa_loop_decide`（状态机） | `auto_pwa_round`（**已弃用**） |
+| 跑一轮迭代 | `auto_pwa_run_fit` → `evaluate`/`diagnose` → `note`；`loop_next` 只判收敛 | `loop_decide` 当唯一入口；`auto_pwa_round`（**已弃用**） |
 | 并行试多个候选再裁决 | `auto_pwa_try_candidates` → `auto_pwa_compare` | 连续多轮 `run_fit` |
 | 记录本轮结论 | `auto_pwa_note` | 自己写 md |
 | 查历史 / 能否复现 | `auto_pwa_history`（结论）/ `auto_pwa_git_log`（配置与 commit） | — |

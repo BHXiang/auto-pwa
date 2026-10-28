@@ -57,7 +57,8 @@ import {
   type Provenance,
   type ProvenanceInit,
 } from '../src/provenance.js'
-import { defaultFitRunnerConfig, withConfigArg } from '../src/fit-runner.js'
+import { defaultFitRunnerConfig, detectGpuAvailability, withConfigArg } from '../src/fit-runner.js'
+import { hasSlurmClients, pickTransport } from '../src/fit-transport.js'
 import { summarizeFitDir, parseFitJson } from '../src/fit-summary.js'
 import { suggestCandidates } from '../src/suggest.js'
 import { diagnoseFit } from '../src/diagnose.js'
@@ -4736,6 +4737,7 @@ export function apply(ctx: Context) {
       scriptArgs: { type: 'array', items: { type: 'string' }, description: '额外传给 fit.py 的参数（如 ["--runs","1","--max-iter","500"]）；记录进 provenance' },
       timeoutMin: { type: 'integer', description: '超时分钟数（默认无）' },
       timeoutMs: { type: 'integer', description: '[已弃用别名，用 timeoutMin] 超时毫秒' },
+      preflight: { type: 'boolean', description: '只做 config gate + 宿主侧 GPU/SLURM 探测，不提交拟合（用于判断 transport）' },
     },
     output: {
       schema: {
@@ -4746,6 +4748,15 @@ export function apply(ctx: Context) {
           state: { type: 'string', required: true, enum: ['running', 'done', 'failed', 'canceled'] },
           logPath: { type: 'string', required: true },
           transport: { type: 'string', enum: ['local', 'slurm'] },
+          preflight: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              gpu: { type: 'string', required: true },
+              slurm: { type: 'boolean', required: true },
+              transport: { type: 'string', required: true, enum: ['local', 'slurm'] },
+            },
+          },
           error: { type: 'string' },
           ...gateOutputFields,
         },
@@ -4756,15 +4767,20 @@ export function apply(ctx: Context) {
         state: string
         logPath: string
         transport?: string
+        preflight?: { gpu: string; slurm: boolean; transport: string }
         gate?: { ok: boolean; report: string }
       }) => text(value.error
         ? `拟合提交失败: ${value.error}\n${value.gate?.report ?? ''}`
-        : `拟合已提交: job ${value.jobId} (${value.state}, ${value.transport ?? '?'} transport), 日志: ${value.logPath}\n` +
-          '拟合完成时 DSH 会自动唤醒本会话（通知里带 job id）——**不要轮询**；收到通知后用 auto_pwa_fit_status 取结果。\n' +
-          `${value.gate?.report ?? ''}`),
+        : value.preflight !== undefined
+          ? `预检（未提交）: host GPU probe = ${value.preflight.gpu}; SLURM clients = ${value.preflight.slurm ? 'available' : 'missing'}; transport = ${value.preflight.transport}\n` +
+            '这是宿主插件进程的探测结果，不是 bash 沙箱的 nvidia-smi/which。\n' +
+            `${value.gate?.report ?? ''}`
+          : `拟合已提交: job ${value.jobId} (${value.state}, ${value.transport ?? '?'} transport), 日志: ${value.logPath}\n` +
+            '拟合完成时 DSH 会自动唤醒本会话（通知里带 job id）——**不要轮询**；收到通知后用 auto_pwa_fit_status 取结果。\n' +
+            `${value.gate?.report ?? ''}`),
     },
     async execute(
-      args: { iterDir: string; configPath?: string; config?: string; scriptArgs?: string[]; timeoutMin?: number; timeoutMs?: number },
+      args: { iterDir: string; configPath?: string; config?: string; scriptArgs?: string[]; timeoutMin?: number; timeoutMs?: number; preflight?: boolean },
       exec,
     ) {
       // 参数规范化：configPath 是规范名，config 是保留别名；timeoutMin 优先于 timeoutMs。
@@ -4787,6 +4803,27 @@ export function apply(ctx: Context) {
           logPath: join(args.iterDir, 'fit.log'),
           error: `跑前门禁拒绝（${gate.errors.length} errors）：${gate.errors.map((e) => `${e.code}: ${e.message}`).join(' | ')}`,
           gate: { ok: false, report: gate.report, errors: gate.errors, warnings: gate.warnings, configMd5: gate.gate.configMd5 },
+        }
+      }
+      if (args.preflight === true) {
+        const env = resolveEnv()
+        const gpu = detectGpuAvailability(env.ctpwaPython, env.ldLibraryPath)
+        const slurm = hasSlurmClients()
+        const transport = pickTransport(env.ctpwaPython, env.ldLibraryPath)
+        return {
+          jobId: '',
+          state: 'done' as const,
+          logPath: join(args.iterDir, 'fit.log'),
+          transport,
+          preflight: { gpu: gpu ?? 'available', slurm, transport },
+          gate: {
+            ok: true,
+            report: gate.report,
+            errors: gate.errors,
+            warnings: gate.warnings,
+            configMd5: gate.gate.configMd5,
+            ...(gate.provenanceFile !== undefined ? { provenancePath: gate.provenanceFile } : {}),
+          },
         }
       }
       try {

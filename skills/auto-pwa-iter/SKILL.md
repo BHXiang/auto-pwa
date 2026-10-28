@@ -10,10 +10,11 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
 ## 5.1 迭代主循环：状态机 + 同会话 goal
 
 
-**主路径（推荐）用循环状态机工具**（持久化在 `iterations/.loop-state.json`，重启可续）：
-- `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 按判据（`stopMaxPull`、`stopMaxChi2Ndf`、显著阈值、`maxRounds` 预算）判定收敛 → **收敛则写 `FINAL-REPORT.md` 并 phase=done**；未收敛则进入 propose 阶段。首次调用传 `baseIterDir` 启动。
-- `auto_pwa_loop_decide`：把 AI 决策落盘——`iterate`（验证+建轮+写 config+提交拟合）、`rollback`（当前轮标记失败、基线回退到上一轮）、`converge`（强制收敛出报告）。
-- 每轮循环：`loop_next`（评估/判收敛）→ 决策（`suggest`/`diagnose`/`compare` 辅助）→ `loop_decide iterate` → 等拟合完成通知 → 回到 `loop_next`。
+**主路径是 goal + 一个简单轮次**（loop 状态可选，保存在 `iterations/.loop-state.json`）：
+- 每轮：AI 决策（任意 config 变更）→ `auto_pwa_run_fit`（强制 gate + 宿主 transport）→ 等完成通知 → `evaluate` + `diagnose` → `note` → `loop_next` 只做评估/判收敛。
+- `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 判收敛；收敛写 `FINAL-REPORT.md`。首次调用传 `baseIterDir` 启动。
+- `auto_pwa_loop_decide`：**可选**的“加/删共振态”封装；不是唯一入口。需要 float/trans/plot/baseline/trials 时，直接用 `iter_start`/`run_fit`/手改 YAML，然后 `note`；不要让 loop_decide 限制 AI 的决策。
+- `loop_next` 只评估，不批准/否决 config 变更。
 
 **并行探索（提速关键）**：`auto_pwa_try_candidates` 在基座上并行提交 2–5 个候选的**短拟合**（默认 `--runs 1 --max-iter 500`，目录在 `iterations/_trials/`，不进 iter-N 序列）；全部完成后 `auto_pwa_compare` 按 ΔNLL 显著性（默认阈值 3，2 自由度）裁决，**最优者晋级**为正式迭代。探索与晋级分离，一轮时间试探多个方向。
 

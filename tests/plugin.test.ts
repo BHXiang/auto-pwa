@@ -2467,3 +2467,31 @@ describe('auto_pwa_trans_suggest (generic isospin/CG)', () => {
     assertSchema(out, def.output?.schema)
   })
 })
+
+describe('auto_pwa_run_fit host-side preflight', () => {
+  it('probes the plugin host (not the bash sandbox) and does not submit', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'auto-pwa-preflight-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const def = collectDefinitions().find((d) => d.name === 'auto_pwa_run_fit')!
+      const out = (await def.execute!(
+        { iterDir: dir, preflight: true } as never,
+        {} as never,
+      )) as {
+        jobId: string
+        state: string
+        transport: string
+        preflight: { gpu: string; slurm: boolean; transport: string }
+      }
+      expect(out.jobId).toBe('')
+      expect(out.state).toBe('done')
+      expect(['local', 'slurm']).toContain(out.transport)
+      expect(out.preflight.transport).toBe(out.transport)
+      expect(typeof out.preflight.gpu).toBe('string')
+      expect(typeof out.preflight.slurm).toBe('boolean')
+      assertSchema(out, def.output?.schema)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
