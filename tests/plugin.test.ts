@@ -1583,6 +1583,35 @@ Resonances:
     }
   })
 
+  it('auto_pwa_try_candidates: warm-starts short fits from the base fit.json', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-trial-warm-'))
+    try {
+      const iterationsRoot = join(dir, 'iterations')
+      const iterDir = join(iterationsRoot, 'iter-000')
+      mkdirSync(join(iterDir, 'results'), { recursive: true })
+      writeFileSync(join(iterDir, 'config.yml'), LOOP_CONFIG)
+      writeFileSync(join(iterDir, 'results', 'fit.json'), '{}')
+      const out = (await run(
+        h,
+        'auto_pwa_try_candidates',
+        {
+          baseIterDir: iterDir,
+          candidates: [{ name: 'omega1420', chain: 'R_KK', jpGroup: { j: 1, p: -1 }, model: 'BWR', parameters: [1.41, 0.29] }],
+          shortRuns: 1,
+          shortMaxIter: 300,
+        },
+        { agent: { id: 'sess-1' } },
+      )) as { ok: boolean; warmFromBase?: boolean }
+      expect(out.ok).toBe(true)
+      expect(out.warmFromBase).toBe(true)
+      const req = h.submits[0]!.request as { scriptArgs?: string[] }
+      expect(req.scriptArgs).toEqual(['--runs', '1', '--max-iter', '300', '--warm', join(iterDir, 'results', 'fit.json')])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('auto_pwa_try_candidates: removals get their own trials (significance pruning)', async () => {
     const h = harnessCtx()
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-trial-rm-'))

@@ -4747,7 +4747,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(defineTool({
     name: 'auto_pwa_try_candidates',
-    description: '并行短拟合 2–5 个候选（各建 _trials、--runs 1 --max-iter 500）。',
+    description: '并行短拟合 2–5 个候选（各建 _trials；默认从基座 fit.json warm start）。',
     parameters: {
       baseIterDir: { type: 'string', required: true, description: '基座迭代目录（其 config.yml 作为所有候选的公共起点）' },
       candidates: {
@@ -4764,6 +4764,7 @@ export function apply(ctx: Context) {
       shortRuns: { type: 'integer', description: '短拟合运行次数（默认 1）' },
       shortMaxIter: { type: 'integer', description: '短拟合单次最大迭代（默认 500）' },
       timeoutMin: { type: 'integer', description: '每个拟合的超时分钟数（默认无）' },
+      warmFromBase: { type: 'boolean', description: '默认 true：从 <baseIterDir>/results/fit.json warm start；没有该文件时自动随机' },
     },
     output: {
       schema: {
@@ -4800,6 +4801,7 @@ export function apply(ctx: Context) {
           },
           warnings: { type: 'array', items: { type: 'string' } },
           batchMode: { type: 'string', enum: ['one', 'script', 'off'] },
+          warmFromBase: { type: 'boolean' },
           error: { type: 'string' },
         },
       },
@@ -4809,6 +4811,7 @@ export function apply(ctx: Context) {
         skipped: { candidate: string; errors: { code: string; message: string }[] }[]
         warnings?: string[]
         batchMode?: 'one' | 'script' | 'off'
+        warmFromBase?: boolean
         error?: string
       }) => {
         if (!value.ok) return text(`trial 提交失败: ${value.error ?? '未知'}`)
@@ -4837,6 +4840,7 @@ export function apply(ctx: Context) {
       shortRuns?: number
       shortMaxIter?: number
       timeoutMin?: number
+      warmFromBase?: boolean
     }, exec) {
       const baseConfig = `${args.baseIterDir}/config.yml`
       if (!existsSync(baseConfig)) {
@@ -4850,6 +4854,12 @@ export function apply(ctx: Context) {
       const jobs: { candidate: string; iterDir: string; jobId: string; changed: string[] }[] = []
       const skipped: { candidate: string; errors: { code: string; message: string }[] }[] = []
       const warnings: string[] = []
+      const baseFit = `${args.baseIterDir}/results/fit.json`
+      const warmFromBase = args.warmFromBase !== false && existsSync(baseFit)
+      const fitArgs = ['--runs', runs, '--max-iter', maxIter, ...(warmFromBase ? ['--warm', baseFit] : [])]
+      if (args.warmFromBase !== false && !warmFromBase) {
+        warnings.push(`基座没有 results/fit.json（${baseFit}）：本轮短拟合从随机初值开始`)
+      }
       const baseIterName = args.baseIterDir.split(/[\\/]/).pop() ?? 'base'
       const candidateCount = (args.candidates?.length ?? 0) + (args.removals?.length ?? 0)
       if (candidateCount === 0) {
@@ -4911,7 +4921,7 @@ export function apply(ctx: Context) {
           iterDir: p.iterDir,
           tool: 'auto_pwa_try_candidates',
           fitScript: fitScriptPath,
-          scriptArgs: ['--runs', runs, '--max-iter', maxIter],
+          scriptArgs: fitArgs,
         })
         if (!g.ok) {
           skipped.push({ candidate: p.candidate, errors: g.errors })
@@ -4948,25 +4958,25 @@ export function apply(ctx: Context) {
         const jobId = pwaFit.submitBatch!({
           iterDir: pending[0]!.iterDir,
           iterDirs: pending.map((p) => p.iterDir),
-          scriptArgs: ['--runs', runs, '--max-iter', maxIter],
+          scriptArgs: fitArgs,
           timeoutMin: args.timeoutMin,
         }, ownerOf(exec))
         for (const p of pending) jobs.push({ candidate: p.candidate, iterDir: p.iterDir, jobId, changed: p.changed })
-        return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings, batchMode }
+        return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings, batchMode, warmFromBase }
       }
       // Single-job path: local transport, batch='off', or a single candidate.
       for (const p of pending) {
         const jobId = ctx.pwaFit.submit(
           {
             iterDir: p.iterDir,
-            scriptArgs: ['--runs', runs, '--max-iter', maxIter],
+            scriptArgs: fitArgs,
             timeoutMin: args.timeoutMin,
           },
           ownerOf(exec),
         )
         jobs.push({ candidate: p.candidate, iterDir: p.iterDir, jobId, changed: p.changed })
       }
-      return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings, batchMode: 'off' }
+      return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings, batchMode: 'off', warmFromBase }
     },
   }))
 
