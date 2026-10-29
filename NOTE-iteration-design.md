@@ -86,7 +86,7 @@ auto_pwa_run_fit
 
 1. `auto-pwa-analysis` §0 主路径是 `iter_start → run_fit`，loop 只在按需 skill 里，AI 不会自然切到 loop。
 2. `iter_start`/`run_fit` 不初始化 loop 状态；不做 loop 也能完整跑完。
-3. `loop_decide` 只支持 add/remove；真实工作流需要 float/trans/plot/baseline/trials，AI 只能绕过。
+3. 旧的 `loop_decide` 只支持 add/remove；真实工作流需要 float/trans/plot/baseline/trials，AI 只能绕过。**Plan A 已删除 loop_decide**：iterate/rollback 用 iter_start/run_fit/note，converge 用 loop_next forceConverge。
 4. `iter_start` 可接受任意 baseline；loop 状态随之变旧。
 5. 作业 transport 的宿主/沙箱区别没有被诊断清楚；AI 被 bash 假象带偏，用 CPU 绕过。
 6. 没有 goal 时，AI 缺少持续多轮的驱动力。
@@ -102,7 +102,7 @@ auto_pwa_run_fit
    - `auto-pwa-analysis` §0 明确 `create_goal`；loop_next 只做评估。
 3. **P1：loop 自动登记**
    - `iter_start`/`run_fit` 自动维护 loop 状态；`_trials` 作为探索分支。
-   - `loop_decide` 支持 `configPath`/任意 config 变更，或降级为可选。
+   - ~~loop_decide 支持 configPath~~（Plan A 已删除；用 iter_start/run_fit/note）
 4. **P1：evaluate/note 强制**
    - 每轮拟合后要求 evaluate + note（或一个组合工具），否则 goal 不算完成。
 5. **P2：loop-state 可移植**
@@ -110,7 +110,7 @@ auto_pwa_run_fit
 
 ## 7. 待确认
 
-- 是否保留 `loop_decide`？建议降为可选，不作为主路径。
+- `loop_decide` 已删除；当前 24 个工具。
 - 是否把 `iterate`/`round` 合并进 `run_fit`？建议只保留一个“提交一轮”的入口。
 - SLURM 长期作业在 DSH 重启后的状态恢复：是否只依赖 `.slurm-jobs.json` + `squeue` 查询？
 - 是否需要宿主侧 `auto_pwa_gpu_probe` 工具（不经过 bash 沙箱）？

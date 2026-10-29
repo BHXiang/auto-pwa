@@ -12,8 +12,8 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
 
 **主路径是 goal + 一个简单轮次**（loop 状态可选，保存在 `iterations/.loop-state.json`）：
 - 每轮：AI 决策（任意 config 变更）→ `auto_pwa_run_fit`（强制 gate + 宿主 transport）→ 等完成通知 → `evaluate` + `diagnose` → `note` → `loop_next` 只做评估/判收敛。
-- `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 判收敛；收敛写 `FINAL-REPORT.md`。需要人工收尾时传 `forceConverge: true`（替代 `loop_decide converge`）。首次调用传 `baseIterDir` 启动。
-- **没有 `loop_decide` 了**：iterate 用 `iter_start`/`edit_config`/`remove_resonance` + `run_fit`；rollback 用上一轮 config 做 `iter_start` + `note`；收尾用 `loop_next forceConverge`。
+- `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 判收敛；收敛写 `FINAL-REPORT.md`。需要人工收尾时传 `forceConverge: true`。首次调用传 `baseIterDir` 启动。
+- **不再有 `loop_decide`**：iterate 用 `iter_start`/`edit_config`/`remove_resonance` + `run_fit`；rollback 用上一轮 config 做 `iter_start` + `note`；收尾用 `loop_next forceConverge`。
 - `loop_next` 只评估，不批准/否决 config 变更。
 
 **并行探索（提速关键）**：`auto_pwa_try_candidates` 在基座上并行提交 2–5 个候选的**短拟合**（默认 `--runs 1 --max-iter 500`，目录在 `iterations/_trials/`，不进 iter-N 序列）；全部完成后 `auto_pwa_compare` 按 ΔNLL 显著性（默认阈值 3，2 自由度）裁决，**最优者晋级**为正式迭代。探索与晋级分离，一轮时间试探多个方向。

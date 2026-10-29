@@ -154,7 +154,7 @@ export interface LoopState {
   rounds: number
   objective: LoopObjective
   lastEval?: LoopEval
-  /** Prediction pending verification (attached by loop_decide, verified by
+  /** Prediction pending verification (attached by note, verified by
    * the next loop_next evaluation). `iter` = 作出预测的那一轮（向后兼容可缺）。 */
   pendingPrediction?: { prediction: Prediction; hypothesis?: string; iter?: number }
   /**

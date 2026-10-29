@@ -58,7 +58,7 @@ export interface IterationRecord {
   /** Token usage of this round (token-meter delta since the previous note). */
   tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
   /** Hypothesis of THIS round (what the change should achieve, in physics
-   * terms). Written by auto_pwa_note / auto_pwa_loop_decide. */
+   * terms). Written by auto_pwa_note. */
   hypothesis?: string
   /** Structured, checkable prediction of the hypothesis (verified by the
    * loop after the next fit completes). */

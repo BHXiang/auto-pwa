@@ -13,7 +13,7 @@
  *                       Default: empty — nothing is injected and the child
  *                       inherits the ambient environment (conda supplies
  *                       its own loader paths when the env is active).
- *   PWA_FIT_SCRIPT      default fit.py source for auto_pwa_iterate/auto_pwa_round.
+ *   PWA_FIT_SCRIPT      default fit.py source for auto_pwa_run_fit/iter_start.
  *                       Default: the bundled scripts/aifit.py (AI-first
  *                       driver writing results/fit.json + weight_best.root).
  *   PWA_PLOT_SCRIPT     default plot.py source (no bundled plot script; set

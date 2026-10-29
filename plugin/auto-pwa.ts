@@ -1164,7 +1164,7 @@ export function apply(ctx: Context) {
   // ⚠️ `systemPrompt` 是 **agent 级**服务（由 dsh-agent-loop 按 session 提供），
   // 而 cordis 里**访问未声明 inject 的服务属性会直接抛**
   // （`cannot get property "systemPrompt" without inject`）。这个访问若放在 apply
-  // 里，一旦服务当时还没就绪，**整个 auto-pwa entry 都会挂**（28 个工具一起消失，
+  // 里，一旦服务当时还没就绪，**整个 auto-pwa entry 都会挂**（24 个工具一起消失，
   // 且是否踩中取决于 apply 顺序——线上曾因此"装了却没工具"）。
   // 因此这里用 in-box 插件的标准写法 `ctx.inject(['systemPrompt'], scope => …)`：
   // 服务就绪时才注册；缺席时插件照常工作（摘要是增强，不是依赖）。
@@ -3273,7 +3273,7 @@ export function apply(ctx: Context) {
       }
       try {
         log.append(record)
-        // Plan A：note 是预测写入的唯一入口（没有 loop_decide）。下一轮
+        // Plan A：note 是预测写入的唯一入口。下一轮
         // loop_next 会用这个 pendingPrediction 自动验证。
         if (args.prediction !== undefined) {
           const loopState = loadLoopState(root)
@@ -5270,7 +5270,7 @@ export function apply(ctx: Context) {
         },
         description: '收敛目标（仅首次调用生效，之后沿用状态里的值）',
       },
-      forceConverge: { type: 'boolean', description: '可选：跳过判据强制收敛并写 FINAL-REPORT（替代 loop_decide converge）' },
+      forceConverge: { type: 'boolean', description: '可选：跳过判据强制收敛并写 FINAL-REPORT（人工收尾）' },
       reason: { type: 'string', description: 'forceConverge 的原因' },
     },
     output: {

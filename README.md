@@ -81,7 +81,7 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 | `auto_pwa_edit_config` | config.yml 编辑**快车道**（也可直接编辑任意 yml，跑前门禁兜底）：校验 → 结构化修改 → **写前总闸（全文 validateConfig + 交叉引用）** → 原子写（+ .bak）；支持 `options` 逃生舱（Interp/Custom/GS 等特殊公式原样透传 ctpwa） | 执行 |
 | `auto_pwa_iter_start` | 创建 `iterations/iter-N/`（config 副本 + 脚本软链；Data 路径绝对化告警） | 执行 |
 | `auto_pwa_run_fit` / `auto_pwa_fit_status` | 提交/查询 ctpwa 拟合（DSH 后台任务 `ctpwa-N`，完成自动通知；**提交前强制跑前门禁，errors 非空拒绝提交**；支持 `config`/`scriptArgs` 变体实验，并写 `results/provenance.json`） | 执行 |
-| `auto_pwa_try_candidates` | **并行候选短拟合**：基座上试 2–5 个候选（`_trials/` 目录，`--runs 1 --max-iter 500`），每个 trial 都过跑前门禁 | 执行·探索 |
+| `auto_pwa_try_candidates` | **并行候选短拟合**：基座上试 2–5 个候选（`_trials/` 目录，`--runs 1 --max-iter 500`；默认从基座 `results/fit.json` warm start），每个 trial 都过跑前门禁 | 执行·探索 |
 | `auto_pwa_git_log` | **本地 git 记录（无远端）**：`<分析目录>/.pwa-git` 里每轮 config 改动 + 结果 NLL 各一条提交；log/show/search(pickaxe)/status——"谁改了哪一条""这个态哪轮进来的""结果能否由 HEAD 复现" | 执行·审计 |
 | `auto_pwa_note` / `auto_pwa_history` | 追加/读取迭代日记（SUMMARY.jsonl + 渲染 HTML；含每轮 token 成本） | 执行·审计 |
 | `auto_pwa_loop_next` | **可选循环评估**：评估→收敛判定（pull/ΔNLL/预算）→ FINAL-REPORT.md；`forceConverge` 手动收尾；主路径仍是 `run_fit` | 执行·可选 |
@@ -89,14 +89,13 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 ## 迭代闭环
 
 ```
-auto_pwa_loop_next（评估 + 收敛判定）
-   └─> 未收敛 → auto_pwa_suggest / auto_pwa_diagnose（决策输入）
-   └─> auto_pwa_try_candidates + auto_pwa_compare（并行探索，最优晋级）
-   └─> 拟合后台运行（RTX 级 GPU 约 8 分钟；DSH 完成通知自动送达）
-   └─> 收敛 → FINAL-REPORT.md + phase done
+create_goal（持久化 + 收敛判据）
+   └─> Decide：AI 决定加/删/float/trans/plot/baseline
+   └─> run_fit（强制 config gate + 宿主 transport + provenance）
+   └─> evaluate / diagnose / note
+   └─> loop_next（评估 + 收敛判定；需要人工收尾用 forceConverge）
+   └─> 未收敛 → 下一轮；收敛 → FINAL-REPORT.md + update_goal complete
 ```
-
-用同会话 goal 驱动自动多轮迭代（`create_goal` + 自动续回合；拟合完成通知会唤醒/注入下一轮评估）。
 
 ## 出处（reference）机制：参数不跟 PDG 平均
 

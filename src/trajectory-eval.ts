@@ -6,7 +6,7 @@
  * canonical path:
  *
  *   create_goal → run_fit (gate + submit) → evaluate/diagnose → note
- *   (loop_next optional; loop_decide optional)
+ *   (loop_next optional; forceConverge for manual stop)
  *
  * It is used by routing-eval tests and can be run against real session logs.
  */
@@ -23,8 +23,6 @@ export interface TrajectoryScenario {
   forbidBashFit?: boolean
   /** After every `run_fit`, there must be an `evaluate` and a `note` before the next fit. */
   requireEvaluateAndNote?: boolean
-  /** `loop_decide` must not be the only driver (i.e. no `run_fit` at all). */
-  forbidLoopDecideOnly?: boolean
   /** `run_fit` must be preceded by `run_fit(preflight:true)` when marked. */
   requirePreflightWhenUnknown?: boolean
 }
@@ -66,13 +64,6 @@ export function evaluateTrajectory(calls: TrajectoryCall[], scenario: Trajectory
         message: `bash fit driver call at index ${bad}; use auto_pwa_run_fit (gate + transport + provenance) instead`,
       })
     }
-  }
-
-  if (scenario.forbidLoopDecideOnly && names.includes('auto_pwa_loop_decide') && !names.includes('auto_pwa_run_fit')) {
-    violations.push({
-      code: 'loop-decide-only',
-      message: 'auto_pwa_loop_decide is used but no auto_pwa_run_fit; loop_decide is optional, run_fit is the fit entry point',
-    })
   }
 
   if (scenario.requirePreflightWhenUnknown && names.includes('auto_pwa_run_fit')) {

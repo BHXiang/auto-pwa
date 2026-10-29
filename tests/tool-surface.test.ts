@@ -130,7 +130,6 @@ describe('工具表面契约（规范化守门）', () => {
       const d = map.get(name)!
       expect(d, name).toBeTruthy()
       expect(d.description!.startsWith('[已弃用'), name).toBe(true)
-      expect(['iterate', 'loop_decide'].some((alt) => d.description!.includes(alt)), `${name} 必须点名替代者`).toBe(true)
     }
     for (const d of defs) {
       if (!DEPRECATED.includes(d.name)) expect(d.description!.startsWith('[已弃用'), d.name).toBe(false)

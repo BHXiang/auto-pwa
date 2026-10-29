@@ -18,7 +18,6 @@ describe('trajectory-eval (routing checks)', () => {
       requireGoalBeforeFit: true,
       forbidBashFit: true,
       requireEvaluateAndNote: true,
-      forbidLoopDecideOnly: true,
     })
     expect(r.ok).toBe(true)
   })
@@ -47,12 +46,7 @@ describe('trajectory-eval (routing checks)', () => {
     expect(codes.filter((c) => c === 'note-missing')).toHaveLength(2)
   })
 
-  it('flags loop_decide used as the only driver and a missing preflight', () => {
-    const r = evaluateTrajectory(
-      [call('create_goal'), call('auto_pwa_loop_decide', { action: 'iterate' })],
-      { forbidLoopDecideOnly: true },
-    )
-    expect(r.violations.map((v) => v.code)).toContain('loop-decide-only')
+  it('flags a missing preflight when transport is unknown', () => {
     const p = evaluateTrajectory(
       [call('create_goal'), call('auto_pwa_run_fit')],
       { requirePreflightWhenUnknown: true },
