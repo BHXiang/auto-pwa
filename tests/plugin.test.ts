@@ -1718,6 +1718,32 @@ Resonances:
     }
   })
 
+  it('loop_next forceConverge 直接写 FINAL-REPORT，不依赖 loop_decide', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-loop-force-'))
+    try {
+      const iterationsRoot = join(dir, 'iterations')
+      const iter0 = join(iterationsRoot, 'iter-000')
+      mkdirSync(join(iter0, 'results'), { recursive: true })
+      writeFileSync(join(iter0, 'config.yml'), LOOP_CONFIG)
+      writeFileSync(join(iter0, 'results', 'fit.json'), fitJson(100))
+      await run(h, 'auto_pwa_loop_next', { iterationsRoot, baseIterDir: iter0 }, { agent: { id: 'sess-1' } })
+      const out = (await run(
+        h,
+        'auto_pwa_loop_next',
+        { iterationsRoot, forceConverge: true, reason: 'manual stop for test' },
+        { agent: { id: 'sess-1' } },
+      )) as { ok: boolean; phase: string; converged: boolean; reportPath?: string }
+      expect(out.ok).toBe(true)
+      expect(out.phase).toBe('done')
+      expect(out.converged).toBe(true)
+      expect(out.reportPath).toContain('FINAL-REPORT.md')
+      expect(readFileSyncSync(join(iterationsRoot, 'FINAL-REPORT.md'), 'utf8')).toContain('manual stop for test')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('P1c 验证账本：loop_next 把"预测→验证"追加落盘（不再依赖模型抄进 note）', async () => {
     const h = harnessCtx()
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-ledger-'))

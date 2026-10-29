@@ -5131,7 +5131,7 @@ export function apply(ctx: Context) {
   }))
 
   // ---------------------------------------------------------------------
-  // auto_pwa_loop_next / auto_pwa_loop_decide
+  // auto_pwa_loop_next
   // （第三批：循环状态机 —— 显著性 / 停止 / 回滚 / 最终报告）
   // ---------------------------------------------------------------------
 
@@ -5243,6 +5243,8 @@ export function apply(ctx: Context) {
         },
         description: '收敛目标（仅首次调用生效，之后沿用状态里的值）',
       },
+      forceConverge: { type: 'boolean', description: '可选：跳过判据强制收敛并写 FINAL-REPORT（替代 loop_decide converge）' },
+      reason: { type: 'string', description: 'forceConverge 的原因' },
     },
     output: {
       schema: {
@@ -5311,12 +5313,12 @@ export function apply(ctx: Context) {
           lines.push(`  ✅ 收敛: ${value.reason ?? ''}`)
           if (value.reportPath) lines.push(`  最终报告: ${value.reportPath}`)
         } else if (value.reason !== undefined) {
-          lines.push(`  未收敛（${value.reason}）— 用 auto_pwa_suggest/diagnose 决策，然后 auto_pwa_loop_decide 执行`)
+          lines.push(`  未收敛（${value.reason}）— 用 auto_pwa_suggest/diagnose 决策，改 config 后 run_fit；需要收尾时 loop_next forceConverge`)
         }
         return text(lines.join('\n'))
       },
     },
-    async execute(args: { iterationsRoot?: string; baseIterDir?: string; objective?: Partial<LoopObjective> }) {
+    async execute(args: { iterationsRoot?: string; baseIterDir?: string; objective?: Partial<LoopObjective>; forceConverge?: boolean; reason?: string }) {
       if (args.iterationsRoot !== undefined) noteAnalysisRoot(args.iterationsRoot)
       else if (args.baseIterDir !== undefined) noteAnalysisRoot(args.baseIterDir)
       try {
@@ -5339,6 +5341,19 @@ export function apply(ctx: Context) {
             converged: true,
             reason: state.finalized?.reason,
             reportPath: state.finalized?.reportPath,
+          }
+        }
+        if (args.forceConverge === true) {
+          const { reportPath } = finalizeLoop(state, args.reason ?? 'AI 强制收敛')
+          return {
+            ok: true,
+            phase: 'done' as const,
+            iter: state.iter,
+            iterDir: state.currentIterDir,
+            rounds: state.rounds,
+            converged: true,
+            reason: args.reason ?? 'AI 强制收敛',
+            reportPath,
           }
         }
         const { evalResult, converged, reason } = evaluateIteration(state)
