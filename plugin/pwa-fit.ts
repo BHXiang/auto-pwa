@@ -21,6 +21,25 @@ export interface FitRequest {
   timeoutMin?: number
   /** 追加在脚本名后的 CLI 参数（如 aifit 的 --runs/--max-iter 短拟合）。 */
   scriptArgs?: string[]
+  /**
+   * SLURM 提交脚本：`"auto"` = 安装内置模板为 `<iterDir>/job.sh`，
+   * 或一个路径（相对 iterDir / 绝对）。省略 = `<iterDir>/job.sh`（缺失时装模板）。
+   * 只在 target=slurm 时使用。脚本契约见 `src/slurm-template.ts`：
+   * `sbatch --chdir=<iterDir> job.sh [scriptArgs]`，脚本不写 cd、日志写
+   * fit.log、参数透传给 fit.py。
+   */
+  jobScript?: string
+  /**
+   * 执行目标（每次提交决定）：auto（宿主 GPU→CPU）/ cpu / gpu / slurm。
+   * 省略 = `PWA_FIT_TARGET`（部署默认）或 auto。见 src/fit-target.ts。
+   */
+  target?: string
+  /**
+   * AI 自己写的启动脚本（runScript）：给了它就忽略 target，由插件用 bash
+   * 在 iterDir 里执行（前台阻塞到拟合结束），**仍作为 DSH 后台任务**，
+   * 所以跑完照样唤醒。相对路径按 iterDir 解析。
+   */
+  runScript?: string
 }
 
 /** 一次拟合的状态视图（Provider -> Consumer）。 */
@@ -36,6 +55,12 @@ export interface FitStatusView {
   error?: string
   /** 日志尾部（settled 后从 job output 取）。 */
   logTail: string
+  /** 运行中作业的进度行（SLURM: 队列状态/PENDING 原因/已排队时长）。 */
+  progress?: string
+  /** SLURM 作业号（`sbatch` 返回的那个），非 SLURM 目标无。 */
+  sbatchId?: string
+  /** 实际使用的执行目标（cpu/gpu/slurm/script）。 */
+  target?: string
 }
 
 /**

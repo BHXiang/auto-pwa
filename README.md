@@ -80,7 +80,7 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 | `auto_pwa_init_config` | **从 0 创建 config**（结构化提案 → 渲染 → 与 edit 同源的门禁 → 原子写 `init_config.yml` + reviewSummary 交人工复核；`preview` 只构建不写） | 执行·起草 |
 | `auto_pwa_edit_config` | config.yml 编辑**快车道**（也可直接编辑任意 yml，跑前门禁兜底）：校验 → 结构化修改 → **写前总闸（全文 validateConfig + 交叉引用）** → 原子写（+ .bak）；支持 `options` 逃生舱（Interp/Custom/GS 等特殊公式原样透传 ctpwa） | 执行 |
 | `auto_pwa_iter_start` | 创建 `iterations/iter-N/`（config 副本 + 脚本软链；Data 路径绝对化告警） | 执行 |
-| `auto_pwa_run_fit` / `auto_pwa_fit_status` | 提交/查询 ctpwa 拟合（DSH 后台任务 `ctpwa-N`，完成自动通知；**提交前强制跑前门禁，errors 非空拒绝提交**；支持 `config`/`scriptArgs` 变体实验，并写 `results/provenance.json`） | 执行 |
+| `auto_pwa_run_fit` / `auto_pwa_fit_status` | 提交/查询 ctpwa 拟合（DSH 后台任务 `ctpwa-N`，完成自动通知；**提交前强制跑前门禁，errors 非空拒绝提交**；执行目标 `target`（cpu/gpu/slurm/auto）或 `runScript`（任意命令）；SLURM 交 `jobScript`（一份模板），插件只审查 config.yml + `sbatch`；`fit_status` 显示队列状态，重启后可用 `iterDir` 恢复；写 `results/provenance.json`） | 执行 |
 | `auto_pwa_try_candidates` | **并行候选短拟合**：基座上试 2–5 个候选（`_trials/` 目录，`--runs 1 --max-iter 500`；默认从基座 `results/fit.json` warm start），每个 trial 都过跑前门禁 | 执行·探索 |
 | `auto_pwa_git_log` | **本地 git 记录（无远端）**：`<分析目录>/.pwa-git` 里每轮 config 改动 + 结果 NLL 各一条提交；log/show/search(pickaxe)/status——"谁改了哪一条""这个态哪轮进来的""结果能否由 HEAD 复现" | 执行·审计 |
 | `auto_pwa_note` / `auto_pwa_history` | 追加/读取迭代日记（SUMMARY.jsonl + 渲染 HTML；含每轮 token 成本） | 执行·审计 |
@@ -91,7 +91,7 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 ```
 create_goal（持久化 + 收敛判据）
    └─> Decide：AI 决定加/删/float/trans/plot/baseline
-   └─> run_fit（强制 config gate + 宿主 transport + provenance）
+   └─> run_fit（强制 config gate + 你选的 target（cpu/gpu/slurm/runScript）+ provenance）
    └─> evaluate / diagnose / note
    └─> loop_next（评估 + 收敛判定；需要人工收尾用 forceConverge）
    └─> 未收敛 → 下一轮；收敛 → FINAL-REPORT.md + update_goal complete
@@ -172,28 +172,50 @@ auto_pwa_iter_start(baseConfigPath=<dir>/init_config.yml) → iter-000 → 开�
 | `PWA_GIT` | 空（开，独立仓库） | `off` 关闭本地 git 记录（`.pwa-git`）；默认每个分析目录建独立仓库，只提交文本、绝不 push |
 | `PWA_GIT_ROOT` | 空（就近判定） | 强制仓库根（须已存在）。一个分析目录下有很多 `run_*` 变体目录时，用它把这些目录统一进一个历史 |
 | `PWA_GATE_REQUIRE_DEEP` | 空（关） | 设 `1` 时把"ctpwa `--validate-only` 跑不起来"从 warning 升级为硬 error（严格流水线用；默认不因环境问题挡住提交） |
-| `PWA_FIT_TRANSPORT` | `auto` | `auto`/`local`/`slurm`：拟合在哪跑。auto = 本机 torch 看得到 CUDA → 本地；无 CUDA 但有 slurm 客户端 → 交作业（"无 GPU 但能 SLURM"规则）。 |
-| `PWA_SLURM_TEMPLATE` | `a100` | `a100`/`v100`：集群模板，决定 partition/qos/account/gres 默认 |
-| `PWA_SLURM_PARTITION` / `PWA_SLURM_QOS` / `PWA_SLURM_ACCOUNT` / `PWA_SLURM_GRES` | 模板默认 | 逐集群覆盖（如 `--partition=gpupwa --qos=pwadedicate --gres=gpu:a100:2`） |
-| `PWA_SLURM_NTASKS` / `PWA_SLURM_MEM_PER_CPU` / `PWA_SLURM_TIME` | `1` / `50000` / 无 | sbatch 资源覆盖 |
-| `PWA_SLURM_BATCH` | `auto` | `auto`/`one`/`script`/`off`：候选试探批处理。auto = 按基座拟合实测 `fit.json.timeSec` 判（<120s → script 多合一脚本；否则 → one 每候选一作业，全部完成才唤醒） |
+| `PWA_FIT_TARGET` | `auto` | `auto`/`cpu`/`gpu`/`slurm`：部署默认执行目标（每次调用可用 `target` 覆盖）。auto = 宿主有 GPU 就 gpu、没有就 cpu；有 slurm 没 GPU 时要求显式选（登录节点防误跑）。 |
+| `PWA_FIT_TRANSPORT` | 空 | **[已弃用]** `local`≈`auto`、`slurm`≈`target:slurm`；新部署用 `PWA_FIT_TARGET`。 |
+| `PWA_SLURM_SCANCEL_ON_CANCEL` | 空（关） | 设 `1` 时 `job_kill`/会话结束会 `scancel` 集群作业；默认 **只 detach**（harness 重启不该杀掉跑了半小时的拟合） |
+| `PWA_SLURM_BATCH` | `auto` | `auto`/`one`/`off`：候选试探批处理。`one` = 每候选一个 SLURM 作业（共用同一 job.sh，`--chdir` 到各 trial 目录），全部完成才唤醒；`off` = 每候选一个 DSH 任务 |
 
-## 集群（SLURM）传输：无本地 GPU 也能跑
+## 执行目标：`run_fit` 强制只审 config，在哪跑由 AI 决定
 
-大多数用户没有本地 GPU，但集群登录节点有 SLURM。插件按 `PWA_FIT_TRANSPORT` 自动路由：
+`auto_pwa_run_fit` 的强制项只有一个：**先审查 `config.yml`（跑前门禁）**。执行方式每次调用决定：
 
-- **本机有 CUDA**（作者开发机）→ 本地 `python fit.py`（现状不变）。
-- **无 CUDA 但有 `sbatch`/`squeue`/`sacct`**（登录节点）→ 写 `fit.slurm` 并 `sbatch` 交作业；登录节点轮询直到作业离开队列，**DSH 后台任务的 `done` 在作业真正结束前不 resolve——所以跑完会唤醒 AI**（`background job ctpwa-N finished` 通知注入/打开下一轮）。`cancel` → `scancel`。
-- 两者都不可用 → 立即失败并给诊断。
+| target | 行为 | 适用 |
+|---|---|---|
+| `auto`（默认） | 宿主探测：有 GPU → `gpu`；无 GPU 且无 slurm → `cpu`；**有 slurm 没 GPU 时拒绝替你选** | 默认 |
+| `cpu` | 本机 `python fit.py`，`CTPWA_DEVICE=cpu`（插件设） | 低统计量/冒烟/候选筛选；慢 20~60×，默认 30 分钟超时 |
+| `gpu` | 本机 CUDA，`CTPWA_DEVICE=cuda` | 本机有卡的正式拟合 |
+| `slurm` | `sbatch --chdir=<iterDir> <iterDir>/job.sh [args]` | 高统计量正式拟合（排队） |
+| `runScript` | 用 bash 执行 `<iterDir>/run.sh`（你写的任意命令） | 完全自定义（`sbatch --wait` / `srun` / 特殊环境） |
+
+**三种执行都包在同一个 DSH 后台任务里**，所以跑完都会唤醒 AI、都能用 `auto_pwa_fit_status`。
+
+`runScript` 的契约（最大自由，仍可唤醒）：
+```bash
+#!/bin/bash
+python -u fit.py "$@"               # 本机；stdout/stderr 进 <iterDir>/fit.log
+# 或： sbatch --wait job.sh "$@"    # 集群；必须 --wait，否则立刻"完成"
+```
+`slurm` 的 job.sh 仍然只有一份模板（`scripts/slurm-job.sh`，默认 V100，A100 改 ★ 三行）：
+
+1. `jobScript: "auto"`（或省略）—— 插件把模板装成 `<iterDir>/job.sh` 并提交；`iter_start` 会继承到下一轮。
+2. 自己写/改 `<iterDir>/job.sh`，`auto_pwa_run_fit({ iterDir, target: "slurm" })`。
+
+job.sh 三条契约：**不写 `cd`/写死路径**（`--chdir` 已设 cwd，同一脚本给 `_trials/` 复用）、**日志写 `fit.log`**、**参数用 `"$@"` 透传**。模板 Part 1 每个 `#SBATCH` 都注明作用，环境直接指向 `<env>/bin|lib`（计算节点上 `conda activate` 不可靠），前台运行（`&` 会让作业提前结束）。
+
+**一条线看完提交→执行→唤醒**：`run_fit` 解析 target → 审查 config.yml → （slurm）`sbatch` / （cpu,gpu）本地跑 / （script）`bash run.sh` → DSH 后台任务等待 → 结束 → 注入 `background job ctpwa-N finished` → 唤醒 agent → `fit_status` 取结果。代码级时序见 [docs/io-and-usage.md §4.5.1](docs/io-and-usage.md:481)。
 
 要点：
 
-- **唤醒 = 一个 DSH 后台任务（`ctpwa-N`）包住一个/一批 SLURM 作业**；批量（`auto_pwa_try_candidates`，SLURM transport）会把这些候选合成**一个** DSH 任务（`one` = 每候选一个 SLURM 作业并行，`script` = 一个脚本顺序跑），全部结束才 settle，**一次唤醒**，不会刷屏。
-- **本机 transport 不变**：作者开发机/测试仍走 `ctx.pwaFit.submit` 每候选一个 DSH 任务（`PWA_FIT_TRANSPORT` 未显式设 `slurm` 时不批处理）。
-- **共享文件系统是前提**：compute 节点要能读 `iterDir`（`config.yml`/`fit.py`）并写 `results/`；典型 NFS/Lustre 的 home/scratch 满足。
-- 脚本里 `#SBATCH` 用**前台** `python -u fit.py`（A100/V100 一致），并 `cd` 到迭代目录（aifit.py 从 cwd 读 config.yml）。
-- **每次提交/结束都写 `<iterations>/.slurm-jobs.json`**（状态记录：状态/批标记/子任务/submit 目录）。这是"AI 快速重建项目状态"的渠道之一：`/pwa-status <iterationsRoot>` 实时列出后台任务 + 迭代日记 + 集群作业，`auto_pwa_history` 读迭代日记（SUMMARY.jsonl），两者合起来即项目状态全景。
-- **DSH 后台任务在内存里**：登录节点重启/GUI 关闭会丢失唤醒锚点（SLURM 作业仍会在集群跑完、但 DSH 不知道要唤醒）。小时级作业建议在登录节点上保持 harness 会话存活；跨重启的自动重挂 `done` 在确认重启后可作为后续增强。
+- **CPU 可用了但别滥用**：ctpwa 0.3.19+ 有 CPU 后端，两后端 NLL 差 ~1e-11（ΔNLL 筛选可信）；但慢 20~60×，只适合低统计量/冒烟，登录节点是共享的。CPU 上 `getFitFractions` 目前不可用（ctpwa 侧仍要求 CUDA 张量）→ 没有分波份额。
+- **登录节点不会被 auto 悄悄降级**：有 slurm 无 GPU 时 `auto` 直接报错，要求 `target:"cpu"` 或 `"slurm"`；长期只跑集群就设 `PWA_FIT_TARGET=slurm`。
+- **唤醒 = 一个 DSH 后台任务（`ctpwa-N`）包住一次执行**；批量候选（`try_candidates` + slurm）合成**一个** DSH 任务（每候选一个作业，共用 job.sh，`--chdir` 到各 trial 目录），全部结束才 settle。
+- **SLURM cancel 默认只 detach、不 `scancel`**：harness 重启/会话结束不该杀掉已经跑了很久的集群作业。要真停：`scancel <sbatch>`（或 `PWA_SLURM_SCANCEL_ON_CANCEL=1`）。
+- **PENDING 不等于 running**：`fit_status` 显示 `[slurm] PENDING (Resources)`；`sacct` 记账延迟也不会被当成完成（继续轮询约 5 分钟）。
+- **重启后恢复**：`fit_status({ jobId, iterDir })` 读 `.slurm-jobs.json` + `squeue/sacct`；cpu/gpu/script 目标直接看 `results/` 与 `fit.log`。
+- **共享文件系统是前提**（slurm）：compute 节点要能读 `iterDir` 并写 `results/`。
+- `/pwa-status <iterationsRoot>` 列出后台任务 + 迭代日记 + 集群作业。
 
 ## AI 优先拟合驱动（`scripts/aifit.py`，默认拟合程序）
 

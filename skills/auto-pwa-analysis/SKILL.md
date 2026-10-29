@@ -40,7 +40,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 
 要点：`resonances[]` 里每个态都会过与 `auto_pwa_validate_add` 同源的门禁（PDG 依据/JPC/阈值/衰变顶点 J^P/C 守恒/全同选择定则），errors 非空**不会写文件**；`intermediates[].groups` 的**顺序即振幅块索引**（`trans` 引用 `R_x_0` 按此顺序；也接受完整链代号，不受此限制）。
 
-**禁止手动调试环境**：GPU/CUDA/ctpwa/ROOT 环境由 `auto_pwa_run_fit` 自动探测并给出权威诊断。**不要**手动跑 `nvidia-smi`、`torch.cuda.is_available()`、查 `/dev/dxg`、拼 `LD_LIBRARY_PATH`、翻 ctpwa 源码——这是最常见的整段浪费。**尤其不要用 bash 里的 `nvidia-smi`/`which sbatch` 判断 transport**：bash 在沙箱里，GPU/调度器可能被屏蔽，但 `run_fit` 的宿主插件进程能看到；先调用 `auto_pwa_run_fit` 的 `preflight: true`。**transport 自动路由**：`auto_pwa_run_fit` 探测到本机无 CUDA 但有 `sbatch`/`squeue`/`sacct`（集群登录节点）时会 **交作业到 SLURM**（写 `fit.slurm`、`sbatch`、登录节点轮询，跑完唤醒——无需本地 GPU）。若 `auto_pwa_run_fit` 报 no-gpu/找不到 torch，多半是宿主进程没有运行在插件要求的 python 环境里（设 `PWA_CTPWA_PYTHON` 与 `PWA_LD_LIBRARY_PATH`，或在对应环境里重启 harness）——把这条提示给用户即可，不要自己修环境。
+**禁止手动调试环境**：GPU/CUDA/ctpwa/ROOT 环境由 `auto_pwa_run_fit` 自动探测并给出权威诊断。**不要**手动跑 `nvidia-smi`、`torch.cuda.is_available()`、查 `/dev/dxg`、拼 `LD_LIBRARY_PATH`、翻 ctpwa 源码——这是最常见的整段浪费。**尤其不要用 bash 里的 `nvidia-smi`/`which sbatch` 判断环境**：bash 在沙箱里，GPU/调度器可能被屏蔽，但 `run_fit` 的宿主插件进程能看到（实测：沙箱里无 GPU，宿主 `preflight` 显示 GPU available）；先调用 `auto_pwa_run_fit` 的 `preflight: true`。**执行目标**：省略 target 时 auto = 宿主有 GPU 就 `gpu`、没有就 `cpu`（有 slurm 没 GPU 时要求你显式选 `cpu`/`slurm`）；`slurm` 只负责**审查 config.yml + `sbatch` 你的 `job.sh`**，资源和环境全在脚本里，见 §5.1。若 `auto_pwa_run_fit` 报 no-gpu/找不到 torch，多半是宿主进程没有运行在插件要求的 python 环境里（设 `PWA_CTPWA_PYTHON` 与 `PWA_LD_LIBRARY_PATH`，或在对应环境里重启 harness）——把这条提示给用户即可，不要自己修环境。
 
 ## 1. 分波基本框架
 
@@ -67,7 +67,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 | 查 PDG 有没有这个态 | `auto_pwa_lookup` | — |
 | 确认某 J^P 物理可达 | `auto_pwa_decay_check` / `auto_pwa_jpc_check` | 凭经验判断 |
 | 提交一次拟合 | `auto_pwa_run_fit` | `try_candidates`（那是多候选短拟合） |
-| 判断 GPU / 作业提交 transport | `auto_pwa_run_fit` + `preflight: true`（宿主插件进程探测） | bash 里的 `nvidia-smi`/`which sbatch`（那是沙箱，不是宿主） |
+| 选在哪跑（CPU/GPU/集群） | `auto_pwa_run_fit` 的 `target`；不确定先 `preflight: true` | bash 里的 `nvidia-smi`/`which sbatch`（那是沙箱，不是宿主） |
 | 查拟合跑完没 | 收到通知后 `auto_pwa_fit_status` | 反复轮询 `job_output` |
 | 判断拟合好坏 | `auto_pwa_evaluate` → `auto_pwa_diagnose` | 只看 NLL |
 | 看某个波的形状 | `auto_pwa_root_view` / `auto_pwa_wave_view` | `evaluate`（那是整体指标） |
@@ -121,11 +121,60 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 - 迭代目录：`<分析目录>/iterations/iter-N/`，每轮完整自包含：`config.yml`、`fit.py`（链接到插件自带 `scripts/aifit.py`）、`results/`、`note.md`（本轮决策记录）。
 - **不要**从其他分析目录/旧迭代抄 fit.py 或 config 写法——`auto_pwa_iter_start` 已把 fit.py 链到插件自带脚本，config 写法以本项目 init_config.yml + `config_view` 视图为准。
 - **config 位置与变体**：`ctpwa.analysis()` 从**当前工作目录**读 config.yml，但驱动脚本支持 `--config <path>`（`auto_pwa_run_fit` 的 `config` 参数会自动补上，SLURM 与本地一致），所以变体实验（`variant_broad.yml` 等）可以放在同一迭代目录里直接拟合，不必再复制成 config.yml。Data 段仍建议绝对路径。
-- 拟合程序：`<ctpwa env>/bin/python fit.py`，需要 LD_LIBRARY_PATH 含 ROOT lib + CUDA lib64 + torch/lib（插件已注入）。**ctpwa 仅支持 GPU**（CPU 后端未实现）——本机无 GPU 时 `auto_pwa_run_fit` 走 **SLURM**：写 `fit.slurm`（`cd` 到迭代目录、前台 `python -u fit.py`）、`sbatch`、登录节点轮询、跑完唤醒。只有本机既无 CUDA 也无 SLURM 才立即失败并给诊断。
+- 拟合程序：`<ctpwa env>/bin/python fit.py`，需要 LD_LIBRARY_PATH 含 ROOT lib + CUDA lib64 + torch/lib。**ctpwa 仅支持 GPU**（CPU 后端未实现）——本机无 GPU 时 `auto_pwa_run_fit` 走 **SLURM**：`sbatch --chdir=<iterDir> <iterDir>/job.sh [参数]`、登录节点轮询（PENDING 会显示队列原因）、跑完唤醒；**环境和资源在 job.sh 里配**（见 §5.1）。只有本机既无 CUDA 也无 SLURM 才立即失败并给诊断。
 - **AI 优先驱动 `scripts/aifit.py`**（`PWA_FIT_SCRIPT` 指向它）：同一引擎、零改动，但输出 `results/fit.json`——每 run NLL/正定性、**best 参数±误差与撞边界标记**、分波贡献（config 有 `phsp_truth` 时）、结构化错误码（config-error/no-gpu/fit-failed）。`auto_pwa_fit_status` 自动优先读 fit.json；`--validate-only` 可无 GPU 快速校验 config（DecayInfo），日常用 `auto_pwa_validate_config` 即可（`deep: true` 走的就是它；顺带打印权威参数清单/顺序/振幅数，续算按名字对齐初值时用它，无需 CUDA）。短拟合：`PWA_AIFIT_RUNS=1 PWA_AIFIT_MAX_ITER=500`（多候选并行的基础）。
 - fit.py 默认 10 个随机初值各跑到收敛（最高 10000 次 LBFGS 迭代），输出到 `results/`：`nll_history.txt`（每次运行一段）、`parameters.txt`、`optimization_summary.txt`（最佳 NLL/正定性/分支比）、`weight_best.root`。
 - 拟合是**长任务**（10–30 分钟级）：`auto_pwa_run_fit` 返回 jobId 并立即结束本步——拟合作为**当前会话拥有的后台任务**运行。**完成时 DSH 自动唤醒本会话**（通知形如 `background job ctpwa-N finished`，直接开一个新回合）。所以：**不要**循环 `job_output`/`job_list` 空转，也不要等；收到通知（或自动续回合）后用 `auto_pwa_fit_status` 取结果。
-- **只有"提交成功"才可能被唤醒**：被跑前门禁拒绝时没有任务，也就没有通知（按返回的 errors 改配置）。若返回里**没有 jobId**、却在 `job_list` 里看到 ctpwa-N，说明工具返回值本身出了问题（插件 bug 的表现；`job_list` 只是兜底观察手段）。
+
+### 5.1 执行目标：门禁是强制项，怎么跑由 AI 决定
+
+`auto_pwa_run_fit` 只强制一件事：**先审查 config.yml**（跑前门禁，errors 非空拒绝提交）。之后**在哪跑、怎么跑**由 AI 每次决定：
+
+| target | 在哪跑 | 什么时候用 | 代价 |
+|---|---|---|---|
+| `auto`（省略时） | 宿主探测：有 GPU → `gpu`；没 GPU 且没 slurm → `cpu`；**有 slurm 没 GPU 时拒绝替你选** | 默认 | — |
+| `cpu` | 本机 `python fit.py`，`CTPWA_DEVICE=cpu` | **低统计量 / 冒烟 / 候选筛选**（几百到几千事例） | 慢 20~60×；默认 30 分钟超时 |
+| `gpu` | 本机 CUDA，`CTPWA_DEVICE=cuda` | 本机有卡时的正式拟合 | 显存/卡被占会失败（不会静默回退 CPU） |
+| `slurm` | 集群：`sbatch` 你的 `job.sh` | 高统计量正式拟合 | 排队（`fit_status` 会显示 PENDING 原因） |
+| `runScript` | 你写的任意启动脚本（bash，iterDir 里） | 需要完全自定义（sbatch --wait / srun / 特殊环境） | 插件只负责门禁+等待+唤醒 |
+
+**CPU 的定位（ctpwa 0.3.19+ 有 CPU 后端）**
+- 适合：`--runs 1 --max-iter 500` 的冒烟、低统计量数据、候选 ΔNLL 粗筛（两后端 NLL 差 ~1e-11，**ΔNLL 可比**）。
+- 不适合：完整 10-run 拟合、大统计量——登录节点是共享的，插件对 `cpu` 默认 30 分钟超时（需要更久显式传 `timeoutMin`）。
+- CPU 上个别 Hessian 块未移植时，驱动会降级为"参数误差/相关矩阵不可用"（`fit.json` 里 `warnings` 有 `hessian-unavailable`），拟合结果本身有效。
+- **CPU 上没有分波份额**：ctpwa 的 `getFitFractions` 入口仍要求 CUDA 张量（CPU 构建也会 TORCH_CHECK 失败），所以 `fit.json` 的 `fitFractions` 为 null 且 warnings 会说明；要看份额用 `gpu`/`slurm`。
+- **登录节点上 `auto` 不会替你选**：无 GPU 但有 `sbatch` 时直接报错，要求显式 `target:"cpu"` 或 `"slurm"`；长期只跑集群的部署可以设 `PWA_FIT_TARGET=slurm` 一次。
+
+**`runScript` 的契约**（给 AI 最大自由，但仍能唤醒）
+```bash
+#!/bin/bash
+# 必须是前台阻塞到拟合结束；stdout/stderr 都会进 <iterDir>/fit.log
+python -u fit.py "$@"               # 本机
+# 或： sbatch --wait job.sh "$@"    # 集群（不能只 sbatch，否则立刻"完成"）
+```
+- 放在 `<iterDir>/run.sh`，`run_fit({ iterDir, runScript: "run.sh", scriptArgs: [...] })`；相对路径按 iterDir 解析。
+- 插件用 bash 在 iterDir 里执行它，**仍注册为 DSH 后台任务** → 跑完自动唤醒 `/ fit_status` 照常可用。
+- 代价：走 `sbatch --wait` 时插件看不到 PENDING/排队原因，也没有 `.slurm-jobs.json` 恢复——要这些就用 `target:"slurm"`。
+
+**`target:"slurm"` 的 job.sh**（一份模板，V100 默认，A100 改 ★ 三行）
+1. `jobScript: "auto"`（或省略）—— 插件把 `scripts/slurm-job.sh` 装成 `<iterDir>/job.sh`；`iter_start` 会继承到下一轮。
+2. 自己写/改 `<iterDir>/job.sh`。模板 Part 1 每个 `#SBATCH` 都注明作用，末尾有卡型对照表。
+
+job.sh 的三条硬契约（违反会静默出错）：
+
+| # | 契约 | 违反的后果 |
+|---|---|---|
+| 1 | **不写 `cd`、不写死 iter 路径**——工作目录由插件 `sbatch --chdir=<iterDir>` 设定 | 同一份脚本要给 `_trials/<候选>/` 复用；写死路径会让所有候选写进同一个 `results/` |
+| 2 | 日志必须落到 **`fit.log`**（`#SBATCH --output=fit.log`，相对路径） | 插件与 `auto_pwa_fit_status` 靠它读进度和结果 |
+| 3 | fit.py 的参数用 **`"$@"`** 透传 | `--runs/--max-iter/--warm/--config` 被吞掉 → 短拟合变全拟合 |
+
+**排队、失败与取消**
+- `fit_status` 的 `进度:` 显示 `[slurm] PENDING (Resources)` = **在排队，不是在跑**。等太久就改 job.sh 的分区/卡数（A100→V100 最快），先 `scancel <sbatch>` 再重交；不要对同一配置反复重交。
+- 失败先看 `fit.log` 最后 20 行：`ModuleNotFoundError`/`CUDA error`/`libXXX.so` 是环境问题 → 改 job.sh / 换 target；`config-error` 才是 config 问题。
+- **取消默认不 scancel**：`job_kill` 或 harness 重启只取消 DSH 的等待，集群作业继续跑；要真停用 `scancel <sbatch>`（`fit_status` 里有号）。
+- **harness 重启后**：`fit_status({ jobId, iterDir })` 用 `<iterations>/.slurm-jobs.json` + `squeue`/`sacct` 恢复；cpu/gpu/script 目标没有 registry，重启后直接看 `results/` 与 `fit.log`。
+
+- **只有"提交成功"才可能被唤醒**：被跑前门禁拒绝时没有任务，也就没有通知（按返回的 errors 改配置）。
 
 ## 7. 注意
 

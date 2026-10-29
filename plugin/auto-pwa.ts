@@ -21,7 +21,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { defaultDb, dbIntegrity } from '../src/db.js'
 import { conventionFor } from '../src/lineshape.js'
@@ -57,8 +57,10 @@ import {
   type Provenance,
   type ProvenanceInit,
 } from '../src/provenance.js'
-import { defaultFitRunnerConfig, detectGpuAvailability, withConfigArg } from '../src/fit-runner.js'
-import { hasSlurmClients, pickTransport } from '../src/fit-transport.js'
+import { defaultFitRunnerConfig, withConfigArg } from '../src/fit-runner.js'
+import { jobScriptHint, resolveJobScript } from '../src/slurm-template.js'
+import { resolveFitTarget, type HostCapabilities } from '../src/fit-target.js'
+import { describeQueue, findIterationsRoot, readSlurmRegistryAt, recoverSlurmJob } from '../src/fit-runner-sbatch.js'
 import { summarizeFitDir, parseFitJson } from '../src/fit-summary.js'
 import { suggestCandidates } from '../src/suggest.js'
 import { diagnoseFit } from '../src/diagnose.js'
@@ -720,6 +722,12 @@ function gateBeforeFit(args: {
   tool: string
   configPath?: string
   fitScript?: string
+  /** SLURM submission script recorded in provenance (slurm target only). */
+  jobScript?: string
+  /** Resolved execution target (cpu/gpu/slurm/script). */
+  target?: string
+  /** AI-authored launcher script (script target). */
+  runScript?: string
   scriptArgs?: string[]
   init?: ProvenanceInit
   /** Skip the ctpwa deep check (structure+physics only); default false. */
@@ -840,6 +848,9 @@ function gateBeforeFit(args: {
         config: cfg,
         gate,
         ...(args.fitScript !== undefined ? { fitScript: args.fitScript } : {}),
+        ...(args.jobScript !== undefined ? { jobScript: args.jobScript } : {}),
+        ...(args.target !== undefined ? { target: args.target } : {}),
+        ...(args.runScript !== undefined ? { runScript: args.runScript } : {}),
         ...(args.scriptArgs !== undefined ? { scriptArgs: args.scriptArgs } : {}),
         init: args.init ?? initFromScriptArgs(args.scriptArgs),
         ...(git !== undefined ? { git } : {}),
@@ -3077,7 +3088,7 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_iter_start',
-    description: '[仅新 baseline] 建 iterations/iter-N/（复制基座 config、软链 fit.py）。',
+    description: '[仅新 baseline] 建 iterations/iter-N/（复制基座 config + job.sh、软链 fit.py）。',
     parameters: {
       iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录（如 <分析目录>/iterations）' },
       baseConfigPath: { type: 'string', required: true, description: '本轮基座 config.yml（上一轮的 config 或项目初始 config）' },
@@ -4363,20 +4374,58 @@ export function apply(ctx: Context) {
     },
   }))
 
+/**
+ * CPU 冒烟的规模提示：默认 10 run × 10000 iter 在 CPU 上可能是小时级。
+ * 只读 scriptArgs，不猜数据量（GPU 上 10 run 是分钟级，所以只在 CPU 目标下提示）。
+ */
+function estimateCpuCost(scriptArgs: string[] | undefined): string | undefined {
+  const args = scriptArgs ?? []
+  const pick = (name: string): number | undefined => {
+    const i = args.indexOf(name)
+    if (i >= 0 && i + 1 < args.length) {
+      const n = Number(args[i + 1])
+      return Number.isFinite(n) ? n : undefined
+    }
+    return undefined
+  }
+  const runs = pick('--runs') ?? 10
+  const maxIter = pick('--max-iter') ?? 10000
+  if (runs <= 1 && maxIter <= 1000) return undefined
+  return `CPU 规模提示：当前 ${runs} run × ${maxIter} iter 在 CPU 上可能很久；冒烟建议 scriptArgs: ["--runs","1","--max-iter","500"]`
+}
+
   // ---------------------------------------------------------------------
   // auto_pwa_run_fit（Consumer：经 ctx.pwaFit -> ctx.jobs 提交）
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_run_fit',
-    description: '[主路径] 提交拟合：门禁→provenance→后台任务（完成自动唤醒；等待时可做其他尝试）。',
+    description: '[主路径] 提交拟合：审查 config.yml → 按 target（cpu/gpu/slurm）或 runScript 执行；完成自动唤醒。',
     parameters: {
       iterDir: { type: 'string', required: true, description: '迭代目录绝对路径（须含 fit.py；配置默认取 <iterDir>/config.yml）' },
       configPath: { type: 'string', description: '要拟合的配置文件（默认 <iterDir>/config.yml）；变体实验可指向 <dir>/variant_xxx.yml —— 门禁一视同仁' },
       config: { type: 'string', description: '[已弃用别名，用 configPath]' },
+      target: {
+        type: 'string',
+        enum: ['auto', 'cpu', 'gpu', 'slurm'],
+        description:
+          '在哪跑：auto=宿主有 GPU 就 gpu、没有就 cpu（无 GPU 但有 slurm 时要求显式选）；cpu=本机 CPU（慢 20~60×，低统计/冒烟）；' +
+          'gpu=本机 CUDA；slurm=集群作业（排队）。省略 = PWA_FIT_TARGET（部署默认）或 auto。',
+      },
+      runScript: {
+        type: 'string',
+        description:
+          'AI 自己的启动脚本（相对 iterDir 或绝对）：给了就忽略 target，插件用 bash 在 iterDir 里执行它并把输出写进 fit.log。' +
+          '契约：必须前台阻塞到拟合结束（如 `python fit.py "$@"` 或 `sbatch --wait job.sh`），参数会作为 "$@" 传入。',
+      },
+      jobScript: {
+        type: 'string',
+        description:
+          'target=slurm 的提交脚本：省略/"auto"=把内置模板装成 <iterDir>/job.sh（默认 V100，A100 改 ★ 三行），也可给路径。',
+      },
       scriptArgs: { type: 'array', items: { type: 'string' }, description: '额外传给 fit.py 的参数（如 ["--runs","1","--max-iter","500"]）；记录进 provenance' },
-      timeoutMin: { type: 'integer', description: '超时分钟数（默认无）' },
+      timeoutMin: { type: 'integer', description: '超时分钟数（默认无；target=cpu 时默认 30）' },
       timeoutMs: { type: 'integer', description: '[已弃用别名，用 timeoutMin] 超时毫秒' },
-      preflight: { type: 'boolean', description: '只做 config gate + 宿主侧 GPU/SLURM 探测，不提交拟合（用于判断 transport）' },
+      preflight: { type: 'boolean', description: '只做 config gate + 宿主 GPU/SLURM 探测 + 目标解析，不提交（用于先看结论）' },
     },
     output: {
       schema: {
@@ -4387,6 +4436,10 @@ export function apply(ctx: Context) {
           state: { type: 'string', required: true, enum: ['running', 'done', 'failed', 'canceled'] },
           logPath: { type: 'string', required: true },
           transport: { type: 'string', enum: ['local', 'slurm'] },
+          target: { type: 'string', enum: ['cpu', 'gpu', 'slurm', 'script'] },
+          jobScript: { type: 'string' },
+          jobScriptInstalled: { type: 'boolean' },
+          runScript: { type: 'string' },
           preflight: {
             type: 'object',
             additionalProperties: false,
@@ -4394,6 +4447,8 @@ export function apply(ctx: Context) {
               gpu: { type: 'string', required: true },
               slurm: { type: 'boolean', required: true },
               transport: { type: 'string', required: true, enum: ['local', 'slurm'] },
+              target: { type: 'string', enum: ['cpu', 'gpu', 'slurm', 'script'] },
+              reason: { type: 'string' },
             },
           },
           error: { type: 'string' },
@@ -4406,37 +4461,143 @@ export function apply(ctx: Context) {
         state: string
         logPath: string
         transport?: string
-        preflight?: { gpu: string; slurm: boolean; transport: string }
+        target?: string
+        jobScript?: string
+        jobScriptInstalled?: boolean
+        runScript?: string
+        preflight?: { gpu: string; slurm: boolean; transport: string; target?: string; reason?: string }
         gate?: { ok: boolean; report: string }
       }) => text(value.error
         ? `拟合提交失败: ${value.error}\n${value.gate?.report ?? ''}`
         : value.preflight !== undefined
-          ? `预检（未提交）: host GPU probe = ${value.preflight.gpu}; SLURM clients = ${value.preflight.slurm ? 'available' : 'missing'}; transport = ${value.preflight.transport}\n` +
+          ? `预检（未提交）: host GPU = ${value.preflight.gpu}; SLURM clients = ${value.preflight.slurm ? 'available' : 'missing'}` +
+            `${value.preflight.target !== undefined ? `; target = ${value.preflight.target}` : ''}\n` +
+            `${value.preflight.reason ?? ''}\n` +
             '这是宿主插件进程的探测结果，不是 bash 沙箱的 nvidia-smi/which。\n' +
             `${value.gate?.report ?? ''}`
-          : `拟合已提交: job ${value.jobId} (${value.state}, ${value.transport ?? '?'} transport), 日志: ${value.logPath}\n` +
+          : `拟合已提交: job ${value.jobId} (${value.state}, target=${value.target ?? '?'}), 日志: ${value.logPath}\n` +
+            (value.jobScript !== undefined
+              ? `作业脚本: ${value.jobScript}${value.jobScriptInstalled === true ? '（本轮由内置模板安装；要换分区/卡数就改这个文件）' : ''}\n` +
+                'config.yml 已过跑前门禁；作业内容（分区/qos/卡数/环境）全由 job.sh 决定，插件不再改写。\n'
+              : '') +
+            (value.runScript !== undefined
+              ? `runScript: ${value.runScript}（命令由你决定；插件已用 bash 在 iterDir 里启动它，并在它退出时唤醒）\n`
+              : '') +
             '拟合完成时 DSH 会自动唤醒本会话（通知里带 job id）——**不要轮询**；收到通知后用 auto_pwa_fit_status 取结果。\n' +
             '等待期间可以继续做其他尝试（不同变体/其他 iterDir/其他分析），但不要对同一 iterDir 重复提交，也不要 bash 跑 fit。\n' +
             '完成后第一件事：auto_pwa_evaluate → auto_pwa_note，再开下一轮；不要连续跑多轮后批量补 note。\n' +
             `${value.gate?.report ?? ''}`),
     },
     async execute(
-      args: { iterDir: string; configPath?: string; config?: string; scriptArgs?: string[]; timeoutMin?: number; timeoutMs?: number; preflight?: boolean },
+      args: {
+        iterDir: string
+        configPath?: string
+        config?: string
+        target?: string
+        runScript?: string
+        jobScript?: string
+        scriptArgs?: string[]
+        timeoutMin?: number
+        timeoutMs?: number
+        preflight?: boolean
+      },
       exec,
     ) {
       // 参数规范化：configPath 是规范名，config 是保留别名；timeoutMin 优先于 timeoutMs。
       const cfgTarget = args.configPath ?? args.config
-      const timeoutMin = args.timeoutMin ?? (args.timeoutMs !== undefined ? Math.ceil(args.timeoutMs / 60_000) : undefined)
+      let timeoutMin = args.timeoutMin ?? (args.timeoutMs !== undefined ? Math.ceil(args.timeoutMs / 60_000) : undefined)
       // Variant runs: tell the driver which config to read, and gate +
       // provenance-record that same file (not merely <iterDir>/config.yml).
       const scriptArgs = withConfigArg(args.scriptArgs, cfgTarget)
+      const notes: string[] = []
+
+      // ---- 1) 执行目标（每次提交单独定；探测在宿主进程做） ------------------
+      const caps = (ctx.pwaFit as { capabilities?: HostCapabilities }).capabilities ?? { gpu: false, slurm: false }
+      let runScript: string | undefined
+      if (args.runScript !== undefined && args.runScript.trim() !== '') {
+        const p = isAbsolute(args.runScript) ? args.runScript : join(args.iterDir, args.runScript)
+        if (!existsSync(p)) {
+          return { jobId: '', state: 'failed' as const, logPath: join(args.iterDir, 'fit.log'), error: `runScript 不存在: ${p}` }
+        }
+        runScript = p
+      }
+      const resolved = resolveFitTarget({
+        ...(args.target !== undefined ? { requested: args.target } : {}),
+        hasRunScript: runScript !== undefined,
+        caps,
+      })
+      if (resolved.error !== undefined) {
+        return { jobId: '', state: 'failed' as const, logPath: join(args.iterDir, 'fit.log'), error: resolved.error }
+      }
+      const target = resolved.target
+      const transport = target === 'slurm' ? 'slurm' : 'local'
+      if (runScript !== undefined && args.target !== undefined) {
+        notes.push(`runScript 优先：已忽略 target="${args.target}"（命令由 runScript 决定）`)
+      }
+      if (target === 'cpu') {
+        if (timeoutMin === undefined) {
+          timeoutMin = 30
+          notes.push('CPU 拟合默认 30 分钟超时（登录节点是共享的，别长跑）；需要更久请显式传 timeoutMin')
+        }
+        notes.push('CPU 比 GPU 慢 20~60×：只适合低统计量/冒烟测试；正式结果请用 target:"gpu" 或 "slurm"')
+        const slow = estimateCpuCost(scriptArgs)
+        if (slow !== undefined) notes.push(slow)
+      }
+
+      // ---- 2) slurm 的提交脚本（路径写错要在昂贵的门禁之前失败） -------------
+      let jobScript: import('../src/slurm-template.js').ResolvedJobScript | undefined
+      if (target === 'slurm') {
+        try {
+          jobScript = resolveJobScript({
+            iterDir: args.iterDir,
+            ...(args.jobScript !== undefined ? { jobScript: args.jobScript } : {}),
+            // preflight 只探测，不往迭代目录里写文件
+            install: args.preflight !== true,
+          })
+        } catch (e) {
+          return {
+            jobId: '',
+            state: 'failed' as const,
+            logPath: join(args.iterDir, 'fit.log'),
+            transport,
+            error: `${(e as Error).message}\n${jobScriptHint()}`,
+          }
+        }
+      } else if (args.jobScript !== undefined && runScript === undefined) {
+        notes.push(`jobScript 被忽略：target=${target}（只有 target=slurm 才交集群作业）`)
+      }
+      if (runScript !== undefined && args.jobScript !== undefined) {
+        notes.push('jobScript 被忽略：runScript 优先')
+      }
+
+      // ---- 3) 审查 config.yml（门禁是唯一强制项，先于任何计算） -------------
       const gate = gateBeforeFit({
         iterDir: args.iterDir,
         tool: 'auto_pwa_run_fit',
         ...(cfgTarget !== undefined ? { configPath: cfgTarget } : {}),
         fitScript: join(args.iterDir, 'fit.py'),
+        ...(target !== undefined ? { target } : {}),
+        ...(runScript !== undefined ? { runScript } : {}),
+        ...(jobScript !== undefined && existsSync(jobScript.path) ? { jobScript: jobScript.path } : {}),
         ...(scriptArgs !== undefined ? { scriptArgs } : {}),
       })
+      for (const note of notes) {
+        gate.warnings.push({ code: 'target-note', message: note })
+        gate.report += `\n  [warn] ${note}`
+      }
+      // 同一个 iterDir 已有作业在跑（或 DSH 取消后仍留在集群上的作业）时，
+      // 再交一次 = 两个作业同时写同一个 results/。只警告，不拦——有时就是要重跑。
+      if (target === 'slurm') {
+        const prior = Object.values(readSlurmRegistryAt(findIterationsRoot(args.iterDir))).find(
+          (r) => r.iterDir === args.iterDir && (r.state === 'running' || r.detached === true),
+        )
+        if (prior !== undefined) {
+          const warn = `duplicate-running-job: ${args.iterDir} 已有作业 sbatch ${prior.sbatchId}（状态 ${prior.state}${prior.detached === true ? '，DSH 已 detach' : ''}）；` +
+            `重复提交会让两个作业同时写 results/。先确认：squeue -j ${prior.sbatchId}；要停就 scancel ${prior.sbatchId}`
+          gate.warnings.push({ code: 'duplicate-running-job', message: warn })
+          gate.report += `\n  [warn] ${warn}`
+        }
+      }
       if (!gate.ok) {
         return {
           jobId: '',
@@ -4446,17 +4607,24 @@ export function apply(ctx: Context) {
           gate: { ok: false, report: gate.report, errors: gate.errors, warnings: gate.warnings, configMd5: gate.gate.configMd5 },
         }
       }
+
+      // ---- 4) preflight：只报宿主探测 + 目标解析 ----------------------------
       if (args.preflight === true) {
-        const env = resolveEnv()
-        const gpu = detectGpuAvailability(env.ctpwaPython, env.ldLibraryPath)
-        const slurm = hasSlurmClients()
-        const transport = pickTransport(env.ctpwaPython, env.ldLibraryPath)
         return {
           jobId: '',
           state: 'done' as const,
           logPath: join(args.iterDir, 'fit.log'),
           transport,
-          preflight: { gpu: gpu ?? 'available', slurm, transport },
+          target,
+          preflight: {
+            gpu: caps.gpu ? 'available' : 'unavailable',
+            slurm: caps.slurm,
+            transport,
+            target,
+            reason: resolved.reason,
+          },
+          ...(jobScript !== undefined ? { jobScript: jobScript.path } : {}),
+          ...(runScript !== undefined ? { runScript } : {}),
           gate: {
             ok: true,
             report: gate.report,
@@ -4467,21 +4635,28 @@ export function apply(ctx: Context) {
           },
         }
       }
+
+      // ---- 5) 提交（三种执行都包在同一个 DSH 后台任务里，完成即唤醒） --------
       try {
         const jobId = ctx.pwaFit.submit(
           {
             iterDir: args.iterDir,
             timeoutMin,
+            target,
+            ...(runScript !== undefined ? { runScript } : {}),
+            ...(jobScript !== undefined ? { jobScript: jobScript.path } : {}),
             ...(scriptArgs !== undefined ? { scriptArgs } : {}),
           },
           ownerOf(exec),
         )
-        const transport = (ctx.pwaFit as { transport?: string }).transport ?? 'local'
         return {
           jobId,
           state: 'running' as const,
           logPath: join(args.iterDir, 'fit.log'),
           transport,
+          target,
+          ...(jobScript !== undefined ? { jobScript: jobScript.path, jobScriptInstalled: jobScript.installed } : {}),
+          ...(runScript !== undefined ? { runScript } : {}),
           gate: {
             ok: true,
             report: gate.report,
@@ -4504,6 +4679,10 @@ export function apply(ctx: Context) {
           jobId: '',
           state: 'failed' as const,
           logPath: join(args.iterDir, 'fit.log'),
+          transport,
+          target,
+          ...(jobScript !== undefined ? { jobScript: jobScript.path } : {}),
+          ...(runScript !== undefined ? { runScript } : {}),
           error: (e as Error).message,
           gate: { ok: true, report: gate.report, errors: gate.errors, warnings: gate.warnings, configMd5: gate.gate.configMd5 },
         }
@@ -4516,9 +4695,10 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   ctx.tools.register(defineTool({
     name: 'auto_pwa_fit_status',
-    description: '查后台任务：running/done/failed + 日志尾 + results 摘要。',
+    description: '查后台任务：running/done/failed + 队列状态 + 日志尾 + results 摘要（传 iterDir 可跨重启恢复）。',
     parameters: {
-      jobId: { type: 'string', required: true, description: 'run_fit 返回的 jobId（ctpwa-N）' },
+      jobId: { type: 'string', required: true, description: 'run_fit 返回的 jobId（ctpwa-N），或历史 .slurm-jobs.json 里的 key / sbatch 号' },
+      iterDir: { type: 'string', description: '迭代目录或 iterations/ 根：harness 重启后 DSH 内存里查不到 jobId 时，用它从 .slurm-jobs.json + squeue/sacct 恢复状态' },
     },
     output: {
       schema: {
@@ -4529,6 +4709,9 @@ export function apply(ctx: Context) {
           state: { type: 'string', required: true, enum: ['running', 'done', 'failed', 'canceled'] },
           exitCode: { type: 'integer' },
           error: { type: 'string' },
+          sbatchId: { type: 'string' },
+          target: { type: 'string', enum: ['cpu', 'gpu', 'slurm', 'script'] },
+          progress: { type: 'string' },
           logTail: { type: 'string', required: true },
           summary: {
             type: 'object',
@@ -4599,6 +4782,9 @@ export function apply(ctx: Context) {
         state: string
         exitCode?: number
         error?: string
+        sbatchId?: string
+        target?: string
+        progress?: string
         logTail: string
         summary?: {
           bestNll?: number
@@ -4612,7 +4798,12 @@ export function apply(ctx: Context) {
           interference?: { available: boolean; reason?: string; totalIntensity?: number; topInterference?: { pair: string[]; value: number }[] }
         }
       }) => {
-        const lines = [`job ${value.jobId}: ${value.state}${value.exitCode !== undefined ? ` (exit ${value.exitCode})` : ''}`]
+        const lines = [`job ${value.jobId}: ${value.state}${value.exitCode !== undefined ? ` (exit ${value.exitCode})` : ''}${value.target !== undefined ? ` · target=${value.target}` : ''}`]
+        if (value.sbatchId !== undefined) lines.push(`  sbatch: ${value.sbatchId}`)
+        if (value.progress !== undefined) lines.push(`  进度: ${value.progress}`)
+        if (value.state === 'running' && (value.progress ?? '').includes('PENDING')) {
+          lines.push('  排队中（不是“在跑”）：reason 见上；等太久就改 job.sh 的分区/卡数（例如 A100→V100、2 卡→1 卡）后重交')
+        }
         if (value.error) lines.push(`  error: ${value.error}`)
         if (value.summary) {
           const s = value.summary
@@ -4657,12 +4848,41 @@ export function apply(ctx: Context) {
         return text(lines.join('\n'))
       },
     },
-    async execute(args: { jobId: string }, exec) {
+    async execute(args: { jobId: string; iterDir?: string }, exec) {
       let view: import('./pwa-fit.js').FitStatusView
       try {
         view = ctx.pwaFit.status(args.jobId, ownerOf(exec))
       } catch (e) {
-        return { jobId: args.jobId, state: 'failed' as const, logTail: '', error: (e as Error).message }
+        // DSH 的作业表在内存里：harness 重启后 old jobId 查不到，但集群作业
+        // 还在跑（cancel 默认只 detach）。用 iterDir 指到 .slurm-jobs.json，
+        // 再用 squeue/sacct 重新问一次——这就是“重启后恢复状态”。
+        const err = (e as Error).message
+        if (args.iterDir === undefined) {
+          return {
+            jobId: args.jobId,
+            state: 'failed' as const,
+            logTail: '',
+            error: `${err}\n（如果 harness 重启过：再传 iterDir=<迭代目录>，插件会用 .slurm-jobs.json + squeue/sacct 恢复这个作业的状态）`,
+          }
+        }
+        const trimmed = args.iterDir.replace(/\/+$/, '')
+        // Accept an iteration dir, an `iterations/` root, or any dir that
+        // already carries the registry file.
+        const isRoot = /(^|\/)iterations$/.test(trimmed) || existsSync(join(trimmed, '.slurm-jobs.json'))
+        const root = isRoot ? trimmed : findIterationsRoot(trimmed)
+        const recovered = recoverSlurmJob(root, args.jobId)
+        if (recovered === undefined) {
+          return { jobId: args.jobId, state: 'failed' as const, logTail: '', error: `${err}\n.slurm-jobs.json 里也没有 ${args.jobId}（${root}）` }
+        }
+        view = {
+          jobId: args.jobId,
+          iterDir: recovered.record.iterDir,
+          state: recovered.state,
+          logTail: recovered.logTail,
+          ...(recovered.exitCode !== null ? { exitCode: recovered.exitCode } : {}),
+          ...(recovered.record.sbatchId !== 'batch' ? { sbatchId: recovered.record.sbatchId } : {}),
+          ...(recovered.queue !== undefined ? { progress: describeQueue(recovered.queue) } : {}),
+        }
       }
       const out: {
         jobId: string
@@ -4685,6 +4905,9 @@ export function apply(ctx: Context) {
         jobId: view.jobId,
         state: view.state,
         logTail: view.logTail,
+        ...(view.sbatchId !== undefined ? { sbatchId: view.sbatchId } : {}),
+        ...(view.target !== undefined ? { target: view.target } : {}),
+        ...(view.progress !== undefined ? { progress: view.progress } : {}),
       }
       if (view.exitCode !== undefined) out.exitCode = view.exitCode
       if (view.error !== undefined) out.error = view.error
@@ -4750,26 +4973,14 @@ export function apply(ctx: Context) {
   // ---------------------------------------------------------------------
   // auto_pwa_try_candidates（第二批：并行候选短拟合）
   // ---------------------------------------------------------------------
-  // Batch decision helpers (cluster transport): 'one' = each candidate is its
-  // own SLURM job tracked as one batch (for long fits); 'script' = one merged
-  // script (for short fits); 'off' = per-candidate single submit (local).
-  const SLURM_BATCH_SHORT_SEC = 120
-  const resolveSlurmBatchMode = (env: NodeJS.ProcessEnv, timeSec?: number): 'one' | 'script' | 'off' => {
-    const v = (env.PWA_SLURM_BATCH ?? 'auto').toLowerCase().trim()
-    if (v === 'one' || v === 'script') return v
-    if (v === 'off') return 'off'
-    if (timeSec === undefined) return 'one' // no baseline timing yet -> safe parallel batch
-    return timeSec < SLURM_BATCH_SHORT_SEC ? 'script' : 'one'
-  }
-  const readBaselineTimeSec = (iterDir: string): number | undefined => {
-    try {
-      const p = join(iterDir, 'results', 'fit.json')
-      if (!existsSync(p)) return undefined
-      const j = JSON.parse(readFileSync(p, 'utf8')) as { timeSec?: unknown }
-      return typeof j.timeSec === 'number' ? j.timeSec : undefined
-    } catch {
-      return undefined
-    }
+  // Batch decision (cluster transport): 'one' = each candidate is its own
+  // SLURM job, all sharing one job.sh (`--chdir` selects the trial dir) and
+  // tracked as one batch so there is a single wake; 'off' = one DSH job per
+  // candidate (local transport, or PWA_SLURM_BATCH=off). The old 'script'
+  // mode (a plugin-generated merged script) is gone: generating scripts is
+  // exactly what "the AI owns job.sh" replaces.
+  const resolveSlurmBatchMode = (env: NodeJS.ProcessEnv): 'one' | 'off' => {
+    return (env.PWA_SLURM_BATCH ?? 'auto').toLowerCase().trim() === 'off' ? 'off' : 'one'
   }
 
   ctx.tools.register(defineTool({
@@ -4788,6 +4999,9 @@ export function apply(ctx: Context) {
         description: '要试探的删除候选（显著性检查：删掉份额不显著/撞边界的态，看 ΔNLL 是否显著变差），最多 5 个。candidates 与 removals 至少给一个',
       },
       fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
+      jobScript: { type: 'string', description: 'target=slurm 的提交脚本（默认 <baseIterDir>/job.sh，缺失则装内置模板）：所有候选共用它，插件用 --chdir 切到各 _trials/<候选>。其他 target 忽略。' },
+      target: { type: 'string', enum: ['auto', 'cpu', 'gpu', 'slurm'], description: '候选短拟合在哪跑（规则同 run_fit）：auto=宿主 GPU→CPU；cpu=本机（慢，适合小样本筛候选）；slurm=集群批量。默认 auto。' },
+      runScript: { type: 'string', description: 'AI 自己的启动脚本（相对 baseIterDir）：给了就忽略 target，每个候选在各自 trial 目录里用 bash 执行它（必须前台阻塞到结束）。' },
       shortRuns: { type: 'integer', description: '短拟合运行次数（默认 1）' },
       shortMaxIter: { type: 'integer', description: '短拟合单次最大迭代（默认 500）' },
       timeoutMin: { type: 'integer', description: '每个拟合的超时分钟数（默认无）' },
@@ -4827,7 +5041,7 @@ export function apply(ctx: Context) {
             },
           },
           warnings: { type: 'array', items: { type: 'string' } },
-          batchMode: { type: 'string', enum: ['one', 'script', 'off'] },
+          batchMode: { type: 'string', enum: ['one', 'off'] },
           warmFromBase: { type: 'boolean' },
           error: { type: 'string' },
         },
@@ -4837,16 +5051,14 @@ export function apply(ctx: Context) {
         jobs: { candidate: string; iterDir: string; jobId: string }[]
         skipped: { candidate: string; errors: { code: string; message: string }[] }[]
         warnings?: string[]
-        batchMode?: 'one' | 'script' | 'off'
+        batchMode?: 'one' | 'off'
         warmFromBase?: boolean
         error?: string
       }) => {
         if (!value.ok) return text(`trial 提交失败: ${value.error ?? '未知'}`)
         const lines: string[] = []
         if (value.jobs.length > 0) {
-          const batch = value.batchMode === 'one' ? '（每个候选一个 SLURM 作业，全部完成才唤醒）'
-            : value.batchMode === 'script' ? '（多个候选合成一个 SLURM 脚本，顺序跑，一次唤醒）'
-              : ''
+          const batch = value.batchMode === 'one' ? '（每个候选一个 SLURM 作业，共用同一 job.sh，全部完成才唤醒）' : ''
           lines.push(`已提交 ${value.jobs.length} 个候选短拟合${batch}:`)
           for (const j of value.jobs) lines.push(`  ${j.candidate}: job ${j.jobId} — ${j.iterDir}`)
         }
@@ -4864,6 +5076,9 @@ export function apply(ctx: Context) {
       candidates?: ResonanceProposal[]
       removals?: ResonanceRemoval[]
       fitScriptPath?: string
+      jobScript?: string
+      target?: string
+      runScript?: string
       shortRuns?: number
       shortMaxIter?: number
       timeoutMin?: number
@@ -4974,11 +5189,62 @@ export function apply(ctx: Context) {
       // job per candidate, the historical behavior).
       const pwaFit = ctx.pwaFit as {
         transport?: string
-        submitBatch?: (r: { iterDir: string; iterDirs?: string[]; timeoutMin?: number; scriptArgs?: string[] }, o?: FitOwner) => string
+        capabilities?: HostCapabilities
+        submitBatch?: (
+          r: {
+            iterDir: string
+            iterDirs?: string[]
+            timeoutMin?: number
+            scriptArgs?: string[]
+            jobScript?: string
+            target?: string
+            runScript?: string
+          },
+          o?: FitOwner,
+        ) => string
       }
-      const batchMode = pwaFit.transport === 'slurm'
-        ? resolveSlurmBatchMode(env, readBaselineTimeSec(args.baseIterDir))
-        : 'off'
+      // 候选的执行目标和单次拟合用同一套规则：slurm 才批量（共用 job.sh），
+      // 其余目标每个候选一个 DSH 后台任务（各自唤醒）。
+      const caps = pwaFit.capabilities ?? { gpu: false, slurm: false }
+      let runScript: string | undefined
+      if (args.runScript !== undefined && args.runScript.trim() !== '') {
+        const p = isAbsolute(args.runScript) ? args.runScript : join(args.baseIterDir, args.runScript)
+        if (!existsSync(p)) {
+          return { ok: false, baseIterDir: args.baseIterDir, jobs: [], skipped, warnings, batchMode: 'off', error: `runScript 不存在: ${p}` }
+        }
+        runScript = p
+      }
+      const resolved = resolveFitTarget({
+        ...(args.target !== undefined ? { requested: args.target } : {}),
+        hasRunScript: runScript !== undefined,
+        caps,
+      })
+      if (resolved.error !== undefined) {
+        return { ok: false, baseIterDir: args.baseIterDir, jobs: [], skipped, warnings, batchMode: 'off', error: resolved.error }
+      }
+      const target = resolved.target
+      const batchMode = target === 'slurm' ? resolveSlurmBatchMode(env) : 'off'
+      // 候选共用一个 job.sh：插件用 sbatch --chdir=<trialDir> 切目录，所以
+      // 模板里不能写死 iter 路径（见 skills/auto-pwa-analysis 的 job.sh 一节）。
+      let jobScript: string | undefined
+      if (target !== 'slurm' && args.jobScript !== undefined && runScript === undefined) {
+        warnings.push(`ignored-job-script: target=${target}，jobScript（=${args.jobScript}）被忽略；候选按本地进程逐个跑`)
+      }
+      if (target === 'slurm') {
+        try {
+          const resolvedScript = resolveJobScript({
+            iterDir: args.baseIterDir,
+            ...(args.jobScript !== undefined ? { jobScript: args.jobScript } : {}),
+          })
+          jobScript = resolvedScript.path
+          if (resolvedScript.installed) warnings.push(`已安装默认 SLURM 模板: ${resolvedScript.path}（换分区/卡数就改它）`)
+        } catch (e) {
+          return { ok: false, baseIterDir: args.baseIterDir, jobs: [], skipped, warnings, batchMode: 'off', error: `${(e as Error).message}\n${jobScriptHint()}` }
+        }
+      }
+      if (target === 'cpu') {
+        warnings.push('CPU 候选筛选：每个候选是本机 CPU 短拟合（20~60× 慢），建议短拟合参数；结果与 GPU 数值差 ~1e-11，ΔNLL 可比')
+      }
       const countsCandidate = pending.length
       const canBatch = batchMode !== 'off' && countsCandidate > 1 && typeof pwaFit.submitBatch === 'function'
       if (canBatch) {
@@ -4987,6 +5253,9 @@ export function apply(ctx: Context) {
           iterDirs: pending.map((p) => p.iterDir),
           scriptArgs: fitArgs,
           timeoutMin: args.timeoutMin,
+          target,
+          ...(runScript !== undefined ? { runScript } : {}),
+          ...(jobScript !== undefined ? { jobScript } : {}),
         }, ownerOf(exec))
         for (const p of pending) jobs.push({ candidate: p.candidate, iterDir: p.iterDir, jobId, changed: p.changed })
         return { ok: true, baseIterDir: args.baseIterDir, jobs, skipped, warnings, batchMode, warmFromBase }
@@ -4998,6 +5267,9 @@ export function apply(ctx: Context) {
             iterDir: p.iterDir,
             scriptArgs: fitArgs,
             timeoutMin: args.timeoutMin,
+            target,
+            ...(runScript !== undefined ? { runScript } : {}),
+            ...(jobScript !== undefined ? { jobScript } : {}),
           },
           ownerOf(exec),
         )

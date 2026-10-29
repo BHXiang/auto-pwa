@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveTransportMode, hasSlurmClients, pickTransport, slurmConfigFromEnv } from '../src/fit-transport.js'
-import { renderSlurmSubmission, renderSlurmBatchSubmission, resolveSlurmTemplateKind } from '../src/slurm-template.js'
+import { bundledJobTemplatePath, resolveJobScript } from '../src/slurm-template.js'
 
 const ORIGINAL_PATH = process.env.PATH
 
@@ -11,8 +11,7 @@ afterEach(() => {
   if (ORIGINAL_PATH === undefined) delete process.env.PATH
   else process.env.PATH = ORIGINAL_PATH
   delete process.env.PWA_FIT_TRANSPORT
-  delete process.env.PWA_SLURM_TEMPLATE
-  delete process.env.PWA_SLURM_PARTITION
+  delete process.env.PWA_SLURM_SCANCEL_ON_CANCEL
 })
 
 /** Create fake slurm CLIs on PATH so hasSlurmClients/pickTransport see them. */
@@ -42,13 +41,15 @@ describe('fit-transport', () => {
     void bin
   })
 
-  it('slurmConfigFromEnv reads PWA_SLURM_* and the template kind', () => {
-    const env = { PWA_SLURM_TEMPLATE: 'v100', PWA_SLURM_PARTITION: 'gpu-x', PWA_SLURM_QOS: 'q' }
-    const { cluster } = slurmConfigFromEnv(env)
+  it('slurmConfigFromEnv keeps only detach semantics (resources live in job.sh)', () => {
+    const { cluster, config } = slurmConfigFromEnv({})
     expect(cluster.transport).toBe('slurm')
-    expect(cluster.template).toBe('v100')
-    expect(cluster.partition).toBe('gpu-x')
-    expect(cluster.qos).toBe('q')
+    // No partition/qos/gres/template knobs any more: the script owns them.
+    expect('partition' in cluster).toBe(false)
+    expect('template' in cluster).toBe(false)
+    expect('template' in config).toBe(false)
+    expect(cluster.scancelOnCancel).toBe(false)
+    expect(slurmConfigFromEnv({ PWA_SLURM_SCANCEL_ON_CANCEL: '1' }).cluster.scancelOnCancel).toBe(true)
   })
 
   it('pickTransport: torch-visible GPU -> local; no GPU + slurm clients -> slurm', () => {
@@ -69,57 +70,88 @@ describe('fit-transport', () => {
   })
 })
 
-describe('slurm-template', () => {
-  it('renders the A100 template with a foreground python run and hard-coded cwd', () => {
-    const s = renderSlurmSubmission({
-      kind: 'a100',
-      jobName: 'Jpsi2KKeta',
-      output: '/x/iter-000/fit.log',
-      python: '/env/ctpwa/bin/python',
-      ldLibraryPath: '',
-      fitScript: 'fit.py',
-      scriptArgs: ['--runs', '1', '--max-iter', '500'],
-      cwd: '/x/iter-000',
-    })
-    expect(s).toContain('#SBATCH --partition=gpupwa')
-    expect(s).toContain('#SBATCH --qos=pwadedicate')
-    expect(s).toContain('#SBATCH --gres=gpu:a100:2')
-    expect(s).toContain('cd "/x/iter-000"')
-    expect(s).toContain('/env/ctpwa/bin/python fit.py --runs 1 --max-iter 500')
-    // No backgrounding: the fit must run in the foreground.
-    expect(s).not.toContain('--max-iter 500 &')
-  })
+describe('slurm-template (AI-authored job.sh contract)', () => {
+  const mkIter = (): string => mkdtempSync(join(tmpdir(), 'dsh-pwa-iter-'))
 
-  it('renders the V100 template with the same foreground python run', () => {
-    const s = renderSlurmSubmission({ kind: 'v100', jobName: 'j', output: 'log', python: 'python', ldLibraryPath: '', fitScript: 'fit.py', cwd: '/x' })
+  it('installs the bundled template as <iterDir>/job.sh when missing', () => {
+    const dir = mkIter()
+    const r = resolveJobScript({ iterDir: dir })
+    expect(r.installed).toBe(true)
+    expect(r.path).toBe(join(dir, 'job.sh'))
+    const s = readFileSync(r.path, 'utf8')
     expect(s).toContain('#SBATCH --partition=gpu')
-    expect(s).toContain('#SBATCH --gres=gpu:v100:2')
-    expect(s).toContain('python fit.py')
+    expect(s).toContain('#SBATCH --qos=pwanormal')
+    expect(s).toContain('#SBATCH --gres=gpu:v100:1')
+    expect(s).toContain('#SBATCH --output=fit.log')
+    // Contract: no hard-coded iteration path (--chdir sets the cwd), args forwarded.
+    expect(s).not.toMatch(/\n\s*cd\s+"?\//)
+    expect(s).toContain('fit.py "$@"')
+    expect(s).toContain('CUDA_HOME=/usr/local/cuda-12.9')
+    // conda activate must not be *executed* (compute nodes lack the shell hook);
+    // it may only be mentioned in the header comment explaining why not.
+    expect(s).not.toMatch(/^(?!\s*#).*conda activate/m)
+    expect(s).not.toMatch(/^(?!\s*#)\s*source\s/m)
+    rmSync(dir, { recursive: true, force: true })
   })
 
-  it('injects LD_LIBRARY_PATH when set', () => {
-    const s = renderSlurmSubmission({ kind: 'a100', jobName: 'j', output: 'log', python: 'python', ldLibraryPath: '/a:/b', fitScript: 'fit.py', cwd: '/x' })
-    expect(s).toContain('export LD_LIBRARY_PATH="/a:/b:$LD_LIBRARY_PATH"')
+  it('there is exactly ONE template: v100/a100/auto all install the same file', () => {
+    for (const spec of ['auto', 'v100', 'a100']) {
+      const dir = mkIter()
+      const r = resolveJobScript({ iterDir: dir, jobScript: spec })
+      expect(r.installed, spec).toBe(true)
+      expect(r.path).toBe(join(dir, 'job.sh'))
+      const s = readFileSync(r.path, 'utf8')
+      // Default is V100, and the A100 swap is documented inside the file.
+      expect(s, spec).toContain('#SBATCH --partition=gpu')
+      expect(s, spec).toContain('#SBATCH --gres=gpu:v100:1')
+      expect(s, spec).toContain('gpupwa')
+      expect(s, spec).toContain('gpu:a100:1')
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
-  it('renders a batch script that cd-es into each iteration dir', () => {
-    const s = renderSlurmBatchSubmission({
-      kind: 'a100',
-      jobName: 'batch',
-      output: '/x/fit.log',
-      commands: [
-        { iterDir: '/x/iter-001', python: 'python', ldLibraryPath: '', fitScript: 'fit.py', scriptArgs: ['--runs', '1'] },
-        { iterDir: '/x/iter-002', python: 'python', ldLibraryPath: '', fitScript: 'fit.py', scriptArgs: ['--runs', '1'] },
-      ],
-    })
-    expect(s).toContain('cd "/x/iter-001"')
-    expect(s).toContain('cd "/x/iter-002"')
-    expect(s).toContain('python fit.py --runs 1')
-    expect(s).toContain('batch done')
+  it('keeps an existing job.sh (the AI may have customized it)', () => {
+    const dir = mkIter()
+    writeFileSync(join(dir, 'job.sh'), '#!/bin/bash\n#SBATCH --partition=custom\n')
+    const r = resolveJobScript({ iterDir: dir })
+    expect(r.installed).toBe(false)
+    expect(readFileSync(r.path, 'utf8')).toContain('--partition=custom')
+    rmSync(dir, { recursive: true, force: true })
   })
 
-  it('resolveSlurmTemplateKind defaults to a100 and honors v100', () => {
-    expect(resolveSlurmTemplateKind({})).toBe('a100')
-    expect(resolveSlurmTemplateKind({ PWA_SLURM_TEMPLATE: 'v100' })).toBe('v100')
+  it('resolves an explicit path relative to the iteration dir, and fails loudly when absent', () => {
+    const dir = mkIter()
+    writeFileSync(join(dir, 'my_job.sh'), '#!/bin/bash\n')
+    expect(resolveJobScript({ iterDir: dir, jobScript: 'my_job.sh' }).path).toBe(join(dir, 'my_job.sh'))
+    expect(() => resolveJobScript({ iterDir: dir, jobScript: 'nope.sh' })).toThrow(/nope\.sh/)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('install:false never writes (preflight/validation)', () => {
+    const dir = mkIter()
+    const r = resolveJobScript({ iterDir: dir, install: false })
+    expect(r.installed).toBe(false)
+    expect(existsSync(join(dir, 'job.sh'))).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('the single bundled template keeps the runner contract', () => {
+    const p = bundledJobTemplatePath()
+    expect(existsSync(p), p).toBe(true)
+    expect(p).toMatch(/scripts\/slurm-job\.sh$/)
+    const s = readFileSync(p, 'utf8')
+    // The runner submits with --chdir; a hard-coded cd would defeat _trials/.
+    expect(s).not.toMatch(/^\s*cd\s/m)
+    // --output must stay relative so it lands in the --chdir directory.
+    expect(s).toContain('#SBATCH --output=fit.log')
+    // Args must reach fit.py (--runs/--max-iter/--config).
+    expect(s).toContain('fit.py "$@"')
+    expect(s).toMatch(/#SBATCH --gres=gpu:v100:1/)
+    // Part 1/Part 2 structure with per-line explanations (the user's format).
+    expect(s).toContain('######## Part 1 #########')
+    expect(s).toContain('######## Part 2 ######')
+    // The A100 switch must be a table the AI can apply without guessing.
+    expect(s).toContain('gpupwa')
+    expect(s).toContain('pwadedicate')
   })
 })

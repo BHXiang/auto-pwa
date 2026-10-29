@@ -952,7 +952,7 @@ Resonances:
 })
 
 /** ctx with a fake pwaFit service + guard recorder + session-event hook. */
-function harnessCtx() {
+function harnessCtx(options: { transport?: string; capabilities?: { gpu: boolean; slurm: boolean }; statusImpl?: (jobId: string, caller?: FitOwner) => unknown } = {}) {
   const definitions: {
     name: string
     output?: { schema?: unknown }
@@ -960,15 +960,18 @@ function harnessCtx() {
   }[] = []
   const guards: ((exec: { name: string; arguments: unknown }) => string | undefined)[] = []
   const eventHandlers: Record<string, (...args: unknown[]) => void> = {}
-  const submits: { request: { iterDir: string }; owner?: FitOwner }[] = []
+  const submits: { request: { iterDir: string; jobScript?: string; target?: string; runScript?: string; timeoutMin?: number }; owner?: FitOwner }[] = []
   const statusCalls: { jobId: string; caller?: FitOwner }[] = []
   const pwaFit = {
-    submit: (request: { iterDir: string }, owner?: FitOwner) => {
+    ...(options.transport !== undefined ? { transport: options.transport } : {}),
+    ...(options.capabilities !== undefined ? { capabilities: options.capabilities } : {}),
+    submit: (request: { iterDir: string; jobScript?: string }, owner?: FitOwner) => {
       submits.push({ request, owner })
       return 'ctpwa-9'
     },
     status: (jobId: string, caller?: FitOwner) => {
       statusCalls.push({ jobId, caller })
+      if (options.statusImpl !== undefined) return options.statusImpl(jobId, caller)
       return { jobId, iterDir: '/pwa/iter-001', state: 'done' as const, exitCode: 0, logTail: 'log tail' }
     },
     kill: () => 'requested' as const,
@@ -1068,7 +1071,7 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
       }
       // The real DSH Agent exposes `id` (no `sessionId`). Forwarding the Agent
       // is what makes the job OWNED — an unowned job never wakes the agent.
-      expect(h.submits).toEqual([{ request: { iterDir: dir, timeoutMin: undefined }, owner: { id: 'sess-1', agent: { id: 'sess-1' } } }])
+      expect(h.submits).toEqual([{ request: { iterDir: dir, timeoutMin: 30, target: 'cpu' }, owner: { id: 'sess-1', agent: { id: 'sess-1' } } }])
       expect(out.jobId).toBe('ctpwa-9')
       expect(out.gate?.ok).toBe(true)
       // `run` already validated the whole result against the declared schema:
@@ -1081,6 +1084,226 @@ describe('auto-pwa harness wiring (ctx.jobs / guard / token-meter)', () => {
       expect(prov.resonances.map((r: { name: string }) => r.name)).toEqual(['phi1020'])
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit on a LOCAL machine ignores jobScript (no job.sh, no sbatch, target=cpu)', async () => {
+    const h = harnessCtx() // no transport -> local
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-local-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir, jobScript: 'auto' }, { agent: { id: 'sess-1' } })) as {
+        jobScript?: string
+        transport?: string
+        target?: string
+        gate?: { warnings?: { code: string; message?: string }[] }
+      }
+      // No slurm side effects on a machine without slurm.
+      expect(existsSync(join(dir, 'job.sh'))).toBe(false)
+      expect(existsSync(join(dir, '.slurm-jobs.json'))).toBe(false)
+      // Local dispatch: cpu target, no jobScript forwarded.
+      expect(h.submits[0]?.request).toEqual({ iterDir: dir, timeoutMin: 30, target: 'cpu' })
+      expect(out.jobScript).toBeUndefined()
+      expect(out.transport).toBe('local')
+      expect(out.target).toBe('cpu')
+      // ...but the ignored parameter is called out instead of vanishing silently.
+      expect(out.gate?.warnings?.some((w) => (w.message ?? '').includes('jobScript 被忽略'))).toBe(true)
+      // Provenance has no cluster fields.
+      const prov = JSON.parse(readFileSyncSync(join(dir, 'results', 'provenance.json'), 'utf8'))
+      expect(prov.jobScript).toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit on the SLURM transport installs <iterDir>/job.sh and hands it to submit', async () => {
+    const h = harnessCtx({ transport: 'slurm', capabilities: { gpu: false, slurm: true } })
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-slurm-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir, target: 'slurm', jobScript: 'auto' }, { agent: { id: 'sess-1' } })) as {
+        jobId: string
+        jobScript?: string
+        jobScriptInstalled?: boolean
+        transport?: string
+      }
+      // run_fit 交两样东西：config.yml（门禁）+ job.sh（sbatch）。
+      const script = join(dir, 'job.sh')
+      expect(existsSync(script)).toBe(true)
+      expect(readFileSyncSync(script, 'utf8')).toContain('#SBATCH --gres=gpu:v100:1')
+      expect(h.submits[0]?.request.jobScript).toBe(script)
+      expect(out.jobScript).toBe(script)
+      expect(out.jobScriptInstalled).toBe(true)
+      expect(out.transport).toBe('slurm')
+      // The script is recorded in provenance so a result can be traced to its job.
+      const prov = JSON.parse(readFileSyncSync(join(dir, 'results', 'provenance.json'), 'utf8'))
+      expect(prov.jobScript).toBe(script)
+      expect(prov.jobScriptMd5).toBeTruthy()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit warns when the same iterDir already has a running cluster job', async () => {
+    const h = harnessCtx({ transport: 'slurm', capabilities: { gpu: false, slurm: true } })
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-dup-'))
+    const dir = join(root, 'iter-001')
+    try {
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      writeFileSync(
+        join(root, '.slurm-jobs.json'),
+        JSON.stringify({
+          'slurm-1-x': { key: 'slurm-1-x', sbatchId: '570473', iterDir: dir, state: 'running', startedAt: Date.now() },
+        }),
+      )
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir, target: 'slurm', jobScript: 'auto' }, {})) as {
+        gate?: { warnings?: { code: string; message?: string }[] }
+      }
+      expect(out.gate?.warnings?.some((w) => w.code === 'duplicate-running-job')).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit rejects a missing jobScript before submitting', async () => {
+    const h = harnessCtx({ transport: 'slurm', capabilities: { gpu: false, slurm: true } })
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-nojob-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir, target: 'slurm', jobScript: 'nope.sh' }, {})) as {
+        jobId: string
+        state: string
+        error?: string
+      }
+      expect(out.jobId).toBe('')
+      expect(out.state).toBe('failed')
+      expect(out.error).toContain('nope.sh')
+      expect(h.submits).toHaveLength(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit: auto on a GPU host resolves to gpu (no job.sh, no slurm)', async () => {
+    const h = harnessCtx({ capabilities: { gpu: true, slurm: false } })
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-gpu-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir }, {})) as { target?: string; jobScript?: string }
+      expect(out.target).toBe('gpu')
+      expect(out.jobScript).toBeUndefined()
+      expect(existsSync(join(dir, 'job.sh'))).toBe(false)
+      expect(h.submits[0]?.request.target).toBe('gpu')
+      // No CPU timeout on the GPU path.
+      expect(h.submits[0]?.request.timeoutMin).toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit: auto with slurm but no GPU refuses to guess and says what to pass', async () => {
+    const h = harnessCtx({ capabilities: { gpu: false, slurm: true } })
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-amb-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir }, {})) as { jobId: string; error?: string }
+      expect(out.jobId).toBe('')
+      expect(out.error).toContain('target:"cpu"')
+      expect(out.error).toContain('target:"slurm"')
+      expect(h.submits).toHaveLength(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit: target gpu without a GPU fails before the gate', async () => {
+    const h = harnessCtx({ capabilities: { gpu: false, slurm: false } })
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-nogpu-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir, target: 'gpu' }, {})) as { error?: string }
+      expect(out.error).toContain('没有可用 GPU')
+      expect(h.submits).toHaveLength(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit: runScript overrides target, is recorded in provenance, and still submits', async () => {
+    const h = harnessCtx({ capabilities: { gpu: true, slurm: false } })
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-script-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      writeFileSync(join(dir, 'run.sh'), '#!/bin/bash\npython fit.py "$@"\n')
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir, target: 'slurm', runScript: 'run.sh' }, {})) as {
+        target?: string
+        runScript?: string
+        gate?: { warnings?: { code: string; message?: string }[] }
+      }
+      expect(out.target).toBe('script')
+      expect(out.runScript).toBe(join(dir, 'run.sh'))
+      expect(h.submits[0]?.request.target).toBe('script')
+      expect(h.submits[0]?.request.runScript).toBe(join(dir, 'run.sh'))
+      // runScript wins over target=slurm: no cluster script installed.
+      expect(existsSync(join(dir, 'job.sh'))).toBe(false)
+      expect(out.gate?.warnings?.some((w) => (w.message ?? '').includes('runScript 优先'))).toBe(true)
+      const prov = JSON.parse(readFileSyncSync(join(dir, 'results', 'provenance.json'), 'utf8'))
+      expect(prov.target).toBe('script')
+      expect(prov.runScript).toBe(join(dir, 'run.sh'))
+      expect(prov.runScriptMd5).toBeTruthy()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_run_fit: a missing runScript fails before submitting', async () => {
+    const h = harnessCtx()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-runfit-noscript-'))
+    try {
+      writeFileSync(join(dir, 'config.yml'), GATE_CONFIG)
+      const out = (await run(h, 'auto_pwa_run_fit', { iterDir: dir, runScript: 'nope.sh' }, {})) as { error?: string }
+      expect(out.error).toContain('nope.sh')
+      expect(h.submits).toHaveLength(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto_pwa_fit_status recovers a SLURM job from .slurm-jobs.json after a restart', async () => {
+    const bin = mkdtempSync(join(tmpdir(), 'dsh-pwa-fakebin-'))
+    const oldPath = process.env.PATH
+    try {
+      writeFileSync(join(bin, 'squeue'), '#!/bin/sh\necho "PENDING|Resources|1:02:03"\n', { mode: 0o755 })
+      writeFileSync(join(bin, 'sacct'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+      process.env.PATH = `${bin}:${oldPath}`
+      const root = mkdtempSync(join(tmpdir(), 'dsh-pwa-recover-'))
+      const dir = join(root, 'iter-001')
+      mkdirSync(dir, { recursive: true })
+      const key = 'slurm-7-abc'
+      writeFileSync(
+        join(root, '.slurm-jobs.json'),
+        JSON.stringify({ [key]: { key, sbatchId: '570473', iterDir: dir, state: 'running', startedAt: Date.now() } }),
+      )
+      // A fresh session no longer knows the job id (DSH keeps jobs in memory).
+      const h = harnessCtx({
+        statusImpl: () => {
+          throw new Error(`unknown job ${key}`)
+        },
+      })
+      const out = (await run(h, 'auto_pwa_fit_status', { jobId: key, iterDir: root }, {})) as {
+        state: string
+        sbatchId?: string
+        progress?: string
+      }
+      expect(out.state).toBe('running')
+      expect(out.sbatchId).toBe('570473')
+      expect(out.progress).toContain('PENDING')
+      rmSync(root, { recursive: true, force: true })
+    } finally {
+      if (oldPath === undefined) delete process.env.PATH
+      else process.env.PATH = oldPath
+      rmSync(bin, { recursive: true, force: true })
     }
   })
 

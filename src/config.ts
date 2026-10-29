@@ -22,18 +22,21 @@
  *                       Default: empty — evaluated under
  *                       `<cwd>/_auto-pwa-eval`.
  *
- * Cluster transport (SLURM) environment:
- *   PWA_FIT_TRANSPORT auto|local|slurm  where a fit runs. auto = local if torch
- *                       sees CUDA, else slurm if the slurm clients are on PATH
- *                       (the "no local GPU but have SLURM -> submit a job" rule).
- *                       Default: auto.
- *   PWA_SLURM_TEMPLATE a100|v100         cluster shape for partition/qos/account/
- *                       gres defaults (Default: a100).
- *   PWA_SLURM_PARTITION/QOS/ACCOUNT/GRES/NTASKS/MEM_PER_CPU/TIME
- *                       per-cluster overrides (fall back to template defaults).
- *   PWA_SLURM_BATCH  auto|one|script|off  candidate exploration batching (see the
- *                       try_candidates tool). auto chooses one vs script from the
- *                       baseline fit's measured timeSec (Default: auto).
+ * Execution target (where a fit runs) — chosen per call, see src/fit-target.ts:
+ *   PWA_FIT_TARGET auto|cpu|gpu|slurm   deployment default when `target` is
+ *                       omitted. auto = gpu if the HOST probe sees CUDA, else
+ *                       cpu; on a login node (slurm clients, no GPU) auto
+ *                       refuses to guess and asks for an explicit target.
+ *   PWA_FIT_TRANSPORT  [deprecated] local~auto, slurm~target=slurm.
+ *   (no PWA_SLURM_PARTITION/QOS/GRES/TEMPLATE: partition, qos, gres and the
+ *    ctpwa environment live in `<iterDir>/job.sh` — one bundled template with
+ *    per-line explanations; the AI edits it, the plugin only runs `sbatch`.)
+ *   PWA_SLURM_SCANCEL_ON_CANCEL  set 1 to scancel the cluster job when the DSH
+ *                       job is cancelled. Default: detach (a harness restart
+ *                       must not kill a running fit).
+ *   PWA_SLURM_BATCH  auto|one|off        candidate exploration batching (see the
+ *                       try_candidates tool); one SLURM job per candidate, all
+ *                       from the same job.sh, one wake (Default: auto).
  */
 export interface AutoPwaEnv {
   ctpwaPython?: string

@@ -11,10 +11,12 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
 
 
 **主路径是 goal + 一个简单轮次**（loop 状态可选，保存在 `iterations/.loop-state.json`）：
-- 每轮：AI 决策（任意 config 变更）→ `auto_pwa_run_fit`（强制 gate + 宿主 transport）→ 等完成通知 → `evaluate` + `diagnose` → `note` → `loop_next` 只做评估/判收敛。
+- 每轮：AI 决策（任意 config 变更）→ `auto_pwa_run_fit`（强制 gate + 你选的 target：cpu/gpu/slurm 或 runScript）→ 等完成通知 → `evaluate` + `diagnose` → `note` → `loop_next` 只做评估/判收敛。
 - `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 判收敛；收敛写 `FINAL-REPORT.md`。需要人工收尾时传 `forceConverge: true`。首次调用传 `baseIterDir` 启动。
 - **不再有 `loop_decide`**：iterate 用 `iter_start`/`edit_config`/`remove_resonance` + `run_fit`；rollback 用上一轮 config 做 `iter_start` + `note`；收尾用 `loop_next forceConverge`。
 - `loop_next` 只评估，不批准/否决 config 变更。
+
+**在哪跑**：`run_fit` 强制只做 config 门禁；执行由你选 `target`——`cpu`（低统计/冒烟，慢 20~60×，默认 30 min 超时）、`gpu`（本机卡）、`slurm`（集群排队，交你的 `<iterDir>/job.sh`），或给 `runScript` 自己写启动命令（前台阻塞，跑完照样唤醒）。省略时 auto=宿主有 GPU 就 gpu、没有就 cpu；登录节点（有 slurm 没 GPU）会要求显式选。`fit_status` 的 `PENDING (Resources)` 是排队；取消默认只 detach；重启后用 `fit_status({jobId, iterDir})` 查 slurm 作业。细节见 `auto-pwa-analysis` §5.1。
 
 **并行探索（提速关键）**：`auto_pwa_try_candidates` 在基座上并行提交 2–5 个候选的**短拟合**（默认 `--runs 1 --max-iter 500`，目录在 `iterations/_trials/`，不进 iter-N 序列）；全部完成后 `auto_pwa_compare` 按 ΔNLL 显著性（默认阈值 3，2 自由度）裁决，**最优者晋级**为正式迭代。探索与晋级分离，一轮时间试探多个方向。
 

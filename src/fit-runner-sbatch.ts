@@ -5,43 +5,49 @@
  * It implements the same FitSpawner surface as LocalFitRunner (submit /
  * settled / cancel) so the pwa-fit-local provider can swap transports with no
  * other change. It additionally:
- *   - writes a `.slurm` script into the iteration dir and submits it via
- *     `sbatch` (fail-fast with a clear diagnostic if sbatch is absent);
+ *   - submits a **user/AI-authored job script** (see slurm-template.ts) with
+ *     `sbatch --chdir=<iterDir> <job.sh> [args]`; the plugin does not
+ *     synthesize `#SBATCH` directives or environment setup any more;
  *   - polls `squeue`/`sacct` on the login node until the job leaves the queue,
  *     then reads the fit log tail — so the DSH background job's `done` stays
  *     pending exactly as long as the cluster job runs (that is what makes DSH
  *     "wake the AI after the job finishes" work for cluster jobs);
- *   - cancel -> `scancel`;
- *   - supports a batch (one DSH job over N cluster jobs / one merged script)
- *     so several candidate fits finish with a single wake;
+ *   - **cancel detaches instead of scancel by default**: a harness restart or a
+ *     killed DSH job must not destroy hours of cluster compute. Set
+ *     PWA_SLURM_SCANCEL_ON_CANCEL=1 to restore the old behavior;
  *   - persists a `slurm-jobs.json` registry in the iterations root so the AI can
- *     quickly reconstruct cluster job state (also useful after a restart).
+ *     reconstruct cluster job state **after a restart** (`auto_pwa_fit_status`
+ *     with `iterDir` re-queries squeue/sacct by sbatch id);
+ *   - reports PENDING/queue reason while the job is still waiting (a job
+ *     pending on 2×A100 used to look exactly like "running" for an hour).
  */
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
-import { renderSlurmBatchSubmission, renderSlurmSubmission, type SlurmTemplateKind } from './slurm-template.js'
-import type { SlurmClusterConfig } from './fit-transport.js'
-import { configPathFromArgs, type FitStatus, type FitState } from './fit-runner.js'
+import { JOB_SCRIPT_NAME, resolveJobScript, type ResolvedJobScript } from './slurm-template.js'
+import { configPathFromArgs, readLogTail, type FitStatus, type FitState } from './fit-runner.js'
 
 export type { FitState, FitStatus }
 
 /** Configuration for the SLURM runner. */
 export interface SbatchFitRunnerConfig {
-  /** ctpwa env python, baked into the submission script (absolute path on shared FS). */
-  python: string
-  /** LD_LIBRARY_PATH baked into the submission script; '' = inherit on compute node. */
-  ldLibraryPath: string
-  /** Template kind (a100/v100) for partition/qos/account/gres defaults. */
-  template: SlurmTemplateKind
-  /** Cluster settings (overrides template defaults) resolved from the env. */
-  cluster: SlurmClusterConfig
-  /** Fit entry script name inside the iteration dir (default 'fit.py' = aifit link). */
-  fitScript?: string
+  /**
+   * Cancel a DSH job -> also `scancel` the cluster job. Default false: a
+   * harness restart / session teardown kills the DSH job, and that must not
+   * kill a running cluster fit (it did: job 570080 was SIGNAL-killed mid-fit).
+   */
+  scancelOnCancel?: boolean
   /** Polling interval for squeue/sacct (default 15000 ms). */
   pollIntervalMs?: number
   /** Timeout for a single sbatch/squeue/sacct spawn (default 30s). */
   cliTimeoutMs?: number
+  /**
+   * Consecutive polls where both squeue (empty) and sacct (no row) say nothing
+   * before the job is declared lost (default 20 ≈ 5 min at 15s): accounting can
+   * lag a few seconds after a job leaves the queue, and treating that as
+   * "done" produced fake successes.
+   */
+  accountingGracePolls?: number
 }
 
 /** A submitted SLURM job (single) tracked by the runner. */
@@ -51,6 +57,21 @@ interface SbatchJob extends FitStatus {
   subKeys?: string[]
   /** Canonical dir for the persistent registry (first real iter dir for batches). */
   regIterDir: string
+  /** Submission script actually handed to sbatch. */
+  scriptPath?: string
+  /** Last `squeue` view (PENDING/RUNNING + reason + elapsed), for progress. */
+  queue?: SlurmQueueView
+  /** Consecutive polls with no squeue row and no sacct row. */
+  misses?: number
+  /** DSH job was cancelled but the cluster job was left running. */
+  detached?: boolean
+}
+
+/** One `squeue` row. */
+export interface SlurmQueueView {
+  state: string
+  reason: string
+  elapsed: string
 }
 
 const LOG_TAIL_BYTES = 4096
@@ -78,6 +99,12 @@ export interface SlurmJobRecord {
   subKeys?: string[]
   startedAt: number
   finishedAt?: number
+  /** Submission script used for this job (reproducibility). */
+  scriptPath?: string
+  /** DSH job cancelled, cluster job intentionally left running. */
+  detached?: boolean
+  /** Final exit code when known (survives a restart for status recovery). */
+  exitCode?: number | null
 }
 
 export function slurmJobRegistryPath(iterDir: string): string {
@@ -86,13 +113,7 @@ export function slurmJobRegistryPath(iterDir: string): string {
 }
 
 export function readSlurmJobRegistry(iterDir: string): Record<string, SlurmJobRecord> {
-  const p = slurmJobRegistryPath(iterDir)
-  if (!existsSync(p)) return {}
-  try {
-    return JSON.parse(readFileSync(p, 'utf8')) as Record<string, SlurmJobRecord>
-  } catch {
-    return {}
-  }
+  return readSlurmRegistryAt(findIterationsRoot(iterDir))
 }
 
 /** Read the registry directly from an iterations root (AI/user state view). */
@@ -106,8 +127,8 @@ export function readSlurmRegistryAt(iterationsRoot: string): Record<string, Slur
   }
 }
 
-function writeSlurmJobRegistry(iterDir: string, records: Record<string, SlurmJobRecord>): void {
-  const p = slurmJobRegistryPath(iterDir)
+export function writeSlurmRegistryAt(iterationsRoot: string, records: Record<string, SlurmJobRecord>): void {
+  const p = join(iterationsRoot, '.slurm-jobs.json')
   mkdirSync(dirname(p), { recursive: true })
   // Only keep the most recent N records so the file stays small.
   const keys = Object.keys(records)
@@ -118,8 +139,20 @@ function writeSlurmJobRegistry(iterDir: string, records: Record<string, SlurmJob
   writeFileSync(p, JSON.stringify(records, null, 2))
 }
 
-function runCli(cmd: string[], timeoutMs: number): { stdout: string; stderr: string; code: number | null; error?: Error } {
-  const r = spawnSync(cmd[0]!, cmd.slice(1), { encoding: 'utf8', timeout: timeoutMs })
+function writeSlurmJobRegistry(iterDir: string, records: Record<string, SlurmJobRecord>): void {
+  writeSlurmRegistryAt(findIterationsRoot(iterDir), records)
+}
+
+function runCli(
+  cmd: string[],
+  timeoutMs: number,
+  cwd?: string,
+): { stdout: string; stderr: string; code: number | null; error?: Error } {
+  const r = spawnSync(cmd[0]!, cmd.slice(1), {
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    ...(cwd !== undefined ? { cwd } : {}),
+  })
   return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', code: r.status, error: r.error }
 }
 
@@ -129,26 +162,41 @@ function parseSbatchId(stdout: string): number | undefined {
   return m ? Number(m[1]) : undefined
 }
 
-/** Query one SLURM job's current state/exit via squeue + sacct. Returns a
- * terminal FitStatus when the job has left the queue, else a running one. */
-function querySlurmJob(sbatchId: string, iterDir: string, key: string, fitScript: string, cliTimeoutMs: number): FitStatus {
-  const squeue = runCli(['squeue', '-j', String(sbatchId), '-h', '-o', '%T'], cliTimeoutMs)
-  const inQueue = squeue.stdout.trim().length > 0
-  if (inQueue) {
-    const st = squeue.stdout.trim().split(/\s+/)[0]
-    return { jobId: key, iterDir, state: st === 'PENDING' || st === 'CONFIGURING' ? 'running' : 'running', exitCode: null, logTail: '', startedAt: Date.now() }
+/** Ask squeue about one job. undefined = the job is not in the queue. */
+export function querySlurmQueue(sbatchId: string, cliTimeoutMs = 30_000): SlurmQueueView | undefined {
+  const r = runCli(['squeue', '-j', String(sbatchId), '-h', '-o', '%T|%r|%M'], cliTimeoutMs)
+  const line = (r.stdout ?? '').trim().split('\n')[0]?.trim() ?? ''
+  if (line === '') return undefined
+  const [state = '', reason = '', elapsed = ''] = line.split('|').map((s) => s.trim())
+  return { state, reason, elapsed }
+}
+
+/** Terminal/active state as understood by the runner (sacct State strings are free-form). */
+function normalizeSlurmState(state: string): FitState {
+  const u = state.toUpperCase().trim()
+  if (u === '' || ['PENDING', 'RUNNING', 'CONFIGURING', 'COMPLETING', 'SUSPENDED', 'REQUEUED', 'RESIZING', 'STAGE_OUT'].includes(u)) {
+    return 'running'
   }
-  // Left the queue -> terminal. sacct gives the final state + exit code.
-  const act = runCli(['sacct', '-j', String(sbatchId), '--format=State,ExitCode', '-n', '-P'], cliTimeoutMs)
-  const row = act.stdout.trim().split('\n')[0] ?? ''
-  const [stateField, exitField] = row.split('|')
-  const upper = (stateField ?? '').toUpperCase()
-  const exitCode = parseSacctExit(exitField)
-  let state: Exclude<FitState, 'running'> = 'done'
-  if (upper.includes('CANCELLED') || upper.includes('FAILED') || upper.includes('OUT_OF_MEMORY') || upper.includes('TIMEOUT')) state = 'failed'
-  if (upper.includes('CANCELLED')) state = 'canceled'
-  const logTail = readLogTail(join(iterDir, 'fit.log'))
-  return { jobId: key, iterDir, state, exitCode, logTail, startedAt: Date.now(), finishedAt: Date.now() }
+  if (u.includes('CANCELLED') || u.includes('CANCELED')) return 'canceled'
+  if (u.startsWith('COMPLETED')) return 'done'
+  return 'failed'
+}
+
+/** Ask sacct about one job's terminal state. undefined = no accounting row yet. */
+export function querySlurmAccounting(
+  sbatchId: string,
+  cliTimeoutMs = 30_000,
+): { state: FitState; exitCode: number | null } | undefined {
+  const r = runCli(['sacct', '-j', String(sbatchId), '--format=JobID,State,ExitCode', '-n', '-P'], cliTimeoutMs)
+  for (const raw of (r.stdout ?? '').trim().split('\n')) {
+    const line = raw.trim()
+    if (line === '') continue
+    const [jobId = '', stateField = '', exitField = ''] = line.split('|')
+    // Skip step rows (`570080.batch`, `.extern`): only the allocation matters.
+    if (jobId.includes('.')) continue
+    return { state: normalizeSlurmState(stateField), exitCode: parseSacctExit(exitField) }
+  }
+  return undefined
 }
 
 /** Parse sacct's ExitCode field ("major:minor" or "-"). */
@@ -160,13 +208,98 @@ function parseSacctExit(field: string | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function readLogTail(path: string): string {
-  try {
-    if (!existsSync(path)) return ''
-    const text = readFileSync(path, 'utf8')
-    return text.length > LOG_TAIL_BYTES ? text.slice(-LOG_TAIL_BYTES) : text
-  } catch {
-    return ''
+/** One live observation of a cluster job. */
+export interface SlurmLiveState {
+  state: FitState
+  exitCode: number | null
+  /** Present while the job is still in the queue. */
+  queue?: SlurmQueueView
+  logTail: string
+  /** squeue empty AND sacct has no row yet (accounting lag / job record gone). */
+  unknown: boolean
+}
+
+/** Query one cluster job's live state (squeue first, then sacct). */
+export function inspectSlurmJob(sbatchId: string, iterDir: string, cliTimeoutMs = 30_000): SlurmLiveState {
+  const logTail = readLogTail(join(iterDir, 'fit.log'), LOG_TAIL_BYTES)
+  const queue = querySlurmQueue(sbatchId, cliTimeoutMs)
+  if (queue !== undefined) {
+    return { state: 'running', exitCode: null, queue, logTail, unknown: false }
+  }
+  const acct = querySlurmAccounting(sbatchId, cliTimeoutMs)
+  if (acct !== undefined) {
+    return { state: acct.state, exitCode: acct.exitCode, logTail, unknown: false }
+  }
+  // Left the queue but sacct has no row (yet): keep polling instead of
+  // reporting a fake "done" (which the old code did).
+  return { state: 'running', exitCode: null, logTail, unknown: true }
+}
+
+/** Describe a queue view in one model-readable line. */
+export function describeQueue(queue: SlurmQueueView | undefined): string {
+  if (queue === undefined) return ''
+  const reason = queue.reason !== '' && queue.reason !== 'None' ? ` (${queue.reason})` : ''
+  return `[slurm] ${queue.state}${reason} elapsed=${queue.elapsed}`
+}
+
+/** Find a persisted job record by runner key or by sbatch id. */
+export function findSlurmJobRecord(iterationsRoot: string, idOrSbatchId: string): SlurmJobRecord | undefined {
+  const reg = readSlurmRegistryAt(iterationsRoot)
+  const direct = reg[idOrSbatchId]
+  if (direct !== undefined) return direct
+  const wanted = String(idOrSbatchId)
+  return Object.values(reg).find((r) => r.sbatchId === wanted)
+}
+
+/** A cluster job recovered from the on-disk registry (works after a restart). */
+export interface RecoveredSlurmJob {
+  record: SlurmJobRecord
+  state: FitState
+  exitCode: number | null
+  logTail: string
+  queue?: SlurmQueueView
+}
+
+/**
+ * Re-query a persisted cluster job. Used by `auto_pwa_fit_status` when the
+ * session that submitted the job is gone (harness restart): DSH's in-memory
+ * job table is lost, but `<iterations>/.slurm-jobs.json` + squeue/sacct are not.
+ */
+export function recoverSlurmJob(
+  iterationsRoot: string,
+  idOrSbatchId: string,
+  cliTimeoutMs = 30_000,
+): RecoveredSlurmJob | undefined {
+  const record = findSlurmJobRecord(iterationsRoot, idOrSbatchId)
+  if (record === undefined) return undefined
+  // A detached job is 'canceled' from DSH's point of view but may still be
+  // running on the cluster — that is the whole point of not scancelling it, so
+  // re-query the scheduler instead of trusting the on-disk state.
+  const mayStillRun = record.state === 'running' || (record.detached === true && record.state === 'canceled')
+  if (!mayStillRun || record.sbatchId === 'batch') {
+    return {
+      record,
+      state: record.state,
+      exitCode: record.exitCode ?? null,
+      logTail: readLogTail(join(record.iterDir, 'fit.log'), LOG_TAIL_BYTES),
+    }
+  }
+  const live = inspectSlurmJob(record.sbatchId, record.iterDir, cliTimeoutMs)
+  if (live.state !== 'running') {
+    const records = readSlurmRegistryAt(iterationsRoot)
+    const cur = records[record.key] ?? record
+    cur.state = live.state
+    cur.exitCode = live.exitCode
+    cur.finishedAt = Date.now()
+    records[cur.key] = cur
+    writeSlurmRegistryAt(iterationsRoot, records)
+  }
+  return {
+    record,
+    state: live.state,
+    exitCode: live.exitCode,
+    logTail: live.logTail,
+    ...(live.queue !== undefined ? { queue: live.queue } : {}),
   }
 }
 
@@ -183,19 +316,32 @@ export class SbatchFitRunner {
   private get cliTimeout(): number {
     return this.cfg.cliTimeoutMs ?? 30_000
   }
+  private get gracePolls(): number {
+    return this.cfg.accountingGracePolls ?? 20
+  }
 
   /** Submit a single iteration fit as one SLURM job. */
-  submit(iterDir: string, options: { timeoutMs?: number; scriptArgs?: string[] } = {}): FitStatus {
+  submit(
+    iterDir: string,
+    options: { timeoutMs?: number; scriptArgs?: string[]; jobScript?: string } = {},
+  ): FitStatus {
     if (!hasSbatch()) {
-      throw new Error('sbatch/squeue/sacct not available; the SLURM transport requires a login node with the slurm clients (or set PWA_FIT_TRANSPORT=local).')
+      throw new Error(
+        'sbatch/squeue/sacct not available; the SLURM transport requires a login node with the slurm clients (or set PWA_FIT_TRANSPORT=local).',
+      )
     }
+    const resolved = resolveJobScript({
+      iterDir,
+      ...(options.jobScript !== undefined ? { jobScript: options.jobScript } : {}),
+    })
     const key = this.nextKey('slurm')
-    const sbatchId = this.launchSingle(iterDir, key, options)
+    const sbatchId = this.launchSingle(iterDir, resolved, options)
     const job: SbatchJob = {
       jobId: key,
       iterDir,
       sbatchId,
       regIterDir: iterDir,
+      scriptPath: resolved.path,
       state: 'running',
       exitCode: null,
       logTail: '',
@@ -209,18 +355,28 @@ export class SbatchFitRunner {
 
   /**
    * Submit several iteration fits that share ONE DSH job (they finish/wake
-   * together). Mode controls how they map to cluster jobs:
-   *   one     -> each fit is its own SLURM job (parallel, up to the caller's
-   *              concurrency cap); the batch waits for all of them.
-   *   script  -> one merged SLURM script runs all fits sequentially (single
-   *              cluster slot, single wake) — for short fits.
+   * together): each dir is its own SLURM job, all launched from the same
+   * user/AI-authored script with `--chdir=<dir>` (parallel, one wake).
    */
-  submitBatch(iterDirs: string[], options: { timeoutMs?: number; scriptArgs?: string[]; mode?: 'one' | 'script' } = {}): FitStatus {
-    const mode = options.mode ?? 'one'
-    const subKeys = mode === 'script'
-      ? [this.submitMerged(iterDirs, options.scriptArgs)]
-      : iterDirs.map((d) => this.submit(d, { scriptArgs: options.scriptArgs }).jobId)
+  submitBatch(
+    iterDirs: string[],
+    options: { timeoutMs?: number; scriptArgs?: string[]; jobScript?: string } = {},
+  ): FitStatus {
+    if (iterDirs.length === 0) throw new Error('batch submission requires at least one iterDir')
+    // One shared script for the whole batch: resolve it once at the base dir
+    // (installing the template there if needed), then submit it with
+    // --chdir=<trialDir> for each candidate. That is what lets a single
+    // job.sh serve `_trials/<candidate>/` without hard-coded paths.
+    const sharedScript =
+      options.jobScript ?? resolveJobScript({ iterDir: iterDirs[0]! }).path
     const key = this.nextKey('batch')
+    const subKeys = iterDirs.map(
+      (d) =>
+        this.submit(d, {
+          ...(options.scriptArgs !== undefined ? { scriptArgs: options.scriptArgs } : {}),
+          jobScript: sharedScript,
+        }).jobId,
+    )
     const job: SbatchJob = {
       jobId: key,
       iterDir: iterDirs.join(','),
@@ -238,52 +394,12 @@ export class SbatchFitRunner {
     void Promise.all(subKeys.map((k) => this.settled(k))).then((results) => {
       const state: Exclude<FitState, 'running'> = results.every((r) => r.state === 'done')
         ? 'done'
-        : results.some((r) => r.state === 'canceled') ? 'canceled' : 'failed'
+        : results.some((r) => r.state === 'canceled')
+          ? 'canceled'
+          : 'failed'
       this.finish(job, state, results[0]?.exitCode ?? null)
     })
     return this.statusOf(key)
-  }
-
-  /** Launch one merged SLURM script that runs all iterDirs sequentially. */
-  private submitMerged(iterDirs: string[], scriptArgs?: string[]): string {
-    const iterDir = iterDirs[0]!
-    const key = this.nextKey('slurm')
-    const logPath = join(iterDir, 'fit.log')
-    const commands = iterDirs.map((dir) => ({
-      iterDir: dir,
-      python: this.cfg.python,
-      ldLibraryPath: this.cfg.ldLibraryPath,
-      fitScript: this.cfg.fitScript,
-      scriptArgs,
-    }))
-    const script = renderSlurmBatchSubmission({
-      kind: this.cfg.template,
-      partition: this.cfg.cluster.partition,
-      qos: this.cfg.cluster.qos,
-      account: this.cfg.cluster.account,
-      gres: this.cfg.cluster.gres,
-      ntasks: this.cfg.cluster.ntasks,
-      memPerCpu: this.cfg.cluster.memPerCpu,
-      timeLimit: this.cfg.cluster.timeLimit,
-      jobName: `fit-batch-${key}`,
-      output: logPath,
-      commands,
-    })
-    const sbatchId = this.sbatch(iterDir, script)
-    const job: SbatchJob = {
-      jobId: key,
-      iterDir,
-      sbatchId,
-      regIterDir: iterDir,
-      state: 'running',
-      exitCode: null,
-      logTail: '',
-      startedAt: Date.now(),
-    }
-    this.jobs.set(key, job)
-    this.persistRecord(job)
-    this.startPoll(key)
-    return key
   }
 
   /** Await a job (single or batch) until it leaves 'running'. */
@@ -307,52 +423,75 @@ export class SbatchFitRunner {
     return [...this.jobs.values()].map((j) => this.statusOf(j.jobId))
   }
 
+  /** Progress line for a still-running job (queue state), else undefined. */
+  progress(jobId: string): string | undefined {
+    const job = this.jobs.get(jobId)
+    if (job === undefined || job.state !== 'running') return undefined
+    const parts: string[] = []
+    if (job.queue !== undefined) parts.push(describeQueue(job.queue))
+    if (job.sbatchId !== 'batch') parts.push(`sbatch ${job.sbatchId}`)
+    return parts.length > 0 ? parts.join(' · ') : undefined
+  }
+
+  /**
+   * Cancel the DSH job. By default this DETACHES: the cluster job keeps
+   * running (a harness restart must not kill hours of compute). Set
+   * `scancelOnCancel: true` (PWA_SLURM_SCANCEL_ON_CANCEL=1) for the old
+   * scancel-everything behavior.
+   */
   cancel(jobId: string): boolean {
     const job = this.jobs.get(jobId)
     if (!job || job.state !== 'running') return false
     if (job.subKeys && job.subKeys.length > 0) {
-      for (const k of job.subKeys) this.scancel(k)
+      for (const k of job.subKeys) this.cancelOne(k)
     } else {
-      this.scancel(jobId)
+      this.cancelOne(jobId)
     }
     return true
   }
 
-  private launchSingle(iterDir: string, key: string, options: { scriptArgs?: string[] }): string {
+  private cancelOne(key: string): void {
+    if (this.cfg.scancelOnCancel === true) {
+      this.scancel(key)
+      return
+    }
+    const job = this.jobs.get(key)
+    if (job === undefined || job.state !== 'running') return
+    job.detached = true
+    this.finish(
+      job,
+      'canceled',
+      null,
+      `[slurm] DSH 任务已取消；集群作业 ${job.sbatchId} 仍在运行（未 scancel）。\n[slurm] 需要停止: scancel ${job.sbatchId}`,
+    )
+  }
+
+  private launchSingle(iterDir: string, script: ResolvedJobScript, options: { scriptArgs?: string[] }): string {
     // The engine reads `--config <path>` (aifit default: config.yml); honor it
     // so variant experiments run on the cluster exactly as they do locally.
     const fromArgs = configPathFromArgs(options.scriptArgs)
-    const configPath = fromArgs !== undefined
-      ? isAbsolute(fromArgs) ? fromArgs : join(iterDir, fromArgs)
-      : join(iterDir, 'config.yml')
+    const configPath =
+      fromArgs !== undefined
+        ? isAbsolute(fromArgs)
+          ? fromArgs
+          : join(iterDir, fromArgs)
+        : join(iterDir, 'config.yml')
     if (!existsSync(configPath)) throw new Error(`config not found: ${configPath}`)
-    const logPath = join(iterDir, 'fit.log')
-    const script = renderSlurmSubmission({
-      kind: this.cfg.template,
-      partition: this.cfg.cluster.partition,
-      qos: this.cfg.cluster.qos,
-      account: this.cfg.cluster.account,
-      gres: this.cfg.cluster.gres,
-      ntasks: this.cfg.cluster.ntasks,
-      memPerCpu: this.cfg.cluster.memPerCpu,
-      timeLimit: this.cfg.cluster.timeLimit,
-      jobName: `fit-${key}`,
-      output: logPath,
-      python: this.cfg.python,
-      ldLibraryPath: this.cfg.ldLibraryPath,
-      fitScript: this.cfg.fitScript,
-      scriptArgs: options.scriptArgs,
-      cwd: iterDir,
-    })
-    return this.sbatch(iterDir, script)
+    return this.sbatch(iterDir, script.path, options.scriptArgs)
   }
 
-  private sbatch(iterDir: string, script: string): string {
-    const scriptPath = join(iterDir, 'fit.slurm')
-    writeFileSync(scriptPath, script)
-    const r = runCli(['sbatch', scriptPath], this.cliTimeout)
+  private sbatch(iterDir: string, scriptPath: string, scriptArgs: string[] | undefined): string {
+    if (!existsSync(scriptPath)) {
+      throw new Error(`SLURM 提交脚本不存在: ${scriptPath}（auto_pwa_run_fit 传 jobScript: "auto" 或省略即可安装内置模板）`)
+    }
+    // --chdir: the job starts in the iteration dir, which is what makes one
+    // job.sh reusable for _trials/<candidate>/ and lets --output=fit.log land
+    // in the right place. cwd is set too: SLURM resolves relative --output
+    // against the directory sbatch was invoked from.
+    const cmd = ['sbatch', `--chdir=${iterDir}`, scriptPath, ...(scriptArgs ?? [])]
+    const r = runCli(cmd, this.cliTimeout, iterDir)
     if (r.error || r.code !== 0) {
-      throw new Error(`sbatch failed: ${r.stderr.trim() || r.error?.message || 'unknown'}`)
+      throw new Error(`sbatch failed: ${r.stderr.trim() || r.error?.message || 'unknown'}\n  cmd: ${cmd.join(' ')}`)
     }
     const id = parseSbatchId(r.stdout)
     if (id === undefined) throw new Error(`could not parse sbatch job id from: ${r.stdout.trim()}`)
@@ -362,8 +501,7 @@ export class SbatchFitRunner {
   private scancel(key: string): void {
     const job = this.jobs.get(key)
     if (!job) return
-    void job
-    runCli(['scancel', String(job.sbatchId)], this.cliTimeout)
+    if (job.sbatchId !== 'batch') runCli(['scancel', String(job.sbatchId)], this.cliTimeout)
     this.finish(job, 'canceled', null)
   }
 
@@ -373,8 +511,25 @@ export class SbatchFitRunner {
     const check = (): void => {
       const cur = this.jobs.get(key)
       if (!cur || cur.state !== 'running') return
-      const st = querySlurmJob(cur.sbatchId, cur.iterDir, cur.jobId, this.cfg.fitScript ?? 'fit.py', this.cliTimeout)
+      const st = inspectSlurmJob(cur.sbatchId, cur.iterDir, this.cliTimeout)
+      cur.queue = st.queue
+      cur.logTail = st.logTail
       if (st.state === 'running') {
+        if (st.unknown) {
+          cur.misses = (cur.misses ?? 0) + 1
+          if (cur.misses > this.gracePolls) {
+            this.finish(
+              cur,
+              'failed',
+              null,
+              st.logTail +
+                `\n[slurm] squeue/sacct 都查不到 sbatch ${cur.sbatchId}（作业可能被清理或记账延迟）：手动确认 squeue -j ${cur.sbatchId} / sacct -j ${cur.sbatchId}`,
+            )
+            return
+          }
+        } else {
+          cur.misses = 0
+        }
         setTimeout(check, this.pollMs)
         return
       }
@@ -409,6 +564,7 @@ export class SbatchFitRunner {
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
       error: undefined,
+      ...(job.sbatchId !== 'batch' ? { sbatchId: job.sbatchId } : {}),
     }
   }
 
@@ -427,6 +583,9 @@ export class SbatchFitRunner {
       subKeys: job.subKeys,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
+      ...(job.scriptPath !== undefined ? { scriptPath: job.scriptPath } : {}),
+      ...(job.detached === true ? { detached: true } : {}),
+      ...(job.exitCode !== null ? { exitCode: job.exitCode } : {}),
     }
     writeSlurmJobRegistry(job.regIterDir, records)
   }
@@ -440,3 +599,6 @@ function hasSbatch(): boolean {
   }
   return true
 }
+
+/** Re-exported so callers can report the file name without importing the template module. */
+export { JOB_SCRIPT_NAME }

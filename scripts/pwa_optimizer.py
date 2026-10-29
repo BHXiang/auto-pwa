@@ -34,6 +34,43 @@ import torch
 
 log = logging.getLogger("pwa-fit")
 
+
+def resolve_complex_dtype() -> torch.dtype:
+    """Complex dtype the loaded ctpwa .so requires.
+
+    ctpwa calls torch_check the complex precision: a double build (CPU is
+    always double) rejects complex64 ("vector dtype must match .so complex
+    precision"). getFitFractions/getEfficiency are the usual victims.
+    """
+    try:
+        import ctpwa
+        info = ctpwa.build_info()
+        return torch.complex128 if int(info.get("complex_bytes", 8)) == 16 else torch.complex64
+    except Exception:
+        return torch.complex64
+
+
+def resolve_device(explicit: str | None = None) -> str:
+    """Which torch device the optimizer runs on.
+
+    Priority: explicit argument > PWA_FIT_DEVICE env > ctpwa.backend() >
+    torch.cuda.is_available(). The ctpwa facade already picked a backend (and
+    may have fallen back to CPU); mirroring it keeps the optimizer tensors on
+    the same device as the engine. CPU is fully supported (ctpwa 0.3.19+).
+    """
+    for candidate in (explicit, os.environ.get("PWA_FIT_DEVICE")):
+        dev = (candidate or "").strip().lower()
+        if dev in ("cpu", "cuda"):
+            return dev
+    try:
+        import ctpwa  # noqa: WPS433 — optional, keeps this module import-light
+        backend = getattr(ctpwa, "backend", lambda: None)()
+        if backend in ("cpu", "cuda"):
+            return backend
+    except Exception:
+        pass
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
 __all__ = [
     "UnifiedPWAOptimizer",
     "projected_lbfgs",
@@ -486,10 +523,10 @@ def _reparam_unpack(u, nc, n_res, lower, upper, amp_max,
 class UnifiedPWAOptimizer:
     def __init__(self, ana, free_res_info, params_names,
                  v_max=None, project_grad=None, optimizer_kind="reparam",
-                 amp_max=None, amp_lambda=None):
+                 amp_max=None, amp_lambda=None, device=None):
         self.analysis = ana
         self.params_names = params_names
-        self.device = "cuda"
+        self.device = resolve_device(device)
         self.best_nll = float("inf")
         self.best_params = None
         self.all_results = []
@@ -1257,10 +1294,12 @@ class UnifiedPWAOptimizer:
 
     # --------------------------------------------------------
     def extract_coupling_complex(self, params):
-        """从统一参数中提取复数耦合向量 (complex64, n_coupling_free)"""
-        real = params[:self.n_coupling_free].float()
-        imag = params[self.n_coupling_free:2 * self.n_coupling_free].float()
-        return torch.complex(real, imag)
+        """从统一参数中提取复数耦合向量，dtype 与加载的 .so 复数精度一致
+        （CPU/ double 构建是 complex128；CUDA float 构建是 complex64）。"""
+        n = self.n_coupling_free
+        real = params[:n].to(torch.float64)
+        imag = params[n:2 * n].to(torch.float64)
+        return torch.complex(real, imag).to(resolve_complex_dtype())
 
     def extract_theta_phys(self, params):
         """从统一参数中提取共振态物理参数"""

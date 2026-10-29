@@ -98,13 +98,22 @@ class AgentFakeJobRegistry extends FakeJobRegistry {
 
 /** Controllable fake runner: settled() resolves when the test says so. */
 class FakeRunner {
-  submitted: { iterDir: string; timeoutMs?: number }[] = []
+  submitted: { iterDir: string; timeoutMs?: number; device?: string; command?: { file: string; args: string[] }; jobScript?: string }[] = []
   canceled: string[] = []
   private settleFns = new Map<string, (s: FitStatus) => void>()
 
-  submit(iterDir: string, options: { timeoutMs?: number } = {}): FitStatus {
+  submit(
+    iterDir: string,
+    options: { timeoutMs?: number; device?: 'cpu' | 'gpu' | 'auto'; command?: { file: string; args: string[] }; jobScript?: string } = {},
+  ): FitStatus {
     const jobId = `fit-${this.submitted.length + 1}`
-    this.submitted.push({ iterDir, timeoutMs: options.timeoutMs })
+    this.submitted.push({
+      iterDir,
+      timeoutMs: options.timeoutMs,
+      ...(options.device !== undefined ? { device: options.device } : {}),
+      ...(options.command !== undefined ? { command: options.command } : {}),
+      ...(options.jobScript !== undefined ? { jobScript: options.jobScript } : {}),
+    })
     return { jobId, iterDir, state: 'running', exitCode: null, logTail: '', startedAt: 1 }
   }
 
@@ -263,5 +272,57 @@ describe('PwaFitLocalService (ctx.jobs provider)', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('PwaFitLocalService target dispatch', () => {
+  it('cpu/gpu pick the local runner with the device pinned', () => {
+    const runner = new FakeRunner()
+    const service = new PwaFitLocalService(ctx(new FakeJobRegistry()), {
+      runner,
+      capabilities: { gpu: true, slurm: false },
+    })
+    const cpuId = service.submit({ iterDir: '/pwa/iter-001', target: 'cpu' })
+    const gpuId = service.submit({ iterDir: '/pwa/iter-002', target: 'gpu' })
+    expect(runner.submitted.map((r) => r.device)).toEqual(['cpu', 'gpu'])
+    expect(service.status(cpuId).target).toBe('cpu')
+    expect(service.status(gpuId).target).toBe('gpu')
+  })
+
+  it('runScript dispatches to the local runner as a command (target ignored)', () => {
+    const runner = new FakeRunner()
+    const service = new PwaFitLocalService(ctx(new FakeJobRegistry()), {
+      runner,
+      capabilities: { gpu: false, slurm: true, gpuIssue: 'no CUDA' },
+    })
+    const id = service.submit({ iterDir: '/pwa/iter-003', target: 'slurm', runScript: 'run.sh' })
+    expect(runner.submitted[0]?.command).toEqual({ file: '/pwa/iter-003/run.sh', args: [] })
+    expect(service.status(id).target).toBe('script')
+  })
+
+  it('slurm dispatches to the slurm runner with the job script', () => {
+    const local = new FakeRunner()
+    const slurm = new FakeRunner()
+    const service = new PwaFitLocalService(ctx(new FakeJobRegistry()), {
+      runner: local,
+      slurmRunner: slurm,
+      capabilities: { gpu: false, slurm: true, gpuIssue: 'no CUDA' },
+    })
+    const id = service.submit({ iterDir: '/pwa/iter-004', target: 'slurm', jobScript: '/pwa/iter-004/job.sh' })
+    expect(local.submitted).toHaveLength(0)
+    expect(slurm.submitted[0]?.jobScript).toBe('/pwa/iter-004/job.sh')
+    expect(service.status(id).target).toBe('slurm')
+  })
+
+  it('resolve() reports the login-node ambiguity without submitting', () => {
+    const runner = new FakeRunner()
+    const service = new PwaFitLocalService(ctx(new FakeJobRegistry()), {
+      runner,
+      capabilities: { gpu: false, slurm: true, gpuIssue: 'no CUDA' },
+    })
+    const res = service.resolve({ iterDir: '/pwa/iter-005' })
+    expect(res.error).toContain('target:"slurm"')
+    expect(() => service.submit({ iterDir: '/pwa/iter-005' })).toThrow(/target:"cpu"/)
+    expect(runner.submitted).toHaveLength(0)
   })
 })

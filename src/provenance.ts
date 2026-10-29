@@ -80,6 +80,15 @@ export interface Provenance {
   resonancesInclude?: ProvenanceInclude
   fitScript?: string
   fitScriptMd5?: string
+  /** SLURM 提交脚本（job.sh）：同一 config 在不同资源/环境下 NLL 也可能不同。 */
+  jobScript?: string
+  jobScriptMd5?: string
+  /** 执行目标（cpu/gpu/slurm/script）。CPU 与 GPU 的 NLL 可比（~1e-11），
+   * 但速度差 20~60×，记录它才知道这一轮的代价。 */
+  target?: string
+  /** AI 自己写的启动脚本（runScript）：target=script 时的完整命令来源。 */
+  runScript?: string
+  runScriptMd5?: string
   scriptArgs?: string[]
   init: ProvenanceInit
   /** 本地 git 绑定（B2）：md5 ↔ commit 互验，dirty = 结果不可由 HEAD 复现。 */
@@ -123,6 +132,12 @@ export interface BuildProvenanceOptions {
   config: PwaConfig
   gate: GateResult
   fitScript?: string
+  /** SLURM submission script (job.sh), recorded for reproducibility. */
+  jobScript?: string
+  /** Resolved execution target (cpu/gpu/slurm/script). */
+  target?: string
+  /** AI-authored launcher script (runScript), recorded for reproducibility. */
+  runScript?: string
   scriptArgs?: string[]
   /** Where the initial values come from; default 'unknown' (driver decides). */
   init?: ProvenanceInit
@@ -181,6 +196,12 @@ export function buildProvenance(options: BuildProvenanceOptions): Provenance {
   const fitScriptMd5 = options.fitScript !== undefined && existsSync(options.fitScript)
     ? md5(readFileSync(options.fitScript, 'utf8'))
     : undefined
+  const jobScriptMd5 = options.jobScript !== undefined && existsSync(options.jobScript)
+    ? md5(readFileSync(options.jobScript, 'utf8'))
+    : undefined
+  const runScriptMd5 = options.runScript !== undefined && existsSync(options.runScript)
+    ? md5(readFileSync(options.runScript, 'utf8'))
+    : undefined
 
   return prune({
     schemaVersion: PROVENANCE_SCHEMA_VERSION,
@@ -199,6 +220,11 @@ export function buildProvenance(options: BuildProvenanceOptions): Provenance {
     ...(include !== undefined ? { resonancesInclude: include } : {}),
     ...(options.fitScript !== undefined ? { fitScript: options.fitScript } : {}),
     ...(fitScriptMd5 !== undefined ? { fitScriptMd5 } : {}),
+    ...(options.jobScript !== undefined ? { jobScript: options.jobScript } : {}),
+    ...(jobScriptMd5 !== undefined ? { jobScriptMd5 } : {}),
+    ...(options.target !== undefined ? { target: options.target } : {}),
+    ...(options.runScript !== undefined ? { runScript: options.runScript } : {}),
+    ...(runScriptMd5 !== undefined ? { runScriptMd5 } : {}),
     ...(options.scriptArgs !== undefined ? { scriptArgs: options.scriptArgs } : {}),
     init: options.init ?? { source: 'unknown' },
     ...(options.git !== undefined ? { git: options.git } : {}),
@@ -280,6 +306,15 @@ export function provenanceSummary(p: Provenance): {
   resonancesInclude?: { path: string; resolved?: string; md5?: string }
   fitScript?: string
   fitScriptMd5?: string
+  /** SLURM 提交脚本（job.sh）：同一 config 在不同资源/环境下 NLL 也可能不同。 */
+  jobScript?: string
+  jobScriptMd5?: string
+  /** 执行目标（cpu/gpu/slurm/script）。CPU 与 GPU 的 NLL 可比（~1e-11），
+   * 但速度差 20~60×，记录它才知道这一轮的代价。 */
+  target?: string
+  /** AI 自己写的启动脚本（runScript）：target=script 时的完整命令来源。 */
+  runScript?: string
+  runScriptMd5?: string
   scriptArgs?: string[]
   init?: { source?: string; seed?: number; from?: string; note?: string }
   git?: GitProvenance
@@ -293,6 +328,11 @@ export function provenanceSummary(p: Provenance): {
     ...(p.resonancesInclude !== undefined ? { resonancesInclude: p.resonancesInclude } : {}),
     ...(p.fitScript !== undefined ? { fitScript: p.fitScript } : {}),
     ...(p.fitScriptMd5 !== undefined ? { fitScriptMd5: p.fitScriptMd5 } : {}),
+    ...(p.jobScript !== undefined ? { jobScript: p.jobScript } : {}),
+    ...(p.jobScriptMd5 !== undefined ? { jobScriptMd5: p.jobScriptMd5 } : {}),
+    ...(p.target !== undefined ? { target: p.target } : {}),
+    ...(p.runScript !== undefined ? { runScript: p.runScript } : {}),
+    ...(p.runScriptMd5 !== undefined ? { runScriptMd5: p.runScriptMd5 } : {}),
     ...(p.scriptArgs !== undefined ? { scriptArgs: p.scriptArgs } : {}),
     ...(p.init !== undefined ? { init: p.init } : {}),
     ...(p.git !== undefined ? { git: p.git } : {}),

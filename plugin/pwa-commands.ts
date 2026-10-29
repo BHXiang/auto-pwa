@@ -62,7 +62,9 @@ export function apply(ctx: Context): void {
             const running = slurmJobs.filter((j) => j.state === 'running')
             lines.push(`  集群作业: ${slurmJobs.length} 个（运行中 ${running.length}）`)
             for (const j of slurmJobs.slice(-6)) {
-              lines.push(`    ${j.key} [${j.batch ? 'batch' : 'slurm'}] ${j.state} — ${j.iterDir}`)
+              const id = j.sbatchId !== 'batch' ? ` · sbatch ${j.sbatchId}` : ''
+              const detached = j.detached === true ? ' (detached: 集群上仍在跑)' : ''
+              lines.push(`    ${j.key} [${j.batch ? 'batch' : 'slurm'}] ${j.state}${detached} — ${j.iterDir}${id}`)
             }
           }
         } catch (e) {

@@ -55,6 +55,24 @@ export function withConfigArg(scriptArgs: string[] | undefined, config: string |
   return ['--config', config, ...args]
 }
 
+/** Options for one local fit submission. */
+export interface FitSubmitOptions {
+  timeoutMs?: number
+  scriptArgs?: string[]
+  /**
+   * ctpwa backend to force: 'cpu' skips the CUDA probe and exports
+   * CTPWA_DEVICE=cpu; 'gpu' requires CUDA and exports CTPWA_DEVICE=cuda (so a
+   * broken GPU fails loudly instead of silently falling back to CPU).
+   * Omitted = current behaviour (probe + inherit the ambient env).
+   */
+  device?: 'cpu' | 'gpu' | 'auto'
+  /**
+   * AI-authored command to run instead of `<python> fit.py` (runScript).
+   * The command must block until the fit finishes; cwd is the iteration dir.
+   */
+  command?: { file: string; args: string[] }
+}
+
 export interface FitStatus {
   jobId: string
   iterDir: string
@@ -65,6 +83,8 @@ export interface FitStatus {
   startedAt: number
   finishedAt?: number
   error?: string
+  /** SLURM job id (`sbatch` output) when the fit ran on the cluster. */
+  sbatchId?: string
 }
 
 interface FitJob extends FitStatus {
@@ -93,9 +113,10 @@ export function detectGpuAvailability(python: string, ldLibraryPath: string): st
   const out = (r.stdout ?? '').trim()
   if (r.status === 0 && out === 'True') return undefined
   return `no CUDA device available to torch (probe said "${out || (r.error ? r.error.message : 'no output')}"); ` +
-    'ctpwa requires a GPU (CPU backend not implemented). Fits will fail on this host. ' +
-    'If the probe says "no output" / module-not-found, the host process is not running inside the ctpwa env — ' +
-    'restart the harness with `conda activate ctpwa` or set PWA_CTPWA_PYTHON and PWA_LD_LIBRARY_PATH (see auto-pwa-env.sh).'
+    'ctpwa will fall back to its CPU backend (20-60x slower). Use target:"cpu" for small/smoke fits, ' +
+    'or target:"slurm" on a cluster. If the probe says "no output" / module-not-found, the host process is ' +
+    'not running inside the ctpwa env — restart the harness with `conda activate ctpwa` or set ' +
+    'PWA_CTPWA_PYTHON and PWA_LD_LIBRARY_PATH (see auto-pwa-env.sh).'
 }
 
 /**
@@ -134,18 +155,27 @@ export class LocalFitRunner {
    * `scriptArgs` are appended after the script name (e.g. aifit's
    * --runs/--max-iter for short trial fits).
    */
-  submit(iterDir: string, options: { timeoutMs?: number; scriptArgs?: string[] } = {}): FitStatus {
+  submit(iterDir: string, options: FitSubmitOptions = {}): FitStatus {
     const fitScript = this.cfg.fitScript ?? 'fit.py'
     const scriptPath = join(iterDir, fitScript)
-    if (!existsSync(scriptPath)) {
+    const device = options.device ?? 'auto'
+    if (options.command === undefined && !existsSync(scriptPath)) {
       throw new Error(`fit script not found: ${scriptPath}`)
+    }
+    if (options.command !== undefined && !existsSync(options.command.file)) {
+      throw new Error(`runScript not found: ${options.command.file}`)
     }
     // Bare names ('python') resolve through PATH; only path-looking values
     // can be checked with existsSync.
-    if (this.cfg.python.includes('/') && !existsSync(this.cfg.python)) {
+    if (options.command === undefined && this.cfg.python.includes('/') && !existsSync(this.cfg.python)) {
       throw new Error(`ctpwa python not found: ${this.cfg.python}`)
     }
-    const gpuIssue = this.cfg.gpuProbe === false ? undefined : detectGpuAvailability(this.cfg.python, this.cfg.ldLibraryPath)
+    // 'cpu' must not require a GPU (that was the whole point of the CPU
+    // backend); 'gpu' must require one; the legacy default still probes.
+    const gpuIssue =
+      options.command !== undefined || device === 'cpu' || this.cfg.gpuProbe === false
+        ? undefined
+        : detectGpuAvailability(this.cfg.python, this.cfg.ldLibraryPath)
     if (gpuIssue) {
       throw new Error(gpuIssue)
     }
@@ -157,17 +187,34 @@ export class LocalFitRunner {
     // The iteration dir may be removed by the caller before the stream opens;
     // swallow the async ENOENT instead of crashing the process.
     logStream.on('error', () => {})
-    logStream.write(`# auto-pwa fit job ${jobId} started ${new Date().toISOString()}\n`)
+    const commandText = options.command !== undefined
+      ? [options.command.file, ...options.command.args].join(' ')
+      : [fitScript, ...(options.scriptArgs ?? [])].join(' ')
+    logStream.write(
+      `# auto-pwa fit job ${jobId} target=${options.command !== undefined ? 'script' : device} started ${new Date().toISOString()}\n` +
+        `# command: ${commandText}\n`,
+    )
 
     // LD_LIBRARY_PATH is only injected when configured; an empty value lets
     // the child inherit the ambient env (a conda-activated env supplies its
-    // own loader paths).
-    const childEnv = this.cfg.ldLibraryPath !== '' ? { ...process.env, LD_LIBRARY_PATH: this.cfg.ldLibraryPath } : { ...process.env }
-    const child = spawn(this.cfg.python, [fitScript, ...(options.scriptArgs ?? [])], {
-      cwd: iterDir,
-      env: childEnv,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    // own loader paths). CTPWA_DEVICE/PWA_FIT_DEVICE pin the ctpwa backend and
+    // the optimizer device (see scripts/pwa_optimizer.py resolve_device).
+    const childEnv: NodeJS.ProcessEnv = { ...process.env }
+    if (this.cfg.ldLibraryPath !== '') childEnv.LD_LIBRARY_PATH = this.cfg.ldLibraryPath
+    if (device === 'cpu') {
+      childEnv.CTPWA_DEVICE = 'cpu'
+      childEnv.PWA_FIT_DEVICE = 'cpu'
+    } else if (device === 'gpu') {
+      childEnv.CTPWA_DEVICE = 'cuda'
+      childEnv.PWA_FIT_DEVICE = 'cuda'
+    }
+    const child = options.command !== undefined
+      ? spawn(options.command.file, options.command.args, { cwd: iterDir, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
+      : spawn(this.cfg.python, [fitScript, ...(options.scriptArgs ?? [])], {
+          cwd: iterDir,
+          env: childEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
     child.stdout.on('data', (d: Buffer) => logStream.write(d))
     child.stderr.on('data', (d: Buffer) => logStream.write(d))
 

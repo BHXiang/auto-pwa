@@ -13,7 +13,7 @@
  *     iter-000/ ...        per-iteration fit dirs (config.yml, results/, ...)
  *       report.html        user-facing detail page (rendered)
  */
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { parseConfig, dumpConfig } from './config-edit.js'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
@@ -174,6 +174,25 @@ export function startIteration(options: {
       `Data 路径绝对化：${pathStat.unresolved}/${pathStat.found} 个样本的路径无法读取` +
         `（${pathStat.rewritten} 个相对路径已绝对化）— 请检查 config.yml 的 data/phsp/bkg 样本格式`,
     )
+  }
+
+  // The SLURM submission script is inherited from the base iteration: one
+  // job.sh written once (AI-authored or installed from scripts/slurm-job-*.sh)
+  // serves every later iteration and every _trials/<candidate>/ (the runner
+  // submits it with `sbatch --chdir=<dir>`). Editing it in place is expected;
+  // that is why it is a copy, not a symlink.
+  const baseJobScript = join(dirname(options.baseConfigPath), 'job.sh')
+  if (existsSync(baseJobScript) && options.baseConfigPath !== join(iterDir, 'config.yml')) {
+    const jobTarget = join(iterDir, 'job.sh')
+    if (!existsSync(jobTarget)) {
+      try {
+        copyFileSync(baseJobScript, jobTarget)
+        chmodSync(jobTarget, 0o755)
+        changed.push(`job.sh <- ${baseJobScript}（SLURM 提交脚本，可继续改）`)
+      } catch (e) {
+        warnings.push(`job.sh 继承失败（${(e as Error).message}）：本轮会安装默认模板`)
+      }
+    }
   }
 
   // Canonical names inside the iteration dir (fit.py/plot.py): the fit runner

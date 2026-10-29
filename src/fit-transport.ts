@@ -18,8 +18,7 @@
 import { spawnSync } from 'node:child_process'
 import { detectGpuAvailability, LocalFitRunner, defaultFitRunnerConfig } from './fit-runner.js'
 import { SbatchFitRunner, type SbatchFitRunnerConfig } from './fit-runner-sbatch.js'
-import { resolveSlurmTemplateKind, type SlurmTemplateKind } from './slurm-template.js'
-import { resolveEnv as resolveEnvSafe } from './config.js'
+import { resolveEnv } from './config.js'
 
 export type FitTransport = 'local' | 'slurm'
 export type TransportMode = FitTransport | 'auto'
@@ -62,24 +61,16 @@ export function pickTransport(
   return 'local'
 }
 
-/** SLURM cluster config resolved from the environment (falling back to the
- * template defaults). */
+/** SLURM cluster config resolved from the environment.
+ *
+ * There are no partition/qos/gres knobs any more: the submission script
+ * (`<iterDir>/job.sh`, written by the AI or installed from `scripts/
+ * slurm-job-<kind>.sh`) owns every `#SBATCH` directive. `template` only picks
+ * which bundled template is installed when a job.sh is missing. */
 export interface SlurmClusterConfig {
   transport: 'slurm'
-  template: SlurmTemplateKind
-  partition?: string
-  qos?: string
-  account?: string
-  gres?: string
-  ntasks?: number
-  memPerCpu?: number
-  timeLimit?: string
-}
-
-/** Basename of an absolute/relative script path (fit.py link lives in iterDir). */
-function filenameOf(p: string): string {
-  const parts = p.split(/[\\/]/)
-  return parts[parts.length - 1]
+  /** Cancel a DSH job -> also scancel the cluster job (default false: detach). */
+  scancelOnCancel: boolean
 }
 
 /** Build the SbatchFitRunnerConfig from the environment. */
@@ -87,30 +78,12 @@ export function slurmConfigFromEnv(env: NodeJS.ProcessEnv = process.env): {
   config: SbatchFitRunnerConfig
   cluster: SlurmClusterConfig
 } {
-  const fitEnv = resolveEnvSafe(env)
-  const template = resolveSlurmTemplateKind(env)
-  const parse = (v: string | undefined): number | undefined => {
-    if (v === undefined || v === '') return undefined
-    const n = Number(v)
-    return Number.isFinite(n) && n > 0 ? n : undefined
-  }
   const cluster: SlurmClusterConfig = {
     transport: 'slurm',
-    template,
-    partition: env.PWA_SLURM_PARTITION,
-    qos: env.PWA_SLURM_QOS,
-    account: env.PWA_SLURM_ACCOUNT,
-    gres: env.PWA_SLURM_GRES,
-    ntasks: parse(env.PWA_SLURM_NTASKS),
-    memPerCpu: parse(env.PWA_SLURM_MEM_PER_CPU),
-    timeLimit: env.PWA_SLURM_TIME,
+    scancelOnCancel: /^(1|on|true|yes)$/i.test((env.PWA_SLURM_SCANCEL_ON_CANCEL ?? '').trim()),
   }
   const config: SbatchFitRunnerConfig = {
-    python: fitEnv.ctpwaPython,
-    ldLibraryPath: fitEnv.ldLibraryPath,
-    template,
-    cluster,
-    fitScript: env.PWA_FIT_SCRIPT !== undefined && env.PWA_FIT_SCRIPT !== '' ? filenameOf(env.PWA_FIT_SCRIPT) : 'fit.py',
+    scancelOnCancel: cluster.scancelOnCancel,
   }
   return { config, cluster }
 }
@@ -128,7 +101,7 @@ export interface PickedFitRunner {
  * so the service can store the resolved transport alongside the runner.
  */
 export function pickFitRunner(env: NodeJS.ProcessEnv = process.env): PickedFitRunner {
-  const fitEnv = resolveEnvSafe(env)
+  const fitEnv = resolveEnv(env)
   const python = fitEnv.ctpwaPython
   const ld = fitEnv.ldLibraryPath
   const transport = pickTransport(python, ld, env)

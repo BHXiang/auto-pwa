@@ -191,4 +191,19 @@ describe('startIteration', () => {
     expect(r2.iter).toBe(1)
     rmSync(root, { recursive: true, force: true })
   })
+
+  it('inherits job.sh from the base iteration (one SLURM script serves every round)', () => {
+    const root = tempIterations()
+    const { mkdirSync } = require('node:fs') as typeof import('node:fs')
+    const ir = join(root, 'iterations')
+    mkdirSync(join(ir, 'iter-000'), { recursive: true })
+    writeFileSync(join(ir, 'iter-000', 'config.yml'), 'cfg0')
+    writeFileSync(join(ir, 'iter-000', 'job.sh'), '#!/bin/bash\n#SBATCH --gres=gpu:v100:1\n')
+    const r = startIteration({ iterationsRoot: ir, baseConfigPath: join(ir, 'iter-000', 'config.yml') })
+    expect(r.iter).toBe(1)
+    // Copied (not symlinked): the next round is allowed to edit its own script.
+    expect(readFileSync(join(r.iterDir, 'job.sh'), 'utf8')).toContain('gpu:v100:1')
+    expect(r.changed.some((c) => c.includes('job.sh'))).toBe(true)
+    rmSync(root, { recursive: true, force: true })
+  })
 })

@@ -45,6 +45,48 @@ describe('LocalFitRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('device=cpu skips the CUDA probe and exports CTPWA_DEVICE=cpu', async () => {
+    // No gpuProbe:false here — the probe would fail (node is not torch), so a
+    // passing run proves device=cpu bypasses it.
+    const runner_ = new LocalFitRunner({ python: process.execPath, ldLibraryPath: '' })
+    const dir = makeIterDir(`console.log('DEV=' + process.env.CTPWA_DEVICE + '/' + process.env.PWA_FIT_DEVICE); process.exit(0)`)
+    const status = runner_.submit(dir, { device: 'cpu' })
+    const done = await runner_.await(status.jobId, 50)
+    expect(done.state).toBe('done')
+    expect(done.logTail).toContain('DEV=cpu/cpu')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('device=gpu forces CTPWA_DEVICE=cuda on the child', async () => {
+    const runner_ = new LocalFitRunner({ python: process.execPath, ldLibraryPath: '', gpuProbe: false })
+    const dir = makeIterDir(`console.log('DEV=' + process.env.CTPWA_DEVICE + '/' + process.env.PWA_FIT_DEVICE); process.exit(0)`)
+    const done = await runner_.await(runner_.submit(dir, { device: 'gpu' }).jobId, 50)
+    expect(done.logTail).toContain('DEV=cuda/cuda')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('command runs an arbitrary AI-authored script in the iter dir (runScript)', async () => {
+    const runner_ = new LocalFitRunner({ python: process.execPath, ldLibraryPath: '/lib:/usr/lib' })
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-script-'))
+    const script = join(dir, 'run.sh')
+    writeFileSync(script, `#!/bin/sh\necho "RUNSH cwd=$(pwd) args=$*"\nexit 0\n`, { mode: 0o755 })
+    const done = await runner_.await(
+      runner_.submit(dir, { command: { file: '/bin/sh', args: [script, '--runs', '1'] } }).jobId,
+      50,
+    )
+    expect(done.state).toBe('done')
+    expect(done.logTail).toContain('RUNSH')
+    expect(done.logTail).toContain('args=--runs 1')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('command: missing runScript fails fast', () => {
+    const runner_ = new LocalFitRunner({ python: process.execPath, ldLibraryPath: '' })
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-noscript-'))
+    expect(() => runner_.submit(dir, { command: { file: join(dir, 'nope.sh'), args: [] } })).toThrow(/runScript not found/)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('throws when the fit script is missing', () => {
     const runner_ = runner()
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwa-empty-'))

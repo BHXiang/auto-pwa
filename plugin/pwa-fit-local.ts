@@ -1,25 +1,32 @@
 /**
- * pwa-fit-local（服务三角色之二，Provider）：ctpwa 本地提供者。
+ * pwa-fit-local（服务三角色之二，Provider）：ctpwa 执行提供者。
  *
  * 把一次拟合提交映射成 ctx.jobs 后台任务（自定义 JobKind 'ctpwa'，
  * owner = 调用 agent）——会话围栏、owner 清理、完成通知（tool-jobs 的
  * "background job ctpwa-N finished" 自动注入/唤醒下一轮）、统一 job 工具
  * （job_output/job_list/job_kill）全部由 DSH 运行时白拿。
  *
- * 进程管理复用 src/fit-runner.ts 的 LocalFitRunner（spawn + GPU 探测 +
- * fit.log 尾部）；本文件只做 JobHooks 适配：
- *   cancel  -> runner.cancel
- *   done    -> runner.settled() 映射为 JobOutcome
- *   （无 readOutput：final-output job，输出在 settled 后经 jobs.read 幂等可取）
- *
- * 挂载：patch 文件与 pwa-fit.ts、auto-pwa.ts 一起插入 profile；
- * 依赖 ctx.jobs（dsh-jobs-local 提供）与 ctx.pwaFit（本文件注册）。
+ * 执行目标**每次提交单独决定**（见 src/fit-target.ts）：
+ *   - cpu    -> LocalFitRunner，跳过 CUDA 探测，CTPWA_DEVICE=cpu；
+ *   - gpu    -> LocalFitRunner，要求 CUDA，CTPWA_DEVICE=cuda；
+ *   - slurm  -> SbatchFitRunner（sbatch jobScript + 登录节点轮询 + registry）；
+ *   - script -> LocalFitRunner 跑 AI 给的 runScript（bash，前台阻塞到结束）。
+ * 四种都包在同一个 DSH 后台任务里，所以唤醒/取消/查询行为一致。
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
-import { join } from 'node:path'
-import { readLogTail, type FitStatus } from '../src/fit-runner.js'
-import { pickFitRunner, type FitTransport } from '../src/fit-transport.js'
+import { isAbsolute, join } from 'node:path'
+import { LocalFitRunner, defaultFitRunnerConfig, readLogTail, type FitStatus } from '../src/fit-runner.js'
+import { SbatchFitRunner } from '../src/fit-runner-sbatch.js'
+import { slurmConfigFromEnv, type FitTransport } from '../src/fit-transport.js'
+import {
+  probeHostCapabilities,
+  resolveFitTarget,
+  type HostCapabilities,
+  type ResolvedFitTarget,
+  type TargetResolution,
+} from '../src/fit-target.js'
+import { resolveEnv } from '../src/config.js'
 import { FitService, type FitOwner, type FitRequest, type FitStatusView } from './pwa-fit.js'
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -67,12 +74,22 @@ function readJobText(result: unknown): string {
 
 /** The runner surface the provider needs (LocalFitRunner/SbatchFitRunner satisfy it; tests inject fakes). */
 export interface FitSpawner {
-  submit(iterDir: string, options?: { timeoutMs?: number; scriptArgs?: string[] }): FitStatus
-  /** Batch (multiple iteration dirs under one DSH job). Optional: the provider
-   * falls back to single submit when the transport has no batch support. */
-  submitBatch?(iterDirs: string[], options?: { timeoutMs?: number; scriptArgs?: string[] }): FitStatus
+  submit(
+    iterDir: string,
+    options?: {
+      timeoutMs?: number
+      scriptArgs?: string[]
+      jobScript?: string
+      device?: 'cpu' | 'gpu' | 'auto'
+      command?: { file: string; args: string[] }
+    },
+  ): FitStatus
+  /** Batch (multiple iteration dirs under one DSH job). Only the SLURM runner implements it. */
+  submitBatch?(iterDirs: string[], options?: { timeoutMs?: number; scriptArgs?: string[]; jobScript?: string }): FitStatus
   settled(jobId: string): Promise<FitStatus>
   cancel(jobId: string): boolean
+  /** Running-job progress line (SLURM queue state); optional. */
+  progress?(jobId: string): string | undefined
 }
 
 /** Parse "exit code: N" job detail back into a number. */
@@ -82,17 +99,50 @@ function exitCodeOf(detail: string | undefined): number | undefined {
   return m ? Number(m[1]) : undefined
 }
 
+/** Construction options (tests inject fakes; production uses the defaults). */
+export interface PwaFitServiceOptions {
+  /** Single runner used for every local dispatch (tests / backward compat). */
+  runner?: FitSpawner
+  /** Injectable SLURM runner (tests). */
+  slurmRunner?: FitSpawner
+  /** Host capabilities; probed once when omitted. */
+  capabilities?: HostCapabilities
+  /** @deprecated informational only; the target is resolved per submission. */
+  transport?: FitTransport
+}
+
+/** One launched runner job + the runner that owns it. */
+interface Launch {
+  runner: FitSpawner
+  status: FitStatus
+}
+
 export class PwaFitLocalService extends FitService {
-  private readonly runner: FitSpawner
-  /** Resolved transport ('local' | 'slurm') — readable by consumers to decide
-   * batching. Injected runners default to 'local' (tests). */
+  private readonly localRunner: FitSpawner
+  private readonly slurmRunner: FitSpawner
+  /** Host capabilities (GPU/slurm) used to resolve `target`. */
+  readonly capabilities: HostCapabilities
+  /**
+   * @deprecated Default transport implied by the host. Kept for consumers that
+   * still read it; per-call `target` is authoritative.
+   */
   readonly transport: FitTransport
   /** ctx.jobs 注册表（构造时从 Context 捕获，stub/真实签名一致）。 */
   private readonly jobs: import('@deepseek-ai/dsh-jobs').JobRegistry
   /** jobId -> iterDir（提交时记录，status 时供 Consumer 做 summarizeFitDir）。 */
   private readonly iterDirs = new Map<string, string>()
+  /** jobId -> resolved execution target (shown by fit_status). */
+  private readonly targets = new Map<string, ResolvedFitTarget>()
   /** batch jobId -> iterDirs（status 时给出整批目录）。 */
   private readonly batchIterDirs = new Map<string, string[]>()
+  /** runner jobId -> owning runner (settled/cancel/progress routing). */
+  private readonly jobRunner = new Map<string, FitSpawner>()
+  /** DSH jobId -> runner jobId（progress 用；runner 的 id 命名空间不同）。 */
+  private readonly runnerIds = new Map<string, string>()
+  /** DSH jobId -> sbatch id（SLURM target；重启后仍可从 registry 恢复）。 */
+  private readonly sbatchIds = new Map<string, string>()
+  /** Set by spawnVia: the runner job just launched. */
+  private lastSpawn: Launch | undefined
   /**
    * Which identity generation the running registry wants (see the vendored
    * dsh-jobs header): current DSH takes the live Agent for both `owner` and
@@ -102,20 +152,37 @@ export class PwaFitLocalService extends FitService {
    */
   private readonly agentIdentity: boolean
 
-  constructor(ctx: Context, options: { runner?: FitSpawner; transport?: FitTransport } = {}) {
+  constructor(ctx: Context, options: PwaFitServiceOptions = {}) {
     super(ctx)
     this.jobs = ctx.jobs
     this.agentIdentity = typeof (this.jobs as { onJobDone?: unknown }).onJobDone === 'function'
-    const picked = options.runner !== undefined
-      ? { transport: (options.transport ?? 'local') as FitTransport, runner: options.runner }
-      : pickFitRunner()
-    this.runner = picked.runner
-    this.transport = picked.transport
+    this.localRunner = options.runner ?? new LocalFitRunner(defaultFitRunnerConfig())
+    this.slurmRunner = options.slurmRunner ?? new SbatchFitRunner(slurmConfigFromEnv().config)
+    const env = resolveEnv()
+    this.capabilities =
+      options.capabilities ??
+      // Injected fake runner (tests): do not spawn a GPU probe.
+      (options.runner !== undefined
+        ? { gpu: false, slurm: false }
+        : probeHostCapabilities(env.ctpwaPython, env.ldLibraryPath))
+    this.transport = options.transport ?? (this.capabilities.gpu ? 'local' : this.capabilities.slurm ? 'slurm' : 'local')
     // Producers may start work only while a controller is attached; tool-jobs
     // attaches its own, this is a defensive self-attach for mounts without it.
     if (typeof this.jobs.attachController === 'function') {
       this.jobs.attachController('pwa-fit-local')
     }
+  }
+
+  /**
+   * Resolve where this request would run (no submission). Consumers call it
+   * before spending the config gate so a bad target fails fast.
+   */
+  resolve(request: FitRequest): TargetResolution {
+    return resolveFitTarget({
+      ...(request.target !== undefined ? { requested: request.target } : {}),
+      hasRunScript: request.runScript !== undefined && request.runScript !== '',
+      caps: this.capabilities,
+    })
   }
 
   /**
@@ -134,25 +201,36 @@ export class PwaFitLocalService extends FitService {
   }
 
   submit(request: FitRequest, owner?: FitOwner): string {
+    const resolved = this.resolve(request)
+    if (resolved.error !== undefined) throw new Error(resolved.error)
+    this.lastSpawn = undefined
     const jobId = this.jobs.start({
       kind: 'ctpwa',
-      label: `ctpwa fit ${request.iterDir}`,
+      label: `ctpwa fit [${resolved.target}] ${request.iterDir}`,
       outputLimitBytes: FIT_OUTPUT_LIMIT_BYTES,
       ...(owner !== undefined ? { owner: this.identityOf(owner) } : {}),
-      run: () => this.spawnFit(request),
+      run: () => this.spawnFit(request, resolved.target),
     })
     // Key the iterDir record by the REGISTRY id (ctpwa-N) — the runner's own
     // id (fit-N-...) lives in a different namespace and is not user-visible.
     this.iterDirs.set(jobId, request.iterDir)
+    this.targets.set(jobId, resolved.target)
+    this.rememberSpawn(jobId)
     return jobId
   }
 
   submitBatch(request: FitRequest, owner?: FitOwner): string {
-    if (this.runner.submitBatch === undefined) {
-      throw new Error('batch submission is not supported on this transport (use single-job submit)')
+    const resolved = this.resolve(request)
+    if (resolved.error !== undefined) throw new Error(resolved.error)
+    if (resolved.target !== 'slurm') {
+      throw new Error(`batch submission requires the slurm target (got ${resolved.target}); submit candidates one by one instead`)
+    }
+    if (this.slurmRunner.submitBatch === undefined) {
+      throw new Error('batch submission is not supported by the slurm runner')
     }
     const dirs = request.iterDirs ?? (request.iterDir !== '' ? [request.iterDir] : [])
     if (dirs.length === 0) throw new Error('batch submission requires at least one iterDir')
+    this.lastSpawn = undefined
     const jobId = this.jobs.start({
       kind: 'ctpwa',
       label: `ctpwa batch ${dirs.length} (${dirs[0]})`,
@@ -161,35 +239,90 @@ export class PwaFitLocalService extends FitService {
       run: () => this.spawnBatch(dirs, request),
     })
     this.batchIterDirs.set(jobId, dirs)
+    this.iterDirs.set(jobId, dirs[0]!)
+    this.targets.set(jobId, 'slurm')
+    this.rememberSpawn(jobId)
     return jobId
   }
 
-  /** Spawn the process and return the JobHooks the registry controls. */
-  private spawnFit(request: FitRequest): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
-    return this.spawnVia(
-      (options) => this.runner.submit(request.iterDir, options),
-      request,
-    )
+  /** Capture the runner job created synchronously inside `jobs.start(run)`. */
+  private rememberSpawn(dshJobId: string): void {
+    const spawned = this.lastSpawn
+    if (spawned === undefined) return
+    this.jobRunner.set(spawned.status.jobId, spawned.runner)
+    this.runnerIds.set(dshJobId, spawned.status.jobId)
+    if (spawned.status.sbatchId !== undefined) this.sbatchIds.set(dshJobId, spawned.status.sbatchId)
+  }
+
+  /** Launch one fit on the runner that matches the resolved target. */
+  private launch(
+    request: FitRequest,
+    target: ResolvedFitTarget,
+    options: { timeoutMs?: number; scriptArgs?: string[] },
+  ): Launch {
+    const common = {
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.scriptArgs !== undefined ? { scriptArgs: options.scriptArgs } : {}),
+    }
+    if (target === 'slurm') {
+      return {
+        runner: this.slurmRunner,
+        status: this.slurmRunner.submit(request.iterDir, {
+          ...common,
+          ...(request.jobScript !== undefined ? { jobScript: request.jobScript } : {}),
+        }),
+      }
+    }
+    if (target === 'script') {
+      const script = request.runScript ?? ''
+      const file = isAbsolute(script) ? script : join(request.iterDir, script)
+      return {
+        runner: this.localRunner,
+        status: this.localRunner.submit(request.iterDir, {
+          ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+          command: { file, args: options.scriptArgs ?? [] },
+        }),
+      }
+    }
+    return {
+      runner: this.localRunner,
+      status: this.localRunner.submit(request.iterDir, { ...common, device: target }),
+    }
+  }
+
+  private spawnFit(
+    request: FitRequest,
+    target: ResolvedFitTarget,
+  ): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
+    return this.spawnVia((options) => this.launch(request, target, options), request)
   }
 
   private spawnBatch(dirs: string[], request: FitRequest): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
-    const submit = this.runner.submitBatch!
+    const submit = this.slurmRunner.submitBatch!
     return this.spawnVia(
-      (options) => submit(dirs, options),
+      (options) => ({
+        runner: this.slurmRunner,
+        status: submit(dirs, {
+          ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+          ...(options.scriptArgs !== undefined ? { scriptArgs: options.scriptArgs } : {}),
+          ...(request.jobScript !== undefined ? { jobScript: request.jobScript } : {}),
+        }),
+      }),
       request,
     )
   }
 
   private spawnVia(
-    launch: (opts: { timeoutMs?: number; scriptArgs?: string[] }) => FitStatus,
+    launch: (opts: { timeoutMs?: number; scriptArgs?: string[] }) => Launch,
     request: FitRequest,
   ): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
-    const status = launch({
+    const spawned = launch({
       timeoutMs: request.timeoutMin !== undefined ? request.timeoutMin * 60_000 : undefined,
       scriptArgs: request.scriptArgs,
     })
-    const jobId = status.jobId
-    const done = this.runner.settled(jobId).then(
+    this.lastSpawn = spawned
+    const jobId = spawned.status.jobId
+    const done = spawned.runner.settled(jobId).then(
       (s): JobOutcome => {
         switch (s.state) {
           case 'done':
@@ -205,7 +338,7 @@ export class PwaFitLocalService extends FitService {
     return {
       cancel: (reason?: string) => {
         void reason
-        this.runner.cancel(jobId)
+        spawned.runner.cancel(jobId)
       },
       done,
     }
@@ -219,17 +352,28 @@ export class PwaFitLocalService extends FitService {
       iterDir: this.iterDirs.get(jobId) ?? this.batchIterDirs.get(jobId)?.join(',') ?? '',
       state: snap.status === 'completed' ? 'done' : snap.status === 'killed' ? 'canceled' : snap.status === 'failed' ? 'failed' : 'running',
       logTail: '',
+      ...(this.targets.get(jobId) !== undefined ? { target: this.targets.get(jobId) } : {}),
     }
-    if (snap.detail !== undefined) out.error = snap.detail
+    // Only a failed/killed job has an error: for completed jobs `detail` is
+    // "exit code: 0" and used to render as "error: exit code: 0" in fit_status.
+    if (snap.detail !== undefined && (snap.status === 'failed' || snap.status === 'killed')) out.error = snap.detail
+    const runnerId = this.runnerIds.get(jobId)
+    const runner = runnerId !== undefined ? this.jobRunner.get(runnerId) : undefined
+    const sbatchId = this.sbatchIds.get(jobId)
+    if (sbatchId !== undefined) out.sbatchId = sbatchId
+    if (snap.status === 'running' || snap.status === 'stopping') {
+      const progress = runnerId !== undefined ? runner?.progress?.(runnerId) : undefined
+      if (progress !== undefined && progress !== '') out.progress = progress
+    }
     const exitCode = exitCodeOf(snap.detail)
     if (exitCode !== undefined) out.exitCode = exitCode
     if (snap.status === 'running' || snap.status === 'stopping') {
       // A ctpwa job is a FINAL-OUTPUT job: the registry carries no bytes before
       // settlement, so jobs.read() cannot report progress mid-run. The spawn
-      // pipes stdout/stderr into `<iterDir>/fit.log` (LocalFitRunner's default
-      // name — nothing configures logFile), and aifit prints one line per run,
-      // so tailing that file is the only running-progress signal. A batch job
-      // keeps one dir per trial, so tail every dir but keep the total bounded.
+      // pipes stdout/stderr into `<iterDir>/fit.log`, and aifit prints one line
+      // per run, so tailing that file is the only running-progress signal. A
+      // batch job keeps one dir per trial, so tail every dir but keep the total
+      // bounded.
       const dirs =
         this.batchIterDirs.get(jobId) ??
         (this.iterDirs.get(jobId) !== undefined ? [this.iterDirs.get(jobId)!] : [])

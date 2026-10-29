@@ -346,7 +346,7 @@ def run_validate_only(args: argparse.Namespace) -> int:
 # damped-Newton polish + 活跃集感知误差）。
 # ---------------------------------------------------------------------------
 
-def make_optimizer(ana, free_res_info, params_names, opts: dict) -> UnifiedPWAOptimizer:
+def make_optimizer(ana, free_res_info, params_names, opts: dict, device: str | None = None) -> UnifiedPWAOptimizer:
     """构造与 ctpwa example/fit.py 数值同源的优化器（默认 reparam 软墙路径）。"""
     return UnifiedPWAOptimizer(
         ana, free_res_info, params_names,
@@ -354,6 +354,7 @@ def make_optimizer(ana, free_res_info, params_names, opts: dict) -> UnifiedPWAOp
         optimizer_kind=opts["kind"],
         amp_max=opts["amp_max"],
         amp_lambda=opts["amp_lambda"],
+        device=device,
     )
 
 
@@ -479,19 +480,27 @@ def build_best_json(opt: UnifiedPWAOptimizer, final_params: torch.Tensor, result
         best["correlation"] = correlation
 
     # 分波贡献（phsp_truth 门控；用与拟合同源的统一 Hessian 做误差传播）
-    try:
-        ff = opt.analysis.getFitFractions(coupling, opt._get_hessian_cached(final_params))
-        names = list(opt.analysis.getAmplitudeNames())
-        if ff is not None and ff.numel() > 0:
-            best["fitFractions"] = [
-                {"amplitude": names[i] if i < len(names) else f"amp_{i}",
-                 "fraction": float(ff[i, 0]), "error": float(ff[i, 1])}
-                for i in range(ff.shape[0])
-            ]
-        else:
-            warnings.append("getFitFractions 返回空（config 缺 phsp_truth？）——分波份额不可用")
-    except Exception as e:
-        warnings.append(f"getFitFractions 不可用（需要 config 的 phsp_truth？）: {type(e).__name__}: {e}")
+    # CPU 后端注意：ctpwa 的 getFitFractions/getEfficiency 入口仍然 TORCH_CHECK
+    # CUDA 张量（Analysis.cu），CPU 构建一调用就抛，所以这里直接跳过并说明。
+    if getattr(opt, "device", "cuda") == "cpu":
+        warnings.append(
+            "cpu-backend: ctpwa 的 getFitFractions 目前只接受 CUDA 张量（CPU 构建也会 TORCH_CHECK 失败）"
+            "—— 分波份额不可用；需要份额请用 target:\"gpu\"/\"slurm\"。"
+        )
+    else:
+        try:
+            ff = opt.analysis.getFitFractions(coupling, opt._get_hessian_cached(final_params))
+            names = list(opt.analysis.getAmplitudeNames())
+            if ff is not None and ff.numel() > 0:
+                best["fitFractions"] = [
+                    {"amplitude": names[i] if i < len(names) else f"amp_{i}",
+                     "fraction": float(ff[i, 0]), "error": float(ff[i, 1])}
+                    for i in range(ff.shape[0])
+                ]
+            else:
+                warnings.append("getFitFractions 返回空（config 缺 phsp_truth？）——分波份额不可用")
+        except Exception as e:
+            warnings.append(f"getFitFractions 不可用（需要 config 的 phsp_truth？）: {type(e).__name__}: {e}")
 
     # 分支比：旧 ctpwa 构建没有该 API —— 有才试，没有不刷警告
     if hasattr(opt.analysis, "getBranchFractions"):
@@ -609,11 +618,11 @@ def _run_fit(args: argparse.Namespace) -> int:
         return finish({"schemaVersion": SCHEMA_VERSION, "status": "no-gpu",
                        "error": {"code": "ctpwa-import-failed", "message": f"{type(e).__name__}: {e}"}},
                       args.json, EXIT_NO_GPU)
-    if not torch.cuda.is_available():
-        return finish({"schemaVersion": SCHEMA_VERSION, "status": "no-gpu",
-                       "error": {"code": "no-cuda-device",
-                                 "message": "ctpwa 仅支持 GPU（CPU 后端未实现）；torch.cuda.is_available() = False"}},
-                      args.json, EXIT_NO_GPU)
+    # ctpwa 0.3.19+ 有 CPU 后端（同一进程只能用一个后端，门面在 import 时定）。
+    # 设备优先级与插件一致：CTPWA_DEVICE（ctpwa 自己读）→ ctpwa.backend()。
+    # 显式 CTPWA_DEVICE=cuda 但不可用时，ctpwa 门面自己会抛错，这里不重复判断。
+    backend = getattr(ctpwa, "backend", lambda: "cuda")()
+    device = "cuda" if backend == "cuda" else "cpu"
 
     config_abs = os.path.abspath(args.config)
     workdir = os.path.dirname(config_abs) or "."
@@ -658,8 +667,13 @@ def _run_fit(args: argparse.Namespace) -> int:
 
     free_res_info = ana.getFreeResParams()
     params_names = list(ana.getParamNames())
-    opt = make_optimizer(ana, free_res_info, params_names, opts)
+    opt = make_optimizer(ana, free_res_info, params_names, opts, device=device)
     warnings: list[str] = []
+    if device == "cpu":
+        warnings.append(
+            "cpu-backend: 本次拟合跑在 CPU 后端（ctpwa 0.3.19+）。CPU 比 GPU 慢 20~60 倍，"
+            "只适合低统计量/冒烟测试；正式结果请用 GPU 或集群。精度为 double（与 GPU 数值差 ~1e-11）。"
+        )
     runs_json: list[dict] = []
     results: list[dict] = []
     os.makedirs("results", exist_ok=True)  # nll_history/fit.json/weight_best.root 的落点
@@ -741,19 +755,32 @@ def _run_fit(args: argparse.Namespace) -> int:
     # 有参数被 free_range 钉住时两者会不一致，此时误差仍可由非活跃子空间给出。
     final_params = best["final_params"]
     active_pd = bool(best["is_positive_definite"])
-    reduced_h = _reduced_hessian(opt, final_params)
-    is_pd_full, min_eig, cond = _eig_diagnostics(reduced_h)
-    best["is_positive_definite"] = active_pd
-    best["min_eigenvalue"] = min_eig
-    best["condition_number"] = cond
-    if not active_pd:
-        warnings.append("非活跃子空间 Hessian 不正定 → 参数误差不可用（见 [polish]/[errors] 输出）")
-    elif not is_pd_full:
-        warnings.append(f"全自由块 Hessian 不正定（λmin={min_eig:.3e}）——可能有参数被 "
-                        f"free_range 钉住；参数误差按非活跃子空间给出")
-
-    errors = opt.compute_param_errors(final_params)
-    correlation = _correlation_from_hessian(opt, reduced_h, is_pd_full)
+    # CPU 后端有个别 Hessian 块尚未移植（ctpwa::not_implemented）。拟合本身是有效的，
+    # 所以这里降级为 "误差/相关不可用"，而不是让整轮拟合在最后一步丢掉。
+    reduced_h = None
+    is_pd_full = None
+    min_eig = None
+    cond = None
+    errors = None
+    correlation = None
+    try:
+        reduced_h = _reduced_hessian(opt, final_params)
+        is_pd_full, min_eig, cond = _eig_diagnostics(reduced_h)
+        best["is_positive_definite"] = active_pd
+        best["min_eigenvalue"] = min_eig
+        best["condition_number"] = cond
+        if not active_pd:
+            warnings.append("非活跃子空间 Hessian 不正定 → 参数误差不可用（见 [polish]/[errors] 输出）")
+        elif not is_pd_full:
+            warnings.append(f"全自由块 Hessian 不正定（λmin={min_eig:.3e}）——可能有参数被 "
+                            f"free_range 钉住；参数误差按非活跃子空间给出")
+        errors = opt.compute_param_errors(final_params)
+        correlation = _correlation_from_hessian(opt, reduced_h, is_pd_full)
+    except Exception as e:
+        warnings.append(
+            f"hessian-unavailable: {type(e).__name__}: {e} —— 拟合结果本身有效，但参数误差/相关矩阵"
+            f"/正定性不可用（CPU 后端部分 Hessian 块未移植时会出现；换 GPU 后端可恢复）"
+        )
     best_json = build_best_json(opt, final_params, best, errors, correlation, warnings)
 
     out = {
