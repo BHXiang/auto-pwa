@@ -3118,7 +3118,11 @@ export function apply(ctx: Context) {
         // 把当前轮次推进到新目录，loop_next 只负责评估/收敛。
         const loopState = loadLoopState(args.iterationsRoot)
         if (loopState !== undefined && loopState.phase !== 'done') {
-          loopState.baseIterDir = loopState.currentIterDir
+          // The base is the iteration the new config was copied from. This makes
+          // Plan A rollback work: iter_start(prev/config.yml) creates a new dir
+          // whose ΔNLL baseline is the *previous* iteration, not the failed one.
+          const copiedFrom = dirname(args.baseConfigPath)
+          loopState.baseIterDir = /iter-\d+$/.test(copiedFrom) ? copiedFrom : loopState.currentIterDir
           loopState.currentIterDir = r.iterDir
           loopState.iter = r.iter
           loopState.phase = 'evaluate'
