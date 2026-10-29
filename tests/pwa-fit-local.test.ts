@@ -137,7 +137,8 @@ class FakeRunner {
   }
 }
 
-const ctx = (registry: FakeJobRegistry) => ({ jobs: registry } as unknown as Context)
+const ctx = (registry: FakeJobRegistry, goals?: unknown) =>
+  ({ jobs: registry, get: (n: string) => (n === 'goals' ? goals : undefined) } as unknown as Context)
 
 describe('PwaFitLocalService (ctx.jobs provider)', () => {
   it('submits a fit as a ctpwa job owned by the caller, with output cap', () => {
@@ -324,5 +325,122 @@ describe('PwaFitLocalService target dispatch', () => {
     expect(res.error).toContain('target:"slurm"')
     expect(() => service.submit({ iterDir: '/pwa/iter-005' })).toThrow(/target:"cpu"/)
     expect(runner.submitted).toHaveLength(0)
+  })
+})
+
+/** Minimal ctx.goals stand-in: armed goal, records disarm/resume. */
+class FakeGoals {
+  view: { id: string; revision: number; phase: string; activation: string } | undefined = {
+    id: 'goal-1',
+    revision: 1,
+    phase: 'active',
+    activation: 'armed',
+  }
+  disarmed = 0
+  resumed = 0
+  get(_agent: unknown) {
+    return this.view
+  }
+  disarm(_agent: unknown) {
+    this.disarmed += 1
+    if (this.view !== undefined) this.view = { ...this.view, activation: 'disarmed' }
+    return this.view
+  }
+  resume(_agent: unknown, ref: { id: string; revision: number }) {
+    this.resumed += 1
+    if (this.view !== undefined) this.view = { ...this.view, revision: ref.revision, activation: 'armed' }
+    return this.view
+  }
+}
+
+const OWNER: FitOwner = { id: 'sess-1', agent: { id: 'sess-1' } }
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+describe('PwaFitLocalService goal parking (no busy-wait goal rounds while a fit runs)', () => {
+  it('disarms an armed goal on submit and re-arms it when the fit settles', async () => {
+    const registry = new FakeJobRegistry()
+    const runner = new FakeRunner()
+    const goals = new FakeGoals()
+    const service = new PwaFitLocalService(ctx(registry, goals), {
+      runner,
+      capabilities: { gpu: false, slurm: false },
+    })
+    const id = service.submit({ iterDir: '/pwa/iter-001' }, OWNER)
+    expect(goals.disarmed).toBe(1)
+    expect(goals.view?.activation).toBe('disarmed')
+    expect(service.status(id).state).toBe('running')
+    runner.finish('fit-1', 'done')
+    await tick()
+    expect(goals.resumed).toBe(1)
+    expect(goals.view?.activation).toBe('armed')
+  })
+
+  it('ref-counts concurrent fits: re-arm only after the LAST one settles', async () => {
+    const registry = new FakeJobRegistry()
+    const runner = new FakeRunner()
+    const goals = new FakeGoals()
+    const service = new PwaFitLocalService(ctx(registry, goals), {
+      runner,
+      capabilities: { gpu: false, slurm: false },
+    })
+    service.submit({ iterDir: '/pwa/iter-001' }, OWNER)
+    service.submit({ iterDir: '/pwa/iter-002' }, OWNER)
+    expect(goals.disarmed).toBe(1)
+    runner.finish('fit-1', 'done')
+    await tick()
+    expect(goals.resumed).toBe(0)
+    runner.finish('fit-2', 'done')
+    await tick()
+    expect(goals.resumed).toBe(1)
+  })
+
+  it('never touches a paused/replaced/cleared goal (human intent wins)', async () => {
+    const registry = new FakeJobRegistry()
+    const runner = new FakeRunner()
+    const goals = new FakeGoals()
+    goals.view = { id: 'goal-1', revision: 1, phase: 'paused', activation: 'disarmed' }
+    const service = new PwaFitLocalService(ctx(registry, goals), {
+      runner,
+      capabilities: { gpu: false, slurm: false },
+    })
+    service.submit({ iterDir: '/pwa/iter-001' }, OWNER)
+    expect(goals.disarmed).toBe(0)
+    runner.finish('fit-1', 'done')
+    await tick()
+    expect(goals.resumed).toBe(0)
+  })
+
+  it('does not re-arm when the goal was paused (or replaced) during the wait', async () => {
+    const registry = new FakeJobRegistry()
+    const runner = new FakeRunner()
+    const goals = new FakeGoals()
+    const service = new PwaFitLocalService(ctx(registry, goals), {
+      runner,
+      capabilities: { gpu: false, slurm: false },
+    })
+    service.submit({ iterDir: '/pwa/iter-001' }, OWNER)
+    expect(goals.disarmed).toBe(1)
+    // Human pauses it while the fit runs.
+    goals.view = { id: 'goal-1', revision: 2, phase: 'paused', activation: 'disarmed' }
+    runner.finish('fit-1', 'done')
+    await tick()
+    expect(goals.resumed).toBe(0)
+  })
+
+  it('PWA_GOAL_PARK=off keeps goal rounds running during fits', async () => {
+    const registry = new FakeJobRegistry()
+    const runner = new FakeRunner()
+    const goals = new FakeGoals()
+    process.env.PWA_GOAL_PARK = 'off'
+    try {
+      const service = new PwaFitLocalService(ctx(registry, goals), {
+        runner,
+        capabilities: { gpu: false, slurm: false },
+      })
+      service.submit({ iterDir: '/pwa/iter-001' }, OWNER)
+      expect(goals.disarmed).toBe(0)
+    } finally {
+      delete process.env.PWA_GOAL_PARK
+    }
   })
 })

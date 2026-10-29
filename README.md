@@ -213,6 +213,7 @@ job.sh 三条契约：**不写 `cd`/写死路径**（`--chdir` 已设 cwd，同�
 - **唤醒 = 一个 DSH 后台任务（`ctpwa-N`）包住一次执行**；批量候选（`try_candidates` + slurm）合成**一个** DSH 任务（每候选一个作业，共用 job.sh，`--chdir` 到各 trial 目录），全部结束才 settle。
 - **SLURM cancel 默认只 detach、不 `scancel`**：harness 重启/会话结束不该杀掉已经跑了很久的集群作业。要真停：`scancel <sbatch>`（或 `PWA_SLURM_SCANCEL_ON_CANCEL=1`）。
 - **PENDING 不等于 running**：`fit_status` 显示 `[slurm] PENDING (Resources)`；`sacct` 记账延迟也不会被当成完成（继续轮询约 5 分钟）。
+- **goal 不会空转**：DSH 的 goal 轮次只看"agent 空闲"，不看后台作业；插件在作业运行期间 disarm goal、结束时 resume，唤醒只来自完成通知（`PWA_GOAL_PARK=off` 可关）。
 - **重启后恢复**：`fit_status({ jobId, iterDir })` 读 `.slurm-jobs.json` + `squeue/sacct`；cpu/gpu/script 目标直接看 `results/` 与 `fit.log`。
 - **共享文件系统是前提**（slurm）：compute 节点要能读 `iterDir` 并写 `results/`。
 - `/pwa-status <iterationsRoot>` 列出后台任务 + 迭代日记 + 集群作业。

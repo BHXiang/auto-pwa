@@ -168,6 +168,11 @@ job.sh 的三条硬契约（违反会静默出错）：
 | 2 | 日志必须落到 **`fit.log`**（`#SBATCH --output=fit.log`，相对路径） | 插件与 `auto_pwa_fit_status` 靠它读进度和结果 |
 | 3 | fit.py 的参数用 **`"$@"`** 透传 | `--runs/--max-iter/--warm/--config` 被吞掉 → 短拟合变全拟合 |
 
+**goal 与等待（为什么作业跑着时不会一直唤醒你）**
+- DSH 的 goal 轮次是"agent 一空闲就开新一轮"，**不看后台作业**。所以"交完作业结束回合"会被 goal 立刻再唤醒一轮，而作业可能还在排队——白白空转。
+- 插件在作业运行期间会**临时 disarm 你的 goal**（只停自动续轮，objective/phase/revision 不动），最后一个作业结束时**自动 resume**；唤醒只来自作业完成通知。看到"作业在跑但没新回合"是正常的，**不要**轮询，等通知。
+- 如果你确实想在等作业时继续做别的事（下一个 iter、候选、别的分析），设 `PWA_GOAL_PARK=off` 恢复旧的自动续轮行为，并自己控制节奏。
+
 **排队、失败与取消**
 - `fit_status` 的 `进度:` 显示 `[slurm] PENDING (Resources)` = **在排队，不是在跑**。等太久就改 job.sh 的分区/卡数（A100→V100 最快），先 `scancel <sbatch>` 再重交；不要对同一配置反复重交。
 - 失败先看 `fit.log` 最后 20 行：`ModuleNotFoundError`/`CUDA error`/`libXXX.so` 是环境问题 → 改 job.sh / 换 target；`config-error` 才是 config 问题。

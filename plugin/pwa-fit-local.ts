@@ -48,6 +48,41 @@ export const inject = ['jobs']
 export const FIT_OUTPUT_LIMIT_BYTES = 32 * 1024
 
 /**
+ * DSH's goal-round driver starts a new automatic round whenever the agent goes
+ * idle — it does NOT look at running background jobs (dsh-goal-round-driver
+ * `drive()` only checks goal.phase/activation, the round budget and subagents).
+ * With an active goal, "submit a fit, end the turn" therefore became
+ * "submit → goal round → poll the queue → end → goal round → …" while the job
+ * was still PENDING (a real cluster session burned dozens of rounds this way).
+ *
+ * Fix at the provider: while this agent owns a running fit, DISARM its goal
+ * (process-local; the durable phase/objective/revision are untouched), and
+ * RE-ARM it when the last fit settles. The job-completion notice is what wakes
+ * the agent, so no rounds are needed while waiting. Set PWA_GOAL_PARK=off to
+ * keep the old behaviour (e.g. when you deliberately want the AI to keep
+ * working on something else while a fit runs).
+ */
+interface GoalViewLike {
+  id: string
+  revision: number
+  phase: string
+  activation: string
+}
+
+interface GoalServiceLike {
+  get(agent: unknown): GoalViewLike | undefined
+  disarm(agent: unknown): unknown
+  resume(agent: unknown, ref: { id: string; revision: number }): unknown
+}
+
+/** One agent's park record (ref-counted across concurrent fits). */
+interface GoalPark {
+  agent: unknown
+  goalId: string
+  count: number
+}
+
+/**
  * Flatten a `ctx.jobs.read()` result into text across DSH generations.
  *
  * The released registry returned `{ text, snapshot }`; the current one (dev
@@ -143,6 +178,12 @@ export class PwaFitLocalService extends FitService {
   private readonly sbatchIds = new Map<string, string>()
   /** Set by spawnVia: the runner job just launched. */
   private lastSpawn: Launch | undefined
+  /** Cordis context (needed for ctx.get('goals') — an optional service). */
+  private readonly context: Context
+  /** agent key -> goal parked while that agent owns running fits. */
+  private readonly parked = new Map<string, GoalPark>()
+  /** Whether goal rounds are parked during fits (PWA_GOAL_PARK=off disables). */
+  private readonly goalPark: boolean
   /**
    * Which identity generation the running registry wants (see the vendored
    * dsh-jobs header): current DSH takes the live Agent for both `owner` and
@@ -154,6 +195,8 @@ export class PwaFitLocalService extends FitService {
 
   constructor(ctx: Context, options: PwaFitServiceOptions = {}) {
     super(ctx)
+    this.context = ctx
+    this.goalPark = (process.env.PWA_GOAL_PARK ?? '').trim().toLowerCase() !== 'off'
     this.jobs = ctx.jobs
     this.agentIdentity = typeof (this.jobs as { onJobDone?: unknown }).onJobDone === 'function'
     this.localRunner = options.runner ?? new LocalFitRunner(defaultFitRunnerConfig())
@@ -200,6 +243,69 @@ export class PwaFitLocalService extends FitService {
     return owner.id
   }
 
+  /** Optional goal service (absent in sessions without the goal plugin). */
+  private goals(): GoalServiceLike | undefined {
+    try {
+      const get = (this.context as unknown as { get?: (name: string) => unknown }).get
+      if (typeof get !== 'function') return undefined
+      return get.call(this.context, 'goals') as GoalServiceLike | undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Stop automatic goal rounds while a fit owned by this agent is running.
+   * Ref-counted: the first fit disarms, the last settlement re-arms.
+   */
+  private parkGoal(owner?: FitOwner): void {
+    if (!this.goalPark) return
+    const agent = owner?.agent
+    if (agent === undefined) return
+    const key = agent.id ?? owner?.id
+    if (key === undefined) return
+    const existing = this.parked.get(key)
+    if (existing !== undefined) {
+      existing.count += 1
+      return
+    }
+    try {
+      const goals = this.goals()
+      if (goals === undefined) return
+      const goal = goals.get(agent)
+      // Only an active+armed goal has automatic continuation to suppress.
+      if (goal === undefined || goal.phase !== 'active' || goal.activation !== 'armed') return
+      goals.disarm(agent)
+      this.parked.set(key, { agent, goalId: goal.id, count: 1 })
+    } catch {
+      // Best effort: a goal-plugin quirk must never break fit submission.
+    }
+  }
+
+  /**
+   * Re-arm the goal parked for this agent once nothing is running. Skips when
+   * the goal was paused/replaced/cleared meanwhile (human intent wins).
+   */
+  private unparkGoal(owner?: FitOwner): void {
+    const key = owner?.agent?.id ?? owner?.id
+    if (key === undefined) return
+    const record = this.parked.get(key)
+    if (record === undefined) return
+    record.count -= 1
+    if (record.count > 0) return
+    this.parked.delete(key)
+    try {
+      const goals = this.goals()
+      if (goals === undefined) return
+      const goal = goals.get(record.agent)
+      if (goal === undefined || goal.id !== record.goalId) return
+      if (goal.phase !== 'active' || goal.activation !== 'disarmed') return
+      goals.resume(record.agent, { id: goal.id, revision: goal.revision })
+    } catch {
+      // Best effort; the completion notice still wakes the agent.
+    }
+  }
+
   submit(request: FitRequest, owner?: FitOwner): string {
     const resolved = this.resolve(request)
     if (resolved.error !== undefined) throw new Error(resolved.error)
@@ -209,13 +315,14 @@ export class PwaFitLocalService extends FitService {
       label: `ctpwa fit [${resolved.target}] ${request.iterDir}`,
       outputLimitBytes: FIT_OUTPUT_LIMIT_BYTES,
       ...(owner !== undefined ? { owner: this.identityOf(owner) } : {}),
-      run: () => this.spawnFit(request, resolved.target),
+      run: () => this.spawnFit(request, resolved.target, owner),
     })
     // Key the iterDir record by the REGISTRY id (ctpwa-N) — the runner's own
     // id (fit-N-...) lives in a different namespace and is not user-visible.
     this.iterDirs.set(jobId, request.iterDir)
     this.targets.set(jobId, resolved.target)
     this.rememberSpawn(jobId)
+    this.parkGoal(owner)
     return jobId
   }
 
@@ -236,12 +343,13 @@ export class PwaFitLocalService extends FitService {
       label: `ctpwa batch ${dirs.length} (${dirs[0]})`,
       outputLimitBytes: FIT_OUTPUT_LIMIT_BYTES,
       ...(owner !== undefined ? { owner: this.identityOf(owner) } : {}),
-      run: () => this.spawnBatch(dirs, request),
+      run: () => this.spawnBatch(dirs, request, owner),
     })
     this.batchIterDirs.set(jobId, dirs)
     this.iterDirs.set(jobId, dirs[0]!)
     this.targets.set(jobId, 'slurm')
     this.rememberSpawn(jobId)
+    this.parkGoal(owner)
     return jobId
   }
 
@@ -293,11 +401,12 @@ export class PwaFitLocalService extends FitService {
   private spawnFit(
     request: FitRequest,
     target: ResolvedFitTarget,
+    owner?: FitOwner,
   ): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
-    return this.spawnVia((options) => this.launch(request, target, options), request)
+    return this.spawnVia((options) => this.launch(request, target, options), request, owner)
   }
 
-  private spawnBatch(dirs: string[], request: FitRequest): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
+  private spawnBatch(dirs: string[], request: FitRequest, owner?: FitOwner): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
     const submit = this.slurmRunner.submitBatch!
     return this.spawnVia(
       (options) => ({
@@ -309,12 +418,14 @@ export class PwaFitLocalService extends FitService {
         }),
       }),
       request,
+      owner,
     )
   }
 
   private spawnVia(
     launch: (opts: { timeoutMs?: number; scriptArgs?: string[] }) => Launch,
     request: FitRequest,
+    owner?: FitOwner,
   ): { cancel(reason?: string): void; done: Promise<JobOutcome> } {
     const spawned = launch({
       timeoutMs: request.timeoutMin !== undefined ? request.timeoutMin * 60_000 : undefined,
@@ -335,6 +446,9 @@ export class PwaFitLocalService extends FitService {
       },
       (error: unknown): JobOutcome => ({ status: 'failed', detail: String(error) }),
     )
+    // The completion notice wakes the agent; re-arm its goal right after the
+    // settlement so the driver can continue the loop with fresh results.
+    void done.finally(() => this.unparkGoal(owner))
     return {
       cancel: (reason?: string) => {
         void reason

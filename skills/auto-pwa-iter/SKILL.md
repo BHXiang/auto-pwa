@@ -18,6 +18,8 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
 
 **在哪跑**：`run_fit` 强制只做 config 门禁；执行由你选 `target`——`cpu`（低统计/冒烟，慢 20~60×，默认 30 min 超时）、`gpu`（本机卡）、`slurm`（集群排队，交你的 `<iterDir>/job.sh`），或给 `runScript` 自己写启动命令（前台阻塞，跑完照样唤醒）。省略时 auto=宿主有 GPU 就 gpu、没有就 cpu；登录节点（有 slurm 没 GPU）会要求显式选。`fit_status` 的 `PENDING (Resources)` 是排队；取消默认只 detach；重启后用 `fit_status({jobId, iterDir})` 查 slurm 作业。细节见 `auto-pwa-analysis` §5.1。
 
+**goal 与作业等待**：作业运行期间插件会临时 disarm goal（停自动续轮），最后一个作业结束时自动 resume；唤醒只来自作业完成通知，所以"作业在跑但没有新回合"是正常现象，不要轮询。想在等作业时继续干别的活，设 `PWA_GOAL_PARK=off`。
+
 **并行探索（提速关键）**：`auto_pwa_try_candidates` 在基座上并行提交 2–5 个候选的**短拟合**（默认 `--runs 1 --max-iter 500`，目录在 `iterations/_trials/`，不进 iter-N 序列）；全部完成后 `auto_pwa_compare` 按 ΔNLL 显著性（默认阈值 3，2 自由度）裁决，**最优者晋级**为正式迭代。探索与晋级分离，一轮时间试探多个方向。
 
 **结论传递首选"同一个会话里连续上下文"，不是"写摘要给下一个会话"。** 跨会话传递（A 写 conclusion → B 读）会丢失推理细节（为什么选这个态、排除了什么），压缩即损失。
