@@ -13,7 +13,7 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
 **主路径是 goal + 一个简单轮次**（loop 状态可选，保存在 `iterations/.loop-state.json`）：
 - 每轮：AI 决策（任意 config 变更）→ `auto_pwa_run_fit`（强制 gate + 宿主 transport）→ 等完成通知 → `evaluate` + `diagnose` → `note` → `loop_next` 只做评估/判收敛。
 - `auto_pwa_loop_next`：评估当前迭代（NLL/ΔNLL/max|pull|/逐分布 chi2/ndf/Hessian）→ 判收敛；收敛写 `FINAL-REPORT.md`。需要人工收尾时传 `forceConverge: true`（替代 `loop_decide converge`）。首次调用传 `baseIterDir` 启动。
-- `auto_pwa_loop_decide`：**可选**的批量 iterate/rollback 封装；不是唯一入口。float/trans/plot/baseline/trials 直接用 `iter_start`/`run_fit`/手改 YAML，然后 `note`；收尾用 `loop_next forceConverge`。
+- **没有 `loop_decide` 了**：iterate 用 `iter_start`/`edit_config`/`remove_resonance` + `run_fit`；rollback 用上一轮 config 做 `iter_start` + `note`；收尾用 `loop_next forceConverge`。
 - `loop_next` 只评估，不批准/否决 config 变更。
 
 **并行探索（提速关键）**：`auto_pwa_try_candidates` 在基座上并行提交 2–5 个候选的**短拟合**（默认 `--runs 1 --max-iter 500`，目录在 `iterations/_trials/`，不进 iter-N 序列）；全部完成后 `auto_pwa_compare` 按 ΔNLL 显著性（默认阈值 3，2 自由度）裁决，**最优者晋级**为正式迭代。探索与晋级分离，一轮时间试探多个方向。
@@ -30,8 +30,8 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
   4. **`auto_pwa_root_view` 直接看拟合形状**：先 `list` 发现直方图，再 `read` 取关键对象——每个共振态的波谱 `h_<chain>-<intermediate>-<resonance>`（该共振态的质量谱形状与大小）、角分布 `cosbeta_*`、`hdata`/`hfit` 逐 bin 对比。**这是"哪个共振态主导/缺失/形状异常"的第一手证据**——pull 区对应哪个波谱、哪个共振态形状被压低，直接决定下一步动什么
   5. **`auto_pwa_wave_view` 画分波组合**：选中几个波（如 pull 区的候选）→ 看它们的合成分布 vs 数据谱——"缺什么"的直接检验；`eventWeights=true` 时输出选中波对干涉分布（**大文件，非必要不用**，用完自动删）
   6. `auto_pwa_suggest` 按 pull 区列出候选；`lookup`/`decay_check`/`jpc_check` 复核
-  7. `auto_pwa_loop_next` 判收敛；未收敛 → `auto_pwa_loop_decide iterate`（或先 `try_candidates` + `compare` 探索再晋级）
-  8. **假设-预测-验证**：`auto_pwa_loop_decide` 提交决策时带 `hypothesis`（物理假设）与 `prediction`（结构化可验证预测，如 `{metric: maxPull, threshold: 3, direction: below}` 或 regionPull 指定质量窗）。下一轮 `auto_pwa_loop_next` 评估后**自动验证并返回 🔍 结果**（成立/不成立 + 实际值）——预测被证伪 = 假设错了，换方向；预测成立 = 归因正确，继续深入。
+  7. `auto_pwa_loop_next` 判收敛；未收敛 → 改 config 后 `run_fit`（或先 `try_candidates` + `compare` 探索再晋级）。`iter_start` 只用于新 baseline
+  8. **假设-预测-验证**：`auto_pwa_note` 可带 `hypothesis`（物理假设）与 `prediction`（结构化可验证预测，如 `{metric: maxPull, threshold: 3, direction: below}` 或 regionPull 指定质量窗）；下一轮 `auto_pwa_loop_next` 评估后**自动验证并返回 🔍 结果**（成立/不成立 + 实际值）——预测被证伪 = 假设错了，换方向；预测成立 = 归因正确，继续深入。
   9. 拟合完成通知后回到 1；`auto_pwa_note` 写审计记录（**includeTokens: true** 记本轮 token 消耗；结论 + hypothesis/prediction/verification + 下一步计划）
 - 收敛（loop 判定 done）或轮数耗尽 → `update_goal complete`，读 `FINAL-REPORT.md` 给用户总结。
 - `auto_pwa_git_log`：本地历史（哪些轮改了什么、某态何时进入、是否已提交）——"审计 + 复现"的第一入口。
@@ -54,7 +54,7 @@ description: 'Use when running the PWA iteration loop: iteration folder layout, 
 md5 只能**发现**配置变过，git 能**还原**任意一轮的原文。
 
 - **只跟踪文本**：`config.yml`/变体 `*.yml`、`results/fit.json`、`results/provenance.json`、`SUMMARY.jsonl`、`note.md`、脚本、报告；忽略 `*.root`/`*.dat`（保留小体积输入表 `interp_*.dat`）/`fit.log`/`*.html`/`*.png`。规则写在分析目录 `.gitignore` 的托管块里（`auto-pwa managed`，可整块删）。
-- **两个提交点**（自动，无需你操作）：① 每次工具写 config（`edit_config`/`remove_resonance`/`round`/`iterate`/`loop_decide`/`iter_start`/`try_candidates`）→ `iter-007: add phi1680 -> R_KK [1-]`；② `auto_pwa_note` → `iter-007 result: ... NLL=-18685.80 dNLL=-12.30`，同提交里含**当时实际拟合的配置**（provenance 记的 `configPath`，可能是 `variant.yml`）。于是"结论数字"和"当时的配置"永远对得上。
+- **两个提交点**（自动，无需你操作）：① 每次工具写 config（`edit_config`/`remove_resonance`/`iter_start`/`try_candidates`）→ `iter-007: add phi1680 -> R_KK [1-]`；② `auto_pwa_note` → `iter-007 result: ... NLL=-18685.80 dNLL=-12.30`，同提交里含**当时实际拟合的配置**（provenance 记的 `configPath`，可能是 `variant.yml`）。于是"结论数字"和"当时的配置"永远对得上。
 - **查历史用 `auto_pwa_git_log`**：`action=log`（最近 N 轮）/ `show`（某轮 config diff，用 provenance 里的 commit）/ `search`（pickle：`needle=X1750` 回答"这个态哪轮进来的"）/ `status`（有无未提交改动）。`file` 可相对分析目录或相对 `path` 所在目录。
 - **可复现性怎么判**：`provenance.git.dirty=true` = 已跟踪文件与 HEAD 不同，结果不能由 HEAD 复现；门禁还会做 md5 ↔ commit 互验，若**拟合用的配置根本不在 HEAD 里**（手写变体没提交）会给 `git-config-not-committed` warning（不阻塞拟合）。这两条一起，才算"真可复现"。
 - **失败绝不阻塞**：git 缺失/仓库异常只降级为 warning；`PWA_GIT=off` 完全关闭记录。记录不是门禁。

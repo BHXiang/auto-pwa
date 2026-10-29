@@ -33,7 +33,7 @@ function collect(): Def[] {
   return definitions
 }
 
-/** 规范里冻结的工具清单（25 个）。增删工具必须同时更新此表与文档。 */
+/** 规范里冻结的工具清单（24 个）。增删工具必须同时更新此表与文档。 */
 const EXPECTED_TOOLS = [
   'auto_pwa_lookup',
   'auto_pwa_decay_check',
@@ -59,7 +59,6 @@ const EXPECTED_TOOLS = [
   'auto_pwa_try_candidates',
   'auto_pwa_compare',
   'auto_pwa_loop_next',
-  'auto_pwa_loop_decide',
 ]
 
 /** 已弃用工具：描述必须以 [已弃用 开头并给出替代者。 */

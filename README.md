@@ -84,7 +84,7 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 | `auto_pwa_try_candidates` | **并行候选短拟合**：基座上试 2–5 个候选（`_trials/` 目录，`--runs 1 --max-iter 500`），每个 trial 都过跑前门禁 | 执行·探索 |
 | `auto_pwa_git_log` | **本地 git 记录（无远端）**：`<分析目录>/.pwa-git` 里每轮 config 改动 + 结果 NLL 各一条提交；log/show/search(pickaxe)/status——"谁改了哪一条""这个态哪轮进来的""结果能否由 HEAD 复现" | 执行·审计 |
 | `auto_pwa_note` / `auto_pwa_history` | 追加/读取迭代日记（SUMMARY.jsonl + 渲染 HTML；含每轮 token 成本） | 执行·审计 |
-| `auto_pwa_loop_next` / `auto_pwa_loop_decide` | **可选循环评估**：评估→收敛判定（pull/ΔNLL/预算）→ FINAL-REPORT.md；`loop_decide` 只做可选加/删/回滚；主路径仍是 `run_fit` | 执行·可选 |
+| `auto_pwa_loop_next` | **可选循环评估**：评估→收敛判定（pull/ΔNLL/预算）→ FINAL-REPORT.md；`forceConverge` 手动收尾；主路径仍是 `run_fit` | 执行·可选 |
 
 ## 迭代闭环
 
@@ -92,7 +92,6 @@ pnpm dsh --profile headless --patch /absolute/path/to/auto-pwa/patch/auto-pwa.co
 auto_pwa_loop_next（评估 + 收敛判定）
    └─> 未收敛 → auto_pwa_suggest / auto_pwa_diagnose（决策输入）
    └─> auto_pwa_try_candidates + auto_pwa_compare（并行探索，最优晋级）
-   └─> auto_pwa_loop_decide iterate（验证 + 建轮 + 写 config + 提交拟合）
    └─> 拟合后台运行（RTX 级 GPU 约 8 分钟；DSH 完成通知自动送达）
    └─> 收敛 → FINAL-REPORT.md + phase done
 ```
@@ -263,7 +262,7 @@ pull     = residual / sqrt(fit + bkg)  # Pearson；chi2 = Σ residual²/(fit+bkg
 
 ## 设计文档
 
-- [工具真值表](docs/tool-truth-table.md) — 25 个工具：层/实测频次/何时用/何时不要用→改用什么 + 7 条不变式（路由评估的 ground truth）。
+- [工具真值表](docs/tool-truth-table.md) — 24 个工具：层/实测频次/何时用/何时不要用→改用什么 + 7 条不变式（路由评估的 ground truth）。
 - [工具表面与记忆系统：现状、业界做法与待办](docs/tool-and-memory-plan.md) — 实测数据、拆分/合并方案、记忆系统分类、**评测协议 v2**（MemoryAgentBench 四大能力 + 确定性聚合的实证）与反模式（T1/T3/T4 已执行，T2/T5 与记忆系统仍待做）。
 - [IO 与用法](docs/io-and-usage.md) — 完整输入输出、工具清单、跑前门禁与本地 git 记录约定。
 - [能力评估与计划](docs/capability-eval-and-plan.md) — 能力边界与演进路线。

@@ -3114,6 +3114,16 @@ export function apply(ctx: Context) {
           fitScriptPath: args.fitScriptPath ?? resolveEnv().fitScript,
           plotScriptPath: args.plotScriptPath ?? resolveEnv().plotScript,
         })
+        // Plan A：iter_start 是唯一的“新轮次”入口；已有 loop 状态时自动
+        // 把当前轮次推进到新目录，loop_next 只负责评估/收敛。
+        const loopState = loadLoopState(args.iterationsRoot)
+        if (loopState !== undefined && loopState.phase !== 'done') {
+          loopState.baseIterDir = loopState.currentIterDir
+          loopState.currentIterDir = r.iterDir
+          loopState.iter = r.iter
+          loopState.phase = 'evaluate'
+          saveLoopState(loopState)
+        }
         // B2：新迭代目录（config + note 骨架）立即入库
         const gitRec = gitRecord(r.iterDir, [`${r.iterDir}/config.yml`, `${r.iterDir}/note.md`], `iter-${String(r.iter).padStart(3, '0')}: new iteration from ${args.baseConfigPath}`, { 'Pwa-Kind': 'start', 'Pwa-Iter': r.iter })
         return {
@@ -3259,6 +3269,19 @@ export function apply(ctx: Context) {
       }
       try {
         log.append(record)
+        // Plan A：note 是预测写入的唯一入口（没有 loop_decide）。下一轮
+        // loop_next 会用这个 pendingPrediction 自动验证。
+        if (args.prediction !== undefined) {
+          const loopState = loadLoopState(root)
+          if (loopState !== undefined && loopState.phase !== 'done') {
+            loopState.pendingPrediction = {
+              prediction: args.prediction,
+              ...(args.hypothesis !== undefined ? { hypothesis: args.hypothesis } : {}),
+              iter: record.iter,
+            }
+            saveLoopState(loopState)
+          }
+        }
         // B2：结果入库——日记、note、fit.json、provenance 同一提交里，
         // 于是"这轮的结论/NLL"和"当时的配置"永远对得上。
         const iterLabel = `iter-${String(record.iter).padStart(3, '0')}`
@@ -5422,238 +5445,4 @@ export function apply(ctx: Context) {
     },
   }))
 
-  ctx.tools.register(defineTool({
-    name: 'auto_pwa_loop_decide',
-    description: '[可选] 落盘决策：iterate / rollback / converge。',
-    parameters: {
-      iterationsRoot: { type: 'string', required: true, description: 'iterations/ 目录' },
-      action: { type: 'string', required: true, enum: ['iterate', 'rollback', 'converge'], description: '决策动作' },
-      proposal: { ...proposalParam, description: 'action=iterate 时要添加的共振态（与 removals 至少给一个）' },
-      removals: removalListParam,
-      hypothesis: { type: 'string', description: '本决策的物理假设（如 "f2(1270) 吸收 R_KK 1.2-1.35 GeV 的 pull"）——与 prediction 一起构成可检验的预测' },
-      prediction: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          metric: { type: 'string', required: true, enum: ['maxPull', 'deltaNll', 'regionPull'] },
-          region: { type: 'array', items: { type: 'number' }, description: 'regionPull 用：质量窗口 [lo, hi]' },
-          threshold: { type: 'number', required: true },
-          direction: { type: 'string', required: true, enum: ['below', 'above'] },
-        },
-        description: '可验证预测（下轮拟合后由 loop_next 自动验证）：如 {metric: maxPull, threshold: 3, direction: below} 表示"加后全局 max|pull| < 3"',
-      },
-      reason: { type: 'string', description: 'rollback/converge 的原因说明（会写入日记/报告）' },
-      fitScriptPath: { type: 'string', description: 'fit.py 来源（默认插件自带 scripts/aifit.py；可用 PWA_FIT_SCRIPT 覆盖）' },
-      plotScriptPath: { type: 'string', description: 'plot.py 来源（默认无；可用 PWA_PLOT_SCRIPT 设置）' },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          ok: { type: 'boolean', required: true },
-          action: { type: 'string', required: true },
-          iter: { type: 'integer', required: true },
-          iterDir: { type: 'string', required: true },
-          jobId: { type: 'string' },
-          phase: { type: 'string', required: true },
-          changed: { type: 'array', items: { type: 'string' } },
-          // 回退时把"被撤销的态"直接送回上下文（§8.6 缺陷 1 的最后一环）
-          dropped: { type: 'array', items: { type: 'string' } },
-          note: { type: 'string' },
-          errors: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { code: { type: 'string', required: true }, message: { type: 'string', required: true } } } },
-          reportPath: { type: 'string' },
-          error: { type: 'string' },
-        },
-      },
-      render: (_args, value: {
-        ok: boolean
-        action: string
-        iter: number
-        iterDir: string
-        jobId?: string
-        phase: string
-        changed?: string[]
-        errors?: { code: string; message: string }[]
-        reportPath?: string
-        error?: string
-      }) => {
-        if (!value.ok) return text(`loop_decide 失败: ${value.error ?? '未知'}`)
-        const lines = [`action=${value.action} → iter-${String(value.iter).padStart(3, '0')}（${value.iterDir}）, phase=${value.phase}`]
-        if (value.jobId !== undefined) lines.push(`  拟合已提交: job ${value.jobId}`)
-        for (const c of value.changed ?? []) lines.push(`  ${c}`)
-        for (const e of value.errors ?? []) lines.push(`  [error] ${e.code}: ${e.message}`)
-        if (value.reportPath !== undefined) lines.push(`  最终报告: ${value.reportPath}`)
-        return text(lines.join('\n'))
-      },
-    },
-    async execute(args: {
-      iterationsRoot: string
-      action: 'iterate' | 'rollback' | 'converge'
-      proposal?: ResonanceProposal
-      removals?: ResonanceRemoval[]
-      hypothesis?: string
-      prediction?: Prediction
-      reason?: string
-      fitScriptPath?: string
-      plotScriptPath?: string
-    }, exec) {
-      const state = loadLoopState(args.iterationsRoot)
-      if (state === undefined) {
-        return { ok: false, action: args.action, iter: -1, iterDir: '', phase: 'none', error: 'no loop state — start with auto_pwa_loop_next' }
-      }
-      try {
-        if (args.action === 'iterate') {
-          const removals = args.removals ?? []
-          if (args.proposal === undefined && removals.length === 0) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: 'iterate 需要 proposal 或 removals' }
-          }
-          const baseConfig = `${state.currentIterDir}/config.yml`
-          if (!existsSync(baseConfig)) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: `base config not found: ${baseConfig}` }
-          }
-          const env = resolveEnv()
-          const cfg = parseConfig(readFileSync(baseConfig, 'utf8'))
-          const pre = applyRoundEdits(cfg, removals, args.proposal)
-          if (pre.errors.length > 0) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: pre.errors, error: 'removals/proposal 未通过物理门禁' }
-          }
-          const started = startIteration({
-            iterationsRoot: state.iterationsRoot,
-            baseConfigPath: baseConfig,
-            fitScriptPath: args.fitScriptPath ?? env.fitScript,
-            plotScriptPath: args.plotScriptPath ?? env.plotScript,
-          })
-          const newCfg = parseConfig(readFileSync(`${started.iterDir}/config.yml`, 'utf8'))
-          const applied = applyRoundEdits(newCfg, removals, args.proposal)
-          if (applied.errors.length > 0) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: applied.errors, error: '应用 removals/proposal 失败' }
-          }
-          const finalV = validateConfig(newCfg, defaultDb)
-          const finalXref = crossReferenceErrors(newCfg)
-          if (finalV.errors.length > 0 || finalXref.errors.length > 0) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, errors: [...finalV.errors, ...finalXref.errors], error: '写前总闸未通过' }
-          }
-          const target = `${started.iterDir}/config.yml`
-          snapshotOnce(target)
-          const tmp = `${target}.tmp-${Date.now().toString(36)}`
-          writeFileSync(tmp, dumpConfig(newCfg))
-          renameSync(tmp, target)
-          // B2：配置写入即记录
-          const gitRec = gitRecord(started.iterDir, [`${started.iterDir}/config.yml`, `${started.iterDir}/note.md`], `iter-${String(started.iter).padStart(3, '0')}: ${editSummary(args.proposal, removals)}`, proposalTrailers(started.iter, args.proposal, removals))
-          // 跑前门禁（与 run_fit / round / iterate 同一条闸）
-          const gate = gateBeforeFit({
-            iterDir: started.iterDir,
-            tool: 'auto_pwa_loop_decide',
-            fitScript: args.fitScriptPath ?? env.fitScript,
-          })
-          if (!gate.ok) {
-            return {
-              ok: false,
-              action: args.action,
-              iter: state.iter,
-              iterDir: state.currentIterDir,
-              phase: state.phase,
-              errors: gate.errors,
-              error: `跑前门禁拒绝（${gate.errors.length} errors）`,
-            }
-          }
-          const jobId = ctx.pwaFit.submit({ iterDir: started.iterDir }, ownerOf(exec))
-          state.baseIterDir = state.currentIterDir
-          state.currentIterDir = started.iterDir
-          state.iter = started.iter
-          state.rounds += 1
-          state.phase = 'evaluate'
-          if (args.prediction !== undefined) {
-            // `iter` 显式记下"作出预测的那一轮"，供 P1c 账本按键（不要靠验证时的 state.iter 猜）
-            state.pendingPrediction = { prediction: args.prediction, ...(args.hypothesis !== undefined ? { hypothesis: args.hypothesis } : {}), iter: started.iter }
-          } else {
-            state.pendingPrediction = undefined
-          }
-          saveLoopState(state)
-          return {
-            ok: true,
-            action: args.action,
-            iter: started.iter,
-            iterDir: started.iterDir,
-            jobId,
-            phase: state.phase,
-            changed: [
-              ...started.changed,
-              ...started.warnings.map((w) => `[warn] ${w}`),
-              ...applied.changed,
-              ...(gitRec.changed !== undefined ? [gitRec.changed] : []),
-              ...[...applied.warnings, ...finalXref.warnings, ...finalV.warnings].map((w) => `[warn] ${w.code}: ${w.message}`),
-            ],
-            errors: [],
-          }
-        }
-        if (args.action === 'rollback') {
-          const prev = previousIterDir(state.iterationsRoot, state.currentIterDir)
-          if (prev === undefined) {
-            return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: '没有更早的迭代可回退' }
-          }
-          const m = /iter-(\d+)/.exec(prev)
-          let dropped: string[] = []
-          try {
-            const log = new IterationLog({ rootDir: state.iterationsRoot })
-            // **回退必须显式写 `-=`**：被撤销轮次里"新增的态"原先**不留任何痕迹**
-            // （只写在结论散文里），导致后来的"是否仍在模型中"根本无法从结构化数据判定
-            // —— 实测 X2200/X2450/N1440/X2300_2m 都是这样消失的（docs §8.6 缺陷 1）。
-            const all = log.readAll()
-            dropped = droppedByRollback(all, state.iter)
-            const rollbackConclusion =
-              args.reason ?? '拟合退化（Hessian 不正定 / 撞边界 / 显著变差），已回退到上一轮'
-            const patch = {
-              // 回退 = 一轮被否掉的实验（原来是 'other'，会让"已否决/回退"清单漏掉它）
-              kind: 'removed' as const,
-              ...(dropped.length > 0 ? { changes: dropped.map((n) => `-= ${n}`) } : {}),
-              conclusion: rollbackConclusion,
-              nextPlan: `回退至 iter-${String(Number(m?.[1] ?? -1)).padStart(3, '0')}`,
-            }
-            // 该轮已被 note 记过 → **标注**它（append 会因重复 iter 抛错、信息全丢）；
-            // 只有从未记录过才新建一条。
-            if (log.annotate(state.iter, patch) === undefined) {
-              log.append({
-                iter: state.iter,
-                timestamp: new Date().toISOString(),
-                title: `回滚 iter-${String(state.iter).padStart(3, '0')}：${args.reason ?? '拟合退化'}`,
-                configPath: `${state.currentIterDir}/config.yml`,
-                iterDir: state.currentIterDir,
-                ...patch,
-              })
-            }
-          } catch {
-            // duplicate-iter guard
-          }
-          state.baseIterDir = prev
-          state.currentIterDir = prev
-          state.iter = m !== null ? Number(m[1]) : state.iter - 1
-          state.phase = 'propose'
-          saveLoopState(state)
-          // 把"本次回退撤销了哪些态"直接写进工具结果：模型当轮就能看到，
-          // 不必去日记里翻（§8.6 缺陷 1 的最后一环——结构化记录了，也要**送到**上下文里）
-          return {
-            ok: true,
-            action: args.action,
-            iter: state.iter,
-            iterDir: prev,
-            phase: state.phase,
-            ...(dropped.length > 0
-              ? {
-                  dropped,
-                  note: `本次回退撤销了 ${dropped.length} 个态（已记进日记为 \`-= 名字\`）：${dropped.join(', ')}`,
-                }
-              : {}),
-          }
-        }
-        // converge (force finalization)
-        const reason = args.reason ?? 'AI 判定收敛'
-        const { reportPath } = finalizeLoop(state, reason)
-        return { ok: true, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, reportPath }
-      } catch (e) {
-        return { ok: false, action: args.action, iter: state.iter, iterDir: state.currentIterDir, phase: state.phase, error: (e as Error).message }
-      }
-    },
-  }))
 }
