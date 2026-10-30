@@ -243,6 +243,16 @@ export class PwaFitLocalService extends FitService {
     return owner.id
   }
 
+  /** Env-gated stderr trace for goal parking (PWA_GOAL_PARK_DEBUG=1). */
+  private goalLog(message: string): void {
+    if ((process.env.PWA_GOAL_PARK_DEBUG ?? '').trim() !== '1') return
+    try {
+      console.error(`[auto-pwa] goal-park: ${message}`)
+    } catch {
+      // stderr must never break a fit
+    }
+  }
+
   /** Optional goal service (absent in sessions without the goal plugin). */
   private goals(): GoalServiceLike | undefined {
     try {
@@ -274,8 +284,12 @@ export class PwaFitLocalService extends FitService {
       if (goals === undefined) return
       const goal = goals.get(agent)
       // Only an active+armed goal has automatic continuation to suppress.
-      if (goal === undefined || goal.phase !== 'active' || goal.activation !== 'armed') return
+      if (goal === undefined || goal.phase !== 'active' || goal.activation !== 'armed') {
+        this.goalLog(`${key}: skip (goal=${goal?.id ?? 'none'} phase=${goal?.phase ?? '-'} activation=${goal?.activation ?? '-'})`)
+        return
+      }
       goals.disarm(agent)
+      this.goalLog(`${key}: parked goal ${goal.id} (active -> disarmed)`)
       this.parked.set(key, { agent, goalId: goal.id, count: 1 })
     } catch {
       // Best effort: a goal-plugin quirk must never break fit submission.
@@ -290,19 +304,31 @@ export class PwaFitLocalService extends FitService {
     const key = owner?.agent?.id ?? owner?.id
     if (key === undefined) return
     const record = this.parked.get(key)
+    this.goalLog(`${key ?? '?'}: settle -> unpark (parked=${record !== undefined} count=${record?.count ?? 0})`)
     if (record === undefined) return
     record.count -= 1
     if (record.count > 0) return
     this.parked.delete(key)
     try {
       const goals = this.goals()
-      if (goals === undefined) return
+      if (goals === undefined) {
+        this.goalLog(`${key}: no goals service at resume`)
+        return
+      }
       const goal = goals.get(record.agent)
-      if (goal === undefined || goal.id !== record.goalId) return
-      if (goal.phase !== 'active' || goal.activation !== 'disarmed') return
+      if (goal === undefined || goal.id !== record.goalId) {
+        this.goalLog(`${key}: skip resume (goal gone/replaced)`)
+        return
+      }
+      if (goal.phase !== 'active' || goal.activation !== 'disarmed') {
+        this.goalLog(`${key}: skip resume (phase=${goal.phase} activation=${goal.activation})`)
+        return
+      }
       goals.resume(record.agent, { id: goal.id, revision: goal.revision })
-    } catch {
+      this.goalLog(`${key}: resumed goal ${goal.id} (disarmed -> armed)`)
+    } catch (e) {
       // Best effort; the completion notice still wakes the agent.
+      this.goalLog(`${key}: resume error ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
@@ -388,7 +414,9 @@ export class PwaFitLocalService extends FitService {
         runner: this.localRunner,
         status: this.localRunner.submit(request.iterDir, {
           ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
-          command: { file, args: options.scriptArgs ?? [] },
+          // Execute through bash so the AI-authored run.sh needs no exec bit
+          // and always runs with a bash-compatible shebang-less body.
+          command: { file: '/bin/bash', args: [file, ...(options.scriptArgs ?? [])] },
         }),
       }
     }

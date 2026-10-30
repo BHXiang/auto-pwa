@@ -297,7 +297,7 @@ describe('PwaFitLocalService target dispatch', () => {
       capabilities: { gpu: false, slurm: true, gpuIssue: 'no CUDA' },
     })
     const id = service.submit({ iterDir: '/pwa/iter-003', target: 'slurm', runScript: 'run.sh' })
-    expect(runner.submitted[0]?.command).toEqual({ file: '/pwa/iter-003/run.sh', args: [] })
+    expect(runner.submitted[0]?.command).toEqual({ file: '/bin/bash', args: ['/pwa/iter-003/run.sh'] })
     expect(service.status(id).target).toBe('script')
   })
 

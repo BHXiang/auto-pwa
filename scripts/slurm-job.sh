@@ -54,7 +54,7 @@
 #   卡型   分区        QOS             GRES
 #   V100   gpu         pwanormal       gpu:v100:1      ← 本模板默认，通常更好排
 #   A100   gpupwa      pwadedicate     gpu:a100:1      ← gpupwa 常年满员，1 卡>2 卡
-#   A100   gpupwa      pwadebug        gpu:a100:1      ← 短调试队列（排队快、时长短）
+#   A100   gpupwa      pwadebug        gpu:a100:1      ← 短调试队列。排队快、15分钟kill
 #
 # 注意：换卡型要同时改 ★1/★2/★3 三行；只改 GRES 会提交到错误分区而被拒。
 # ctpwa 只支持 GPU，且当前按单卡跑；不要指望多卡自动加速。
