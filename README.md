@@ -240,10 +240,10 @@ python aifit.py --config config.yml --runs 1 --max-iter 500 --json results/fit.j
 [`scripts/pwa_optimizer.py`](scripts/pwa_optimizer.py) —— 自 `example/fit.py`
 vendored 的优化器内核（MIT），默认走 **reparam** 重参数化软墙路径（耦合极坐标
 `amp = amp_max·sigmoid(u)`、共振态 `theta = lo+(hi-lo)·sigmoid(u)`），随后对
-最优起点做 **damped-Newton polish**，并在**非活跃子空间**上判正定/求参数误差
+最优起点做 **damped-Newton polish**，并在**可行子空间**上判正定/求参数误差
 （被边界钉住的参数如实报 `null`）。`--optimizer projected|lbfgs` 可切到对照路径；
 `--no-polish`、`--amp-max`、`--amp-lambda`、`--vmax`、`--lr`/`--tol-grad`/
-`--tol-change`/`--history-size` 与 `FIT_*` 环境变量同名同默认值。
+`--tol-change`/`--history-size`、`--bound-margin` 与 `FIT_*` 环境变量同名同默认值。
 另外 `--config` 现在会把路径**显式**交给 `ctpwa.analysis(path)`（旧代码依赖
 `cwd/config.yml`，传 `--config other.yml` 会静默读错文件）。
 

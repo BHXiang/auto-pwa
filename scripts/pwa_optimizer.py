@@ -17,9 +17,14 @@ fb1b7b8 的 bug 修复）:
   4. 参数误差只在**非活跃子空间**上判正定并求逆：被 free_range 钉住的参数报 NaN，
      不再给出被边界截断的伪误差。
   5. Hessian 缓存：同一最佳点只算一次。
+  6. 终态 NLL 以 final_params 重算（reparam 的 nll_history[-1] 可能早于最后一步落地），
+     参数误差按 grouped `[Re.., Im.., θ]` 布局映射 —— 旧代码按交错 `sd[2i]/sd[2i+1]`
+     取，nc>=3 时会把 Im(c_1) 的误差安到 Re(c_2) 上（对应 ctpwa fa40d41）。
 
 只保留 e2e 拟合需要的部分；example/fit.py 里的绘图/摘要/断点续跑等
 （save_parameters / run_multiple_optimizations / print_* / save_*）不在此处。
+可行子空间判正定（analyze_hessian）、参数削减、边界诊断在 aifit.py 侧完成，
+这样本文件保持"只需 numpy+torch"（回归测试不依赖 ctpwa）。
 
 如 ctpwa 的 example/fit.py 再有优化器修复，请以它为准同步本文件。
 """
@@ -863,6 +868,13 @@ class UnifiedPWAOptimizer:
 
         final_params = params.clone().detach()
 
+        # ---- 终态 NLL：以 final_params 为准（同 ctpwa example/fit.py fa40d41）----
+        # reparam 的 nll_history[-1] 是最后一次 closure 的值，可能早于 optimizer
+        # 真正落地的最后一步。报告/正定性/误差必须来自**同一个参数点**，否则
+        # fit.json 里的 NLL 与同一行的正定/误差指向两个不同的点。
+        q_eval = final_params.clone().requires_grad_(True)
+        final_nll = float(self.analysis.getNLL(q_eval).item())
+
         # Hessian
         hessian_start = time.time()
         hessian_full = self.analysis.getHessian(final_params)
@@ -1284,9 +1296,20 @@ class UnifiedPWAOptimizer:
                                           dtype=torch.float32, device=self.device)
         coupling_imag_errors = torch.full((nc,), float("nan"),
                                           dtype=torch.float32, device=self.device)
+        if nc > 0:
+            # 固定参考 Re_0=1 / Im_0=0：不是统计量，误差是 0 而不是 NaN
+            # （同 ctpwa.diagnostics.map_errors_to_params；NaN 留给"被边界钉住"）
+            coupling_real_errors[0] = 0.0
+            coupling_imag_errors[0] = 0.0
+        # ⚠ getHessian 的布局是 grouped `[Re_0..Re_{n-1}, Im_0..Im_{n-1}, θ]`，
+        #   **不是**交错的 `[Re_0, Im_0, Re_1, Im_1, ...]`。去掉固定的 Re_0/Im_0
+        #   后 sd_red 的顺序是 `[Re_1.., Im_1.., θ..]`。旧代码按交错取
+        #   sd_red[2i]/sd_red[2i+1]，nc>=3 时会把 Im(c_1) 的误差安到 Re(c_2)
+        #   头上（nc=2 时 n_c_var=1，两种取法恰好重合，所以旧回归测试抓不到）。
+        #   见 ctpwa fa40d41 与 ctpwa.diagnostics.map_errors_to_params。
         for i in range(n_c_var):
-            coupling_real_errors[i + 1] = sd_red[2 * i].float()
-            coupling_imag_errors[i + 1] = sd_red[2 * i + 1].float()
+            coupling_real_errors[i + 1] = sd_red[i].float()
+            coupling_imag_errors[i + 1] = sd_red[n_c_var + i].float()
         res_errors = None
         if self.has_free_res:
             res_errors = sd_red[2 * n_c_var:].float()

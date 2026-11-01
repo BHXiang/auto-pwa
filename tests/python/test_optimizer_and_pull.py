@@ -187,13 +187,89 @@ def test_vendored_optimizer_converges_and_polishes():
 
 
 # ---------------------------------------------------------------------------
+# 3b. parameter errors must use the grouped [Re.., Im.., θ] layout
+# ---------------------------------------------------------------------------
+class _DiagAna:
+    """NLL = ½·pᵀHp for a diagonal H (so grad = H·p and the Hessian is exact)."""
+
+    def __init__(self, diag):
+        self.H = torch.diag(torch.tensor(diag, dtype=torch.float64))
+
+    def getNLL(self, p):
+        return 0.5 * (p * (self.H @ p)).sum()
+
+    def getHessian(self, p):
+        return self.H.clone()
+
+    def getFitFractions(self, c, h=None):
+        return torch.tensor([[1.0, 0.0]], dtype=torch.float64)
+
+    def getAmplitudeNames(self):
+        return ["w0"]
+
+
+def _diag_optimizer(nc, nres, diag):
+    """CPU optimizer over a quadratic with the given diagonal Hessian."""
+    n_params = 2 * nc + nres
+    assert len(diag) == n_params
+    fri = torch.tensor([[1.5] * nres, [1.0] * nres, [2.0] * nres], dtype=torch.float64)
+    o = object.__new__(po.UnifiedPWAOptimizer)
+    o.analysis = _DiagAna(diag)
+    o.params_names = [f"c{i}" for i in range(nc)] + [f"m{i}" for i in range(nres)]
+    o.device = "cpu"
+    o.best_nll = float("inf")
+    o.best_params = None
+    o.all_results = []
+    o.n_coupling_free = nc
+    o.n_res_free = nres
+    o.n_params = n_params
+    o.has_free_res = nres > 0
+    o._free_res_info = fri
+    o.v_max = 10000.0
+    o.project_grad = True
+    o.amp_max = 1000.0
+    o.amp_lambda = 1e-4
+    o.optimizer_kind = "reparam"
+    o._polish_stats = {}
+    o._hess_cache = None
+    if nres > 0:
+        o._lower = fri[1]
+        o._upper = fri[2]
+    return o
+
+
+def test_param_errors_use_grouped_layout_not_interleaved():
+    """getHessian/params are [Re_0.., Im_0.., θ] — NOT [Re_0, Im_0, Re_1, Im_1, ...].
+
+    A diagonal Hessian with a distinct scale per coordinate makes the two
+    conventions differ from nc=3 on. (With nc=2 there is only one free coupling,
+    so n_c_var=1 and both give the same answer — which is why the older smoke
+    test never caught the misalignment.)
+    """
+    # nc=3, nres=1 -> n_params=7, fixed indices 0 (Re_0) and 3 (Im_0).
+    opt = _diag_optimizer(3, 1, [1.0, 1.0, 2.0, 1.0, 3.0, 4.0, 5.0])
+    p = torch.zeros(7, dtype=torch.float64)     # grad = H·p = 0 -> no active set
+    cre, cim, res = opt.compute_param_errors(p)
+    # free order after dropping 0 and 3 is Re1, Re2, Im1, Im2, θ -> H = 1,2,3,4,5
+    sd = 1.0 / np.sqrt([1.0, 2.0, 3.0, 4.0, 5.0])
+    assert abs(float(cre[1]) - sd[0]) < 1e-6, (float(cre[1]), sd[0])
+    assert abs(float(cre[2]) - sd[1]) < 1e-6, (float(cre[2]), sd[1])   # grouped
+    assert abs(float(cim[1]) - sd[2]) < 1e-6, (float(cim[1]), sd[2])   # grouped
+    assert abs(float(cim[2]) - sd[3]) < 1e-6, (float(cim[2]), sd[3])
+    assert abs(float(res[0]) - sd[4]) < 1e-6, (float(res[0]), sd[4])
+    # the interleaved convention would report Im(c1) at sd[1] — make sure we did not
+    assert abs(float(cim[1]) - sd[1]) > 1e-3
+    # fixed reference stays 0 (not an error estimate)
+    assert float(cre[0]) == 0.0 and float(cim[0]) == 0.0
+
+
+# ---------------------------------------------------------------------------
 # 4. aifit JSON assembly
 # ---------------------------------------------------------------------------
 class _FakeOpt:
     n_coupling_free = 2
     n_res_free = 2
     has_free_res = True
-    device = "cpu"
     n_params = 6
     params_names = ["c0", "c1", "m_a", "m_b"]
     _lower = torch.tensor([1.0, 0.1], dtype=torch.float64)
@@ -209,6 +285,7 @@ class _FakeOpt:
             return torch.tensor([[0.6, 0.02], [0.4, 0.02]], dtype=torch.float64)
 
     analysis = _A()
+    v_max = 10000.0
 
     def extract_coupling_complex(self, p):
         return torch.complex(p[:2].float(), p[2:4].float())
@@ -220,6 +297,65 @@ class _FakeOpt:
         return torch.eye(6, dtype=torch.float64) * 4
 
 
+class _FakeReport:
+    """Stand-in for ctpwa.diagnostics.HessianSubspaceReport."""
+
+    ev_free = torch.tensor([-1.0, 2.0])
+    ev_reduced = torch.tensor([0.5, 2.0])
+    reduced_min_eigenvalue = 0.5
+    reduced_max_eigenvalue = 2.0
+    free_min_eigenvalue = -1.0
+    free_max_eigenvalue = 2.0
+    reduced_pd = True
+    free_pd = False
+    active_idx = torch.tensor([3])
+    kkt_max = 0.02
+    kkt_ok = True
+
+    @property
+    def n_active(self):
+        return int(self.active_idx.numel())
+
+
+def test_hessian_fields_report_feasible_subspace_criterion():
+    """positiveDefinite = reduced (KKT) subspace; positiveDefiniteFull = old test."""
+    f = aifit.hessian_fields(_FakeOpt(), _FakeReport())
+    assert f["positiveDefinite"] is True
+    assert f["positiveDefiniteFull"] is False
+    assert f["minEigenvalue"] == 0.5 and f["fullMinEigenvalue"] == -1.0
+    assert abs(f["conditionNumber"] - 4.0) < 1e-12
+    assert f["nActive"] == 1
+    assert f["activeParams"] == ["Im(c1)"]
+    assert f["nNegativeReduced"] == 0 and f["nNegativeFull"] == 1
+    assert f["kktGradMax"] == 0.02 and f["kktOk"] is True
+
+
+def test_boundary_diagnostics_flags_near_edge_resonance():
+    p = torch.tensor([1.0, 0.4, 0.0, -0.2, 1.5, 0.495], dtype=torch.float64)
+    grad = torch.zeros(6, dtype=torch.float64)
+    grad[5] = -7.0
+    out = aifit.boundary_diagnostics(_FakeOpt(), p, grad, 0.02)
+    assert [d["param"] for d in out] == ["m_b"]      # m_a sits mid-range
+    assert abs(out[0]["margin"] - (0.5 - 0.495) / 0.4) < 1e-12
+    assert out[0]["gradNll"] == 7.0
+    # a 2% margin must not flag the mid-range parameter, a wider one must
+    assert aifit.boundary_diagnostics(_FakeOpt(), p, grad, 0.9) != out
+
+
+def test_correlation_uses_the_feasible_subspace_only():
+    """With an active parameter the matrix must shrink to the reduced subspace."""
+    opt = _FakeOpt()
+    h = torch.eye(6, dtype=torch.float64) * 4
+    full = aifit._correlation_from_hessian(opt, h)
+    assert full["names"] == ["Re(c1)", "Im(c1)", "m_a", "m_b"]
+    reduced = aifit._correlation_from_hessian(opt, h, torch.tensor([1, 3, 5]))
+    assert reduced["names"] == ["Re(c1)", "Im(c1)", "m_b"]
+    assert len(reduced["matrix"]) == 3
+    # reordered idx must reorder names consistently
+    swapped = aifit._correlation_from_hessian(opt, h, torch.tensor([5, 1]))
+    assert swapped["names"] == ["m_b", "Re(c1)"]
+
+
 def test_build_best_json_flags_boundary_and_strips_nan():
     p = torch.tensor([1.0, 0.4, 0.0, -0.2, 1.5, 0.5], dtype=torch.float64)
     result = {"run_id": 0, "final_nll": -12.5, "is_positive_definite": True,
@@ -227,8 +363,7 @@ def test_build_best_json_flags_boundary_and_strips_nan():
     errs = (torch.tensor([float("nan"), 0.1]), torch.tensor([float("nan"), 0.2]),
             torch.tensor([float("nan"), 0.05]))
     warns: list[str] = []
-    red = aifit._reduced_hessian(_FakeOpt(), p)
-    corr = aifit._correlation_from_hessian(_FakeOpt(), red, True)
+    corr = aifit._correlation_from_hessian(_FakeOpt(), _FakeOpt()._get_hessian_cached(p))
     best = aifit.build_best_json(_FakeOpt(), p, result, errs, corr, warns)
     assert best["optimizerStatus"] == "reparam-tol-stop"
     assert best["fitFractions"][0]["fraction"] == 0.6
@@ -236,8 +371,91 @@ def test_build_best_json_flags_boundary_and_strips_nan():
     m_b = next(x for x in best["params"] if x["name"] == "m_b")
     assert m_b["atBoundary"] is True
     assert any("贴住 free_range" in w for w in warns)
+    # legacy field names (old kernel / older fit.json) still populate the new keys
+    assert best["positiveDefinite"] is True and best["minEigenvalue"] == 4.0
+    assert "boundaryDiagnostics" not in best   # no boundary list passed
     # strict JSON: _json_safe must drop every NaN/Inf
     assert "NaN" not in json.dumps(aifit._json_safe(best))
+
+
+def test_build_best_json_reports_unavailable_errors_and_boundary_list():
+    p = torch.tensor([1.0, 0.4, 0.0, -0.2, 1.5, 0.5], dtype=torch.float64)
+    result = {"run_id": 0, "final_nll": -12.5, "positiveDefinite": False,
+              "positiveDefiniteFull": False, "optimizer_status": "reparam-tol-stop"}
+    warns: list[str] = []
+    boundary = [{"param": "m_b", "kind": "resonance", "value": 0.5, "lower": 0.1,
+                 "upper": 0.5, "margin": 0.0, "gradNll": 7.0}]
+    best = aifit.build_best_json(_FakeOpt(), p, result, (None, None, None), None,
+                                 warns, boundary)
+    assert best["positiveDefinite"] is False
+    assert best["boundaryDiagnostics"][0]["param"] == "m_b"
+    assert any("参数误差不可用" in w for w in warns)
+    assert any("贴近边界" in w for w in warns)
+    assert "NaN" not in json.dumps(aifit._json_safe(best))
+
+
+def test_build_best_json_skips_fractions_on_cpu_backend():
+    """getFitFractions needs CUDA tensors on a CUDA build -> skip, don't crash."""
+    class _CpuOpt(_FakeOpt):
+        device = "cpu"
+
+    p = torch.tensor([1.0, 0.4, 0.0, -0.2, 1.5, 0.5], dtype=torch.float64)
+    result = {"run_id": 0, "final_nll": -12.5, "positiveDefinite": True,
+              "optimizer_status": "reparam-tol-stop"}
+    errs = (torch.zeros(2), torch.zeros(2), torch.zeros(2))
+    warns: list[str] = []
+    best = aifit.build_best_json(_CpuOpt(), p, result, errs, None, warns)
+    assert best["fitFractions"] is None
+    assert any("cpu-backend" in w for w in warns)
+
+
+def test_pinned_parameter_is_not_reported_as_indefinite():
+    """A boundary-pinned direction is infeasible -> reduced_pd True, free_pd False.
+
+    This is the whole point of ctpwa fa40d41 / example/fit.py: under the old
+    full-free-block test a parameter sitting on its free_range edge made the fit
+    look indefinite, which wiped out every parameter error and the correlation
+    matrix. Needs ctpwa.diagnostics; skipped when it is not installed.
+    """
+    try:
+        from ctpwa.diagnostics import analyze_hessian  # noqa: F401
+    except Exception:
+        print("  (skip: ctpwa.diagnostics 不可用)")
+        return
+
+    class _Ana:
+        """NLL = ½·pᵀHp + bᵀp — the linear term pins m0 against its lower edge."""
+
+        def __init__(self, diag, b):
+            self.H = torch.diag(torch.tensor(diag, dtype=torch.float64))
+            self.b = torch.tensor(b, dtype=torch.float64)
+
+        def getNLL(self, p):
+            return 0.5 * (p * (self.H @ p)).sum() + (self.b * p).sum()
+
+        def getHessian(self, p):
+            return self.H.clone()
+
+    opt = _diag_optimizer(3, 1, [1.0, 1.0, 2.0, 1.0, 3.0, 4.0, -5.0])
+    opt.analysis = _Ana([1.0, 1.0, 2.0, 1.0, 3.0, 4.0, -5.0], [0.0] * 6 + [20.0])
+    # m0 sits exactly on its lower bound with grad > 0 -> wants to go further out
+    p = torch.tensor([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], dtype=torch.float64)
+    rep, grad, _nll = aifit.hessian_report(opt, p)
+    fields = aifit.hessian_fields(opt, rep)
+    assert fields["positiveDefinite"] is True, fields           # KKT criterion
+    assert fields["positiveDefiniteFull"] is False, fields      # legacy criterion
+    assert fields["nActive"] == 1 and fields["activeParams"] == ["m0"]
+    assert fields["fullMinEigenvalue"] == -5.0
+    # the pinned direction is dropped from the feasible subspace, the rest still
+    # has errors; the pinned parameter itself is honestly NaN (no statistical error)
+    cre, cim, res = opt.compute_param_errors(p)
+    assert cre is not None and np.isfinite(float(cre[1]))
+    assert np.isnan(float(res[0]))
+    corr = aifit._correlation_from_hessian(opt, opt._get_hessian_cached(p), rep.reduced_idx)
+    assert "m0" not in corr["names"] and "Im(c2)" in corr["names"]
+    # and the boundary report names the culprit with its |dNLL/dtheta|
+    bnd = aifit.boundary_diagnostics(opt, p, grad, 0.02)
+    assert [d["param"] for d in bnd] == ["m0"] and bnd[0]["gradNll"] == 15.0
 
 
 def _main() -> int:

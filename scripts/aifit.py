@@ -14,6 +14,14 @@ ctpwa 契约的"包装层"实现（PLAN-STEP2 §1.3，引擎零改动）：
 "torch LBFGS + 就地 clamp + 梯度清零"边界伪收敛、耦合无界增长、被边界钉住的参数
 仍报伪误差等问题。`--optimizer projected|lbfgs` 可切到对照路径。
 
+正定性/误差与 example/fit.py 同口径（ctpwa fa40d41）：判据是**可行子空间**上的
+λmin > tau·λmax（KKT 二阶条件）——先剔除固定参考 Re_0/Im_0（Hessian 里这两行/列
+恒为 0），再剔除"贴边且梯度朝外"的活跃参数（那个方向根本不可行）。旧的全自由块
+`all(eig>0)` 在参数被 free_range 钉住时会把合法的约束极小误报成"不定"，进而让
+参数误差与相关矩阵整块消失。fit.json 里 `positiveDefinite` = 可行子空间判据，
+`positiveDefiniteFull` = 旧口径（仅供对照）；参数误差按 grouped
+`[Re.., Im.., θ]` 布局映射（旧的交错取法会把 Im(c₁) 的误差安到 Re(c₂) 上）。
+
 用法（cwd = 迭代目录，analysis() 从 cwd 读 config.yml，同 fit.py）：
   <ctpwa env>/bin/python aifit.py [--config config.yml] [--validate-only] \\
       [--runs N] [--max-iter M] [--seed S] [--json results/fit.json] \\
@@ -71,7 +79,7 @@ EXIT_USAGE = 2
 EXIT_NO_GPU = 3
 EXIT_FIT_FAILED = 4
 
-SCHEMA_VERSION = "0.3.0"
+SCHEMA_VERSION = "0.4.0"
 
 # 撞边界判定：|value - bound| < 1e-3 * (upper - lower) 记为贴边。
 BOUNDARY_FRACTION = 1e-3
@@ -112,6 +120,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--tol-grad", type=float, default=None, help="梯度收敛阈值（env FIT_TOL_GRAD，默认 1e-5）")
     p.add_argument("--tol-change", type=float, default=None, help="参数变化收敛阈值（env FIT_TOL_CHANGE，默认 1e-5）")
     p.add_argument("--history-size", type=int, default=None, help="LBFGS history 大小（env FIT_HISTORY_SIZE，默认 200）")
+    p.add_argument("--bound-margin", type=float, default=None,
+                   help="贴边告警阈值（相对 free_range 宽度；env FIT_BOUND_MARGIN，默认 0.02=2%%）"
+                        "—— 与 ctpwa example/fit.py 的 --bound-margin 同义")
     return p.parse_args(argv)
 
 
@@ -145,6 +156,7 @@ def optimizer_options(args: argparse.Namespace) -> dict:
         "tol_grad": args.tol_grad if args.tol_grad is not None else _env_float("FIT_TOL_GRAD", 1e-5),
         "tol_change": args.tol_change if args.tol_change is not None else _env_float("FIT_TOL_CHANGE", 1e-5),
         "history_size": args.history_size if args.history_size is not None else _env_int("FIT_HISTORY_SIZE", 200),
+        "bound_margin": args.bound_margin if args.bound_margin is not None else _env_float("FIT_BOUND_MARGIN", 0.02),
     }
 
 
@@ -373,58 +385,165 @@ def _num(t: torch.Tensor | None, i: int | None = None) -> float | None:
         return None
 
 
-def _reduced_hessian(opt: UnifiedPWAOptimizer, params: torch.Tensor) -> torch.Tensor:
-    """固定参数 (re_0=1, im_0=0) 剔除后的自由块 Hessian（与 example/fit.py 同约定）。"""
-    h_full = opt._get_hessian_cached(params)
-    mask = torch.ones(opt.n_params, dtype=torch.bool, device=opt.device)
-    mask[0] = False
-    mask[opt.n_coupling_free] = False
-    return h_full[mask][:, mask]
+# ---------------------------------------------------------------------------
+# Hessian 诊断（与 ctpwa example/fit.py 同源：ctpwa.diagnostics.analyze_hessian）
+#
+# example/fit.py 的 fa40d41 把"是否正定"从"全自由块 all(eig>0)"换成**可行子空间**
+# （KKT 二阶条件）：先剔除固定参考 Re_0/Im_0（它们在 getHessian 里是恒零行/列），
+# 再剔除"贴边且梯度朝外"的活跃参数（那个方向的负曲率根本不可行），只对剩下的
+# 方向判 λmin > tau·λmax。旧判据会把被 free_range 钉住的合法约束极小误报成
+# "不定"，于是参数误差与相关矩阵整块消失。
+# ---------------------------------------------------------------------------
+
+def _nll_and_grad(opt: UnifiedPWAOptimizer, params: torch.Tensor) -> tuple[float, torch.Tensor]:
+    """同一个参数点上的 (NLL, dNLL/dparams)。"""
+    q = params.detach().clone().requires_grad_(True)
+    nll = opt.analysis.getNLL(q)
+    return float(nll.item()), torch.autograd.grad(nll, q)[0].detach()
 
 
-def _eig_diagnostics(hessian: torch.Tensor) -> tuple[bool, float, float]:
-    """(正定, λmin, 条件数) —— 与 example/fit.py 的 optimize_single_run 同判据。"""
-    if hessian.numel() == 0:
-        return True, float("nan"), float("nan")
+def hessian_report(opt: UnifiedPWAOptimizer, params: torch.Tensor,
+                   hessian_full: torch.Tensor | None = None,
+                   tau: float = 1e-8, bound_margin: float = 1e-8,
+                   kkt_tol: float = 1e-2) -> tuple:
+    """可行子空间 Hessian 报告 -> (report, grad, nll)。
+
+    report 是 ctpwa.diagnostics.HessianSubspaceReport：判据看 ``reduced_pd``，
+    ``free_pd`` 保留旧口径供对照。ctpwa 太旧（没有 diagnostics 模块）时这里抛
+    ImportError，由调用方降级 —— 不因为诊断缺失就丢掉整轮拟合结果。
+    """
+    from ctpwa.diagnostics import analyze_hessian
+    if hessian_full is None:
+        hessian_full = opt._get_hessian_cached(params)
+    nll, grad = _nll_and_grad(opt, params)
+    lo, hi = opt.bounds(params)
+    fixed = torch.zeros(opt.n_params, dtype=torch.bool, device=opt.device)
+    fixed[0] = True                     # 固定参考 Re_0 = 1
+    fixed[opt.n_coupling_free] = True   # 固定参考 Im_0 = 0
+    report = analyze_hessian(hessian_full, params, grad, lo, hi,
+                             fixed_mask=fixed, tau=tau,
+                             bound_margin=bound_margin, kkt_tol=kkt_tol)
+    return report, grad, nll
+
+
+def hessian_fields(opt: UnifiedPWAOptimizer, report) -> dict:
+    """HessianSubspaceReport -> fit.json 字段（同 example/fit.py 的 _hessian_fields）。"""
+    evr, evf = report.ev_reduced, report.ev_free
+    rm = report.reduced_min_eigenvalue
+    rx = report.reduced_max_eigenvalue
+    return {
+        # 判据：可行（非活跃）子空间的正定性 = KKT 二阶条件
+        "positiveDefinite": bool(report.reduced_pd),
+        # 旧口径：全自由块（含贴边参数朝外的负曲率），仅用于对照
+        "positiveDefiniteFull": bool(report.free_pd),
+        "minEigenvalue": rm,
+        "maxEigenvalue": rx,
+        "conditionNumber": (rx / rm) if (rm == rm and rm > 0) else float("inf"),
+        "fullMinEigenvalue": report.free_min_eigenvalue,
+        "fullMaxEigenvalue": report.free_max_eigenvalue,
+        "nNegativeReduced": int((evr < 0).sum().item()) if evr.numel() else 0,
+        "nNegativeFull": int((evf < 0).sum().item()) if evf.numel() else 0,
+        "nActive": int(report.n_active),
+        "activeParams": [_param_label(opt, int(i)) for i in report.active_idx.tolist()],
+        "kktGradMax": float(report.kkt_max),
+        "kktOk": bool(report.kkt_ok),
+    }
+
+
+def _run_report_fields(opt: UnifiedPWAOptimizer, result: dict, warnings: list[str],
+                       run_id: int) -> dict:
+    """单个 run 终点的可行子空间诊断（失败时回退到内核的全自由块字段）。
+
+    result 需含 ``final_params``；带了 ``hessian_full`` 就复用（省一次 getHessian）。
+    诊断结果就地写回 result，并返回同一份 dict 供 runSummaries 使用。
+    """
     try:
-        ev = torch.linalg.eigvalsh(hessian)
-        is_pd = bool(torch.all(ev > 0).item())
-        min_eig = float(ev[0].item())
-        max_eig = float(ev[-1].item())
-        cond = (max_eig / min_eig) if min_eig > 0 else float("inf")
-        return is_pd, min_eig, cond
-    except Exception:
-        return False, float("nan"), float("nan")
+        report, _grad, _nll = hessian_report(
+            opt, result["final_params"], result.get("hessian_full"))
+        fields = hessian_fields(opt, report)
+    except Exception as e:  # noqa: BLE001 - 旧 ctpwa / CPU 后端缺块时降级
+        warnings.append(
+            f"run {run_id} 的可行子空间诊断不可用（回退全自由块判据）: "
+            f"{type(e).__name__}: {e}")
+        fields = {
+            "positiveDefinite": bool(result.get("is_positive_definite", False)),
+            "positiveDefiniteFull": bool(result.get("is_positive_definite", False)),
+            "minEigenvalue": result.get("min_eigenvalue"),
+            "maxEigenvalue": result.get("max_eigenvalue"),
+            "conditionNumber": result.get("condition_number"),
+        }
+    result.update(fields)
+    return fields
 
 
-def _correlation_from_hessian(opt: UnifiedPWAOptimizer, hessian: torch.Tensor,
-                              is_pos_def: bool) -> dict | None:
-    """自由块 Hessian 反演 -> 相关矩阵（名称对齐 fixed_mask 过滤后的顺序：
-    Re(c1), Im(c1), ..., Re(c_{n-1}), Im(c_{n-1}), res_0, ...）。不 PD 返回 None。"""
-    if not is_pos_def:
+def _correlation_from_hessian(opt: UnifiedPWAOptimizer, hessian_full: torch.Tensor,
+                              idx: torch.Tensor | None = None) -> dict | None:
+    """相关矩阵：在**可行子空间**（idx）上反演 Hessian。
+
+    idx 是 ctpwa.diagnostics 给出的 ``reduced_idx``（全参数下标；布局是 grouped
+    ``[Re_0.., Im_0.., θ..]``）。传 None 时退化为"全部非固定参数"，等价于不存在
+    贴边参数的情形。子空间不 PD 时不该调用（求逆无意义），由调用方门控。
+    """
+    if idx is None:
+        idx = torch.tensor(
+            [k for k in range(opt.n_params)
+             if k != 0 and k != opt.n_coupling_free], dtype=torch.long)
+    idx = idx.detach().to(device=hessian_full.device, dtype=torch.long)
+    if idx.numel() == 0:
         return None
     try:
-        h = hessian.double()
-        if not bool(torch.all(torch.linalg.eigvalsh(h) > 0).item()):
-            return None
+        h = hessian_full.index_select(0, idx).index_select(1, idx).double()
+        h = 0.5 * (h + h.t())
         cov = torch.linalg.inv(h)
         sd = torch.sqrt(torch.diag(cov).clamp(min=0.0))
         denom = torch.outer(sd, sd).clamp(min=1e-300)
         corr = (cov / denom).clamp(-1.0, 1.0)
     except Exception:
         return None
-    names: list[str] = []
-    for i in range(1, opt.n_coupling_free):
-        names.append(f"Re({opt.params_names[i]})")
-        names.append(f"Im({opt.params_names[i]})")
-    for j in range(opt.n_res_free):
-        names.append(opt.params_names[opt.n_coupling_free + j])
+    names = [_param_label(opt, int(k)) for k in idx.tolist()]
     return {"names": names, "matrix": [[float(x) for x in row] for row in corr.cpu().numpy()]}
+
+
+def boundary_diagnostics(opt: UnifiedPWAOptimizer, params: torch.Tensor,
+                         grad: torch.Tensor, margin: float) -> list[dict]:
+    """贴边参数清单（同 example/fit.py 的 report_bound_margins）。
+
+    margin 是**相对 free_range 宽度**的边距阈值（默认 2%，env FIT_BOUND_MARGIN）。
+    贴边的 θ 是"假非正定"的头号来源：顶到边界后 reparam 的 sigmoid 梯度→0，
+    优化器按容差停机，但物理空间 |∂NLL/∂θ| 仍然很大 → Hessian 是在边界/非驻点上
+    评估的。fit.py 对耦合只查实部，这里用复幅度 |c|（reparam 参数化的是幅度，
+    等价或更严）。
+    """
+    p = params.detach()
+    out: list[dict] = []
+    nc = opt.n_coupling_free
+    if opt.has_free_res:
+        for j in range(opt.n_res_free):
+            k = 2 * nc + j
+            v = float(p[k])
+            lo, hi = float(opt._lower[j]), float(opt._upper[j])
+            mg = max(0.0, min(v - lo, hi - v)) / max(hi - lo, 1e-30)
+            # 越界不该出现（polish / bounds 都会把参数投影回盒内）；真出现了也
+            # 按 0 报，而不是输出一个负的"边距"，那会让人误读成"离边界还很远"。
+            if mg < margin:
+                out.append({"param": opt.params_names[nc + j], "kind": "resonance",
+                            "value": v, "lower": lo, "upper": hi,
+                            "margin": mg, "gradNll": abs(float(grad[k]))})
+    if nc > 1:
+        re, im = p[1:nc], p[nc + 1:2 * nc]
+        amp = float(torch.sqrt(re * re + im * im).max().item())
+        v_max = float(opt.v_max)
+        if v_max > 0 and amp > (1.0 - margin) * v_max:
+            out.append({"param": "coupling |c| (对照 v_max)", "kind": "coupling",
+                        "value": amp, "lower": -v_max, "upper": v_max,
+                        "margin": 1.0 - amp / v_max, "gradNll": None})
+    out.sort(key=lambda d: d["margin"])
+    return out
 
 
 def build_best_json(opt: UnifiedPWAOptimizer, final_params: torch.Tensor, result: dict,
                     errors: tuple | None, correlation: dict | None,
-                    warnings: list[str]) -> dict:
+                    warnings: list[str], boundary: list[dict] | None = None) -> dict:
     params: list[dict] = []
     coupling = opt.extract_coupling_complex(final_params)
     coupling_np = coupling.cpu().numpy()
@@ -465,17 +584,48 @@ def build_best_json(opt: UnifiedPWAOptimizer, final_params: torch.Tensor, result
                 "atBoundary": at_boundary,
             })
 
+    def _pick(name: str, legacy: str | None = None, default=None):
+        """新字段名优先，回退旧字段名（兼容外部 fit.json / 旧版内核）。"""
+        if name in result:
+            return result[name]
+        return result.get(legacy, default) if legacy is not None else default
+
     best: dict = {
         "runId": result["run_id"],
         "nll": float(result["final_nll"]),
-        "positiveDefinite": bool(result["is_positive_definite"]),
-        "minEigenvalue": result.get("min_eigenvalue"),
-        "conditionNumber": result.get("condition_number"),
+        # 正定性：positiveDefinite = 可行子空间（KKT 二阶条件，fit.py fa40d41 起的
+        # 口径）；positiveDefiniteFull = 全自由块（旧口径，仅供对照）。
+        "positiveDefinite": bool(_pick("positiveDefinite", "is_positive_definite", False)),
+        "positiveDefiniteFull": _pick("positiveDefiniteFull", "is_positive_definite_full"),
+        "minEigenvalue": _pick("minEigenvalue", "min_eigenvalue"),
+        "maxEigenvalue": _pick("maxEigenvalue", "max_eigenvalue"),
+        "conditionNumber": _pick("conditionNumber", "condition_number"),
+        "fullMinEigenvalue": _pick("fullMinEigenvalue", "full_min_eigenvalue"),
+        "fullMaxEigenvalue": _pick("fullMaxEigenvalue", "full_max_eigenvalue"),
+        "nActive": _pick("nActive", "n_active"),
+        "activeParams": _pick("activeParams", "active_params"),
+        "nNegativeReduced": _pick("nNegativeReduced", "n_negative_reduced"),
+        "nNegativeFull": _pick("nNegativeFull", "n_negative_full"),
+        "kktGradMax": _pick("kktGradMax", "kkt_grad_max"),
+        "kktOk": _pick("kktOk", "kkt_ok"),
         "optimizerStatus": result.get("optimizer_status"),
         "params": params,
         "fitFractions": None,
         "branchFractions": None,
     }
+    if boundary is not None:
+        # 总是给数组（哪怕为空）——消费方不必区分"没算"与"算了但没贴边"
+        best["boundaryDiagnostics"] = boundary
+    if boundary:
+        warnings.append(
+            f"{len(boundary)} 个参数贴近边界（边距 < --bound-margin 阈值，见 boundaryDiagnostics）："
+            + ", ".join(d["param"] for d in boundary[:6])
+            + (" ..." if len(boundary) > 6 else ""))
+    if errors is None or all(e is None for e in errors):
+        warnings.append(
+            "参数误差不可用：可行子空间 Hessian 不正定（看 best.nActive / minEigenvalue 与 "
+            "fit.log 的 [polish]/[errors] 行）—— 贴边自由度没有统计误差，只能按单侧限制报告，"
+            "或放宽 free_range 重跑；相关矩阵同样不给")
     if correlation is not None:
         best["correlation"] = correlation
 
@@ -548,6 +698,10 @@ def warm_start_params(opt: UnifiedPWAOptimizer, warm_path: str, initial: torch.T
     except Exception as e:
         raise SystemExit(f"[aifit] --warm 读取失败 {warm_path}: {type(e).__name__}: {e}")
     best = prev.get("best") if isinstance(prev, dict) else None
+    if not isinstance(best, dict) and isinstance(prev, dict):
+        fit = prev.get("fit")
+        if isinstance(fit, dict):
+            best = fit.get("best")
     entries = best.get("params") if isinstance(best, dict) else None
     if not isinstance(entries, list) or not entries:
         raise SystemExit(f"[aifit] --warm {warm_path}: 没有 best.params（这不是一份拟合结果？）")
@@ -696,12 +850,17 @@ def _run_fit(args: argparse.Namespace) -> int:
                 tolerance_change=opts["tol_change"], history_size=opts["history_size"],
             )
             results.append(result)
+            # 每 run 的正定/误差口径与 fit.py 一致：可行子空间（剔除贴边活跃参数），
+            # 而不是全自由块 all(eig>0) —— 后者会把被 free_range 钉住的合法约束极小
+            # 误报成"不定"。诊断失败时回退到内核的全自由块判据（不丢整轮结果）。
+            fields = _run_report_fields(opt, result, warnings, i)
             # 运行期进度：stdout 走管道是块缓冲，且 ctpwa job 是 final-output job
             # （结算前注册表里没有字节），所以必须逐 run 显式 flush 一行，否则
             # fit_status 在拟合跑完前只能看到 ctpwa 的启动块。
             print(
                 f"[aifit] run {i + 1}/{args.runs} NLL={result['final_nll']:.6f} "
-                f"PD={result['is_positive_definite']} iters={result['iterations']} "
+                f"PD={fields.get('positiveDefinite')} (full={fields.get('positiveDefiniteFull')}, "
+                f"active={fields.get('nActive')}) iters={result['iterations']} "
                 f"t={result['time']:.1f}s",
                 flush=True,
             )
@@ -710,8 +869,10 @@ def _run_fit(args: argparse.Namespace) -> int:
                 "nll": float(result["final_nll"]),
                 "iterations": result["iterations"],
                 "timeSec": round(result["time"], 2),
-                "positiveDefinite": bool(result["is_positive_definite"]),
-                "minEigenvalue": result["min_eigenvalue"],
+                "positiveDefinite": fields.get("positiveDefinite"),
+                "positiveDefiniteFull": fields.get("positiveDefiniteFull"),
+                "nActive": fields.get("nActive"),
+                "minEigenvalue": fields.get("minEigenvalue"),
                 "optimizerStatus": result.get("optimizer_status"),
             })
             # 人读 NLL 历史（兼容旧工具链）
@@ -738,50 +899,81 @@ def _run_fit(args: argparse.Namespace) -> int:
     # ---- 二阶 polish（damped Newton + 活跃集）：把最优起点再收敛一步 ----
     if opts["polish"]:
         try:
+            nll_before = float(best["final_nll"])
+            pd_before = bool(best.get("positiveDefinite", False))
             p2, nll2, pd2 = opt.polish_damped_newton(
                 best["final_params"], max_steps=int(opt.optimizer_polish_steps))
-            warnings.append(f"polish: NLL {best['final_nll']:.6f} → {nll2:.6f} "
-                            f"(Δ={nll2 - best['final_nll']:+.4f}), PD={pd2}")
-            if nll2 <= best["final_nll"]:
+            # 采纳条件与 example/fit.py 一致：NLL 不显著变差，**或**正定判定变好。
+            # 只在 nll2 <= final_nll 时采纳是旧行为：它丢掉的正是"贴边活跃被处理对、
+            # 可行子空间由不定变正定、但 NLL 涨了 1e-6 量级"的那个点 → 误差仍是空的。
+            if nll2 <= nll_before + 1e-6 or (pd2 and not pd_before):
                 best["final_params"] = p2.clone()
                 best["final_nll"] = float(nll2)
-                best["is_positive_definite"] = bool(pd2)
+                # 同步优化器内部状态：否则分波份额/摘要仍用 polish *之前* 的点
+                opt.best_params = p2.clone()
+                opt.best_nll = float(nll2)
+                opt.best_result = best
+                # 子空间字段不在这里重算：best["hessian_full"] 是 polish *之前* 的
+                # Hessian，拿它配抛光后的参数会得到"甲点曲率、乙点参数"的错误诊断。
+                # 下面的终点诊断会用 polish 播种的缓存（同一点）统一刷新。
+                upgraded = nll2 > nll_before
+                warnings.append(
+                    f"polish: NLL {nll_before:.6f} → {float(nll2):.6f} "
+                    f"(Δ={float(nll2) - nll_before:+.4f}), 正定(可行子空间)={pd2}"
+                    + ("（NLL 略升但正定判定改进 → 采纳，以便报误差）" if upgraded else ""))
+            else:
+                warnings.append(f"polish: 未采纳（NLL {nll_before:.6f} → {float(nll2):.6f}, "
+                                f"正定={pd2}）")
         except Exception as e:
             warnings.append(f"抛光失败（保留未抛光解）: {type(e).__name__}: {e}")
 
-    # ---- 抛光后重算诊断（正定性/误差/相关/份额都对齐最终参数点） ----
-    # 正定性口径：跑过 polish 时用它的**非活跃子空间**判据（盒约束的正确二阶条件）；
-    # 否则用该 run 的自由块判据。全自由块判据另算，仅用于报告与相关矩阵门控——
-    # 有参数被 free_range 钉住时两者会不一致，此时误差仍可由非活跃子空间给出。
+    # ---- 终点诊断：NLL/正定/误差/相关/边距全部对齐同一个参数点 ----
+    # 口径与 example/fit.py 一致：可行子空间（KKT 二阶条件）才是判据，全自由块
+    # 判据只作为 positiveDefiniteFull 保留对照。CPU 后端有个别 Hessian 块尚未移植
+    # （ctpwa::not_implemented），所以这里降级为"误差/相关不可用"，而不是让整轮
+    # 拟合在最后一步丢掉。
     final_params = best["final_params"]
-    active_pd = bool(best["is_positive_definite"])
-    # CPU 后端有个别 Hessian 块尚未移植（ctpwa::not_implemented）。拟合本身是有效的，
-    # 所以这里降级为 "误差/相关不可用"，而不是让整轮拟合在最后一步丢掉。
-    reduced_h = None
-    is_pd_full = None
-    min_eig = None
-    cond = None
+    report = None
+    grad_final = None
+    boundary: list[dict] | None = None
     errors = None
     correlation = None
     try:
-        reduced_h = _reduced_hessian(opt, final_params)
-        is_pd_full, min_eig, cond = _eig_diagnostics(reduced_h)
-        best["is_positive_definite"] = active_pd
-        best["min_eigenvalue"] = min_eig
-        best["condition_number"] = cond
-        if not active_pd:
-            warnings.append("非活跃子空间 Hessian 不正定 → 参数误差不可用（见 [polish]/[errors] 输出）")
-        elif not is_pd_full:
-            warnings.append(f"全自由块 Hessian 不正定（λmin={min_eig:.3e}）——可能有参数被 "
-                            f"free_range 钉住；参数误差按非活跃子空间给出")
-        errors = opt.compute_param_errors(final_params)
-        correlation = _correlation_from_hessian(opt, reduced_h, is_pd_full)
+        report, grad_final, nll_final = hessian_report(opt, final_params)
+        # 报告/正定/误差必须来自同一个点：kernel 已按 final_params 重算 NLL，
+        # 这里再对齐一次（polish 之后的点尤其要）。
+        best["final_nll"] = nll_final
+        best.update(hessian_fields(opt, report))
     except Exception as e:
         warnings.append(
-            f"hessian-unavailable: {type(e).__name__}: {e} —— 拟合结果本身有效，但参数误差/相关矩阵"
-            f"/正定性不可用（CPU 后端部分 Hessian 块未移植时会出现；换 GPU 后端可恢复）"
-        )
-    best_json = build_best_json(opt, final_params, best, errors, correlation, warnings)
+            f"hessian-unavailable: 可行子空间诊断不可用（{type(e).__name__}: {e}）——"
+            f"回退到全自由块判据；参数误差/相关矩阵可能缺失。"
+            f"需要 ctpwa.diagnostics.analyze_hessian（fa40d41 起）；"
+            f"CPU 后端部分 Hessian 块未移植时也会出现，换 GPU 后端可恢复")
+
+    pd = bool(best.get("positiveDefinite", False))
+    pd_full = best.get("positiveDefiniteFull")
+    if pd and pd_full is False:
+        warnings.append(
+            f"全自由块 Hessian 不正定（λmin_full={best.get('fullMinEigenvalue')}）但可行子空间正定"
+            f"（{best.get('nActive')} 个参数贴边：{', '.join(best.get('activeParams') or [])}）——"
+            f"朝外方向的负曲率是边界效应，按 KKT 二阶条件不构成问题；误差按非活跃子空间给出")
+    elif not pd:
+        warnings.append(
+            "非活跃子空间 Hessian 不正定 → 参数误差/相关矩阵不可用（见 fit.log 的 "
+            "[polish]/[errors] 行）；可放宽 free_range、换起点或加先验后重跑")
+    try:
+        if pd:
+            # 误差与相关矩阵只在可行子空间正定时有意义（这两步都命中 Hessian 缓存）
+            errors = opt.compute_param_errors(final_params)
+            correlation = _correlation_from_hessian(
+                opt, opt._get_hessian_cached(final_params),
+                report.reduced_idx if report is not None else None)
+    except Exception as e:
+        warnings.append(f"参数误差/相关矩阵不可用: {type(e).__name__}: {e}")
+    if report is not None and grad_final is not None:
+        boundary = boundary_diagnostics(opt, final_params, grad_final, opts["bound_margin"])
+    best_json = build_best_json(opt, final_params, best, errors, correlation, warnings, boundary)
 
     out = {
         "schemaVersion": SCHEMA_VERSION,
@@ -830,6 +1022,12 @@ def _run_fit(args: argparse.Namespace) -> int:
             f.write(f"耦合参数数量: {opt.n_coupling_free}\n")
             f.write(f"自由共振态参数: {opt.n_res_free}\n")
             f.write(f"最佳NLL: {best['final_nll']:.6f}\n")
+            # 注意格式：fit-summary.ts 的文本回退用 /正定\s+True/ 判正定，
+            # 所以这里必须把 "正定 <bool>" 写成一行（旧版只有表头，回退解析恒得 false）。
+            f.write(f"正定 {best_json['positiveDefinite']}  (可行子空间判据; "
+                    f"全自由块={best_json['positiveDefiniteFull']}, "
+                    f"active={best_json['nActive']}, "
+                    f"λmin={best_json['minEigenvalue']})\n")
             f.write("参数文件: fit.json（机器/AI 主通道）\n")
             f.write("NLL历史: nll_history.txt\n\n")
             f.write("运行结果 (按NLL排序):\n")
