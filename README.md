@@ -1,7 +1,7 @@
 # auto-pwa
 
 面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）的 **AI 驱动分波分析（PWA）插件**：把
-ctpwa 拟合包成 24 个 `auto_pwa_*` 工具，覆盖从起草 config 到迭代收敛的全过程。
+ctpwa 拟合包成 25 个 `auto_pwa_*` 工具，覆盖从起草 config 到迭代收敛的全过程。
 
 模型不需要记住 J^PC 规则——规则在代码里算：
 
@@ -52,7 +52,7 @@ dsh plugin --profile web add link:"$PWD"
 ```
 
 安装或升级插件后要**完全重启 harness**，并在**新会话**里确认工具已加载（问"列出你可用的 `auto_pwa_*` 工具"，
-应有 24 个）。运行中的旧会话不会自动获得新工具。
+应有 25 个）。运行中的旧会话不会自动获得新工具。
 
 ## 配置
 
