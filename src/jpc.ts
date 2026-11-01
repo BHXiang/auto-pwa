@@ -12,18 +12,24 @@
  *   - `isFermion`        == Particle::is_fermion (include/Config.cuh):
  *                         half-integer spin.
  *
- * C-parity of a pair is only computed when it is well-defined and safe:
- *   - particle-antiparticle pairs: identified by PDGID when the config gives
- *     one (PDGID(B) === -PDGID(A)), else by the CONJUGATE_PAIRS name table:
- *     C = (-1)^(L+S)  (spin-0 meson pairs reduce to (-1)^L);
- *   - identical groups: C = (-1)^(L+S) fixed to +1 (bosons) / -1 (fermions),
- *     which IS the identical selection rule — and, matching the engine, only
- *     a DECLARED Constraints.identical group counts (the engine's ComSL sees
- *     only identical_group tags; the PDGID derivation lives in
- *     particle-info.ts / validation and never silently changes what the
- *     engine computes).
- * Everything else (charged pairs like K+ eta, pi+ pi0, non-C-eigenstate
- * pairs) is treated as C-undefined and falls back to J^P-only checks — a
+ * C parity of a pair is assigned by PHYSICS KIND — the rule depends on whether
+ * charge conjugation exchanges the two daughters:
+ *   - particle-antiparticle pairs (identified by PDGID when the config gives
+ *     one, PDGID(B) === -PDGID(A), else by the CONJUGATE_PAIRS name table):
+ *     the orbital rule — boson pairs C = (-1)^L, fermion pairs C = (-1)^(L+S).
+ *     This is the ONLY L-dependent case;
+ *   - identical groups (a DECLARED Constraints.identical group — the engine's
+ *     ComSL sees only identical_group tags; the PDGID derivation lives in
+ *     particle-info.ts / validation and never silently changes what the engine
+ *     computes): the (-1)^(L+S) Bose/Fermi selection rule is kept because the
+ *     engine needs it, but it is NOT a C value. C = C(a)^2 = +1 only when the
+ *     species is itself a C eigenstate (pi0 pi0 yes, K+ K+ no), and an
+ *     identical fermion pair never has one;
+ *   - any other pair: C = C1*C2 when BOTH daughters are C eigenstates
+ *     (eta eta', eta pi0, rho0 pi0) — with NO (-1)^L, because charge
+ *     conjugation never exchanges a distinct pair.
+ * Everything else (K+ eta, pi+ pi0, or any pair with a non-C-eigenstate
+ * member) is treated as C-undefined and falls back to J^P-only checks — a
  * missing C is safer than a wrong C.
  *
  * Pure functions; no I/O.
@@ -70,8 +76,10 @@ export type PairKind = 'identical-boson' | 'identical-fermion' | 'pair-anti' | '
 
 export interface PairKindResult {
   kind: PairKind
-  /** Whether C is well-defined for the pair. */
+  /** Whether C is well-defined for the pair (see the rule in `pairJPC`). */
   cDefined: boolean
+  /** Per-daughter C eigenvalue (undefined = not a C eigenstate). */
+  c: [1 | -1 | undefined, 1 | -1 | undefined]
 }
 
 /** Daughter reference accepted by pairKind / pairJPC. */
@@ -106,13 +114,20 @@ export function pairKind(
   identicalGroups?: readonly (readonly string[])[],
   db?: ResonanceDb,
 ): PairKindResult {
+  // Per-daughter C from the PDG table (cascaded through pdgid -> name). Only a
+  // C eigenstate has one; a C value is never inferred from the pair kind.
+  const c: [1 | -1 | undefined, 1 | -1 | undefined] =
+    db !== undefined ? [resolveC(db, d1), resolveC(db, d2)] : [undefined, undefined]
+  // A conjugate pair takes its C from the orbital rule, so it is defined even
+  // though neither member is a C eigenstate (K+ K-). Every other pair needs
+  // both members to be C eigenstates.
+  const cDefinedFor = (kind: PairKind): boolean =>
+    kind === 'pair-anti' ? true : c[0] !== undefined && c[1] !== undefined
   if (d1.name !== undefined && d2.name !== undefined) {
     const group = identicalGroups?.find((g) => g.includes(d1.name!) && g.includes(d2.name!))
     if (group) {
-      return {
-        kind: isFermion(d1.j) ? 'identical-fermion' : 'identical-boson',
-        cDefined: true,
-      }
+      const kind: PairKind = isFermion(d1.j) ? 'identical-fermion' : 'identical-boson'
+      return { kind, cDefined: cDefinedFor(kind), c }
     }
   }
   const conjugate =
@@ -122,8 +137,8 @@ export function pairKind(
         d2.name !== undefined &&
         d1.name !== d2.name &&
         particleKey(conjugateOf(d1.name) ?? '') === particleKey(d2.name)
-  if (conjugate) return { kind: 'pair-anti', cDefined: true }
-  return { kind: 'distinct', cDefined: false }
+  if (conjugate) return { kind: 'pair-anti', cDefined: true, c }
+  return { kind: 'distinct', cDefined: cDefinedFor('distinct'), c }
 }
 
 export interface EnumerateSLOptions {
@@ -208,7 +223,7 @@ export function pairJPC(
   options: PairJPCOptions = {},
 ): JPCWave[] {
   const { maxL = 4, identicalGroups, slFilter, db } = options
-  const { kind, cDefined } = pairKind(d1, d2, identicalGroups, db)
+  const { kind, cDefined, c: [c1, c2] } = pairKind(d1, d2, identicalGroups, db)
   const twoJ2 = Math.round(d1.j * 2)
   const twoJ3 = Math.round(d2.j * 2)
   const byJpc = new Map<string, JPCWave>()
@@ -222,18 +237,32 @@ export function pairJPC(
     for (let L = 0; L <= lCap; L++) {
       // Parity of R -> d1 + d2.
       const P: 1 | -1 = (d1.p * d2.p * (L % 2 === 0 ? 1 : -1)) as 1 | -1
-      // C per pair kind; identical groups apply the (-1)^(L+S) selection rule.
+      // C per pair kind. ONLY a particle-antiparticle pair may take an
+      // L-dependent C; every other pair is a product of the daughters' C.
       let C: 1 | -1 | undefined
       if (kind === 'identical-boson') {
+        // Bose selection rule (-1)^(L+S) = +1 — the ENGINE needs it, keep it.
         if (((L + S) % 2 === 0 ? 1 : -1) !== 1) continue
-        C = 1
+        // C = C(a)^2 = +1, but only when the species IS a C eigenstate.
+        // Identical is not the same as self-conjugate: K+ K+ has no C.
+        C = c1 !== undefined ? 1 : undefined
       } else if (kind === 'identical-fermion') {
+        // Fermi selection rule (-1)^(L+S) = -1 — the ENGINE needs it, keep it.
         if (((L + S) % 2 === 0 ? 1 : -1) !== -1) continue
-        C = -1
-      } else if (kind === 'pair-anti') {
-        C = ((L + S) % 2 === 0 ? 1 : -1) as 1 | -1
-      } else {
+        // No self-conjugate fermion exists -> an identical fermion pair
+        // (Lambda Lambda, p p) is never a C eigenstate.
         C = undefined
+      } else if (kind === 'pair-anti') {
+        // Particle-antiparticle pair — the ONLY L-dependent rule.
+        // Boson-antiparticle pairs: C = (-1)^L (spin does not enter).
+        // Fermion-antifermion pairs: C = (-1)^(L+S).
+        const bosonPair = !isFermion(d1.j) && !isFermion(d2.j)
+        C = (bosonPair ? (L % 2 === 0 ? 1 : -1) : ((L + S) % 2 === 0 ? 1 : -1)) as 1 | -1
+      } else {
+        // Distinct daughters that are both C eigenstates (eta eta', eta pi0,
+        // rho0 pi0, ...): C = C1*C2, with NO (-1)^L — the orbital momentum
+        // does not enter because charge conjugation never exchanges the pair.
+        C = c1 !== undefined && c2 !== undefined ? ((c1 * c2) as 1 | -1) : undefined
       }
       // (2S+1, L) whitelist.
       if (slFilter !== undefined && slFilter.length > 0) {

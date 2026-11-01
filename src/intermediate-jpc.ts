@@ -144,17 +144,41 @@ export function deriveIntermediateC(config: JpcConfig, db: ResonanceDb): Map<str
     if (p !== undefined) return resolveC(db, { ...p, name })
     return out.get(name)
   }
+  // C of an intermediate may also be read from its group's resonances when
+  // they carry a unique PDG C (e.g. R_pipi with rho770 => -1).  This covers
+  // cascade steps whose sibling has no C (R_3pi -> pi+ + R_pipi), where the
+  // production-vertex fixed point alone leaves the intermediate undefined.
+  const resonanceC = (name: string): 1 | -1 | undefined => {
+    for (const chain of Object.values(config.decayChains ?? {})) {
+      const int = chain.intermediates[name]
+      if (int === undefined) continue
+      const cs = new Set<number>()
+      for (const g of int.groups) {
+        for (const rn of g.names) {
+          const c = resolveC(db, { name: rn })
+          if (c === 1 || c === -1) cs.add(c)
+        }
+      }
+      return cs.size === 1 ? ([...cs][0] as 1 | -1) : undefined
+    }
+    return undefined
+  }
   for (let pass = 0; pass < intNames.size + 1; pass++) {
     let changed = false
     for (const intName of intNames) {
       if (out.has(intName)) continue
       const kin = config.kinematics[intName]
-      if (kin === undefined) continue
-      const cMother = cOf(kin.motherName)
-      const cDaughter = cOf(kin.daughterName)
+      const cMother = kin === undefined ? undefined : cOf(kin.motherName)
+      const cDaughter = kin === undefined ? undefined : cOf(kin.daughterName)
       if (cMother !== undefined && cDaughter !== undefined) {
         out.set(intName, (cMother * cDaughter) as 1 | -1)
         changed = true
+      } else {
+        const c = resonanceC(intName)
+        if (c !== undefined) {
+          out.set(intName, c)
+          changed = true
+        }
       }
     }
     if (!changed) break

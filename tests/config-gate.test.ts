@@ -170,6 +170,56 @@ Resonances:
     expect(r.errors.map((e) => e.code)).toContain('c-violation')
   })
 
+  it('HARD-errors a C violation that only the DISTINCT-pair product rule can see', () => {
+    // R -> pi0 pi0: both daughters are C eigenstates, so C(R) = (+1)(+1) = +1
+    // with NO (-1)^L. J/psi -> eta' + R requires C(R) = (-1)(+1) = -1, so the
+    // chain is impossible. Before the product rule the step's C stayed
+    // undefined and this was silently accepted.
+    const cfg = `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.9578, pdgid: 331}
+  pi0: {J: 0, P: -1, mass: 0.1350, pdgid: 111}
+  pi0b: {J: 0, P: -1, mass: 0.1350, pdgid: 111}
+Constraints:
+  identical: [[pi0, pi0b]]
+DecayChains:
+  decay1:
+    Jpsi:
+      - [etap, R_3pi]
+    R_3pi: [pi0, pi0b]
+    intermediates:
+      R_3pi:
+        - [J: 0, P: 1]: [f0_980]
+Resonances:
+  f0_980: {J: 0, P: 1, model: BWR, parameters: [0.99, 0.06]}
+`
+    const r = gate(cfg)
+    expect(r.ok).toBe(false)
+    expect(r.errors.map((e) => e.code)).toContain('c-violation')
+  })
+
+  it('passes the same topology when the distinct pair matches: rho0 pi0 -> C=-1', () => {
+    // C(rho0)*C(pi0) = (-1)(+1) = -1 = C(J/psi)*C(eta'), so this one is legal.
+    const cfg = `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.9578, pdgid: 331}
+  rho0: {J: 1, P: -1, mass: 0.7753, pdgid: 113}
+  pi0: {J: 0, P: -1, mass: 0.1350, pdgid: 111}
+DecayChains:
+  decay1:
+    Jpsi:
+      - [etap, R_3pi]
+    R_3pi: [rho0, pi0]
+    intermediates:
+      R_3pi:
+        - [J: 1, P: -1]: [rho(770)]
+Resonances:
+  rho(770): {J: 1, P: -1, model: BWR, parameters: [0.7753, 0.1491]}
+`
+    const r = gate(cfg)
+    expect(r.errors.map((e) => e.code)).not.toContain('c-violation')
+  })
+
   it('HARD-errors a decay-vertex-forbidden group', () => {
     // K+K- (both spin 0) cannot realize [3+]: P = P1*P2*(-1)^L = (+1)(-1)^L,
     // so odd J only, and C = (-1)^(L+S) with S=0 gives (-1)^L — [3+] is not in

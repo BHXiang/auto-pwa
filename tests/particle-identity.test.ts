@@ -192,9 +192,11 @@ describe('classifyPairPhysics: mesons', () => {
     })
   })
 
-  it('K+ K+ is identical (boson), not a conjugate pair', () => {
+  it('K+ K+ is identical (boson), not a conjugate pair — and has no C', () => {
     const r = classifyPairPhysics(defaultDb, Kp, { name: 'Kp2', pdgid: 321 })
-    expect(r).toMatchObject({ identical: true, conjugate: false, cDefined: true })
+    // identical != self-conjugate: K+ is charged, so no C eigenvalue exists
+    expect(r).toMatchObject({ identical: true, conjugate: false, cDefined: false })
+    expect(r.c).toEqual([undefined, undefined])
   })
 
   it('TRAP: K0 vs Kbar0 are a conjugate pair even when named K01/K02', () => {
@@ -203,10 +205,11 @@ describe('classifyPairPhysics: mesons', () => {
     // A name-only heuristic would have grouped K01/K02 as "the same K".
   })
 
-  it('K(S)0 K(S)0 is identical (no C from the table, but the Bose rule applies)', () => {
+  it('K(S)0 K(S)0 is identical but has NO C (K_S is not a C eigenstate in the table)', () => {
     const r = classifyPairPhysics(defaultDb, { name: 'Ks1', pdgid: 310 }, { name: 'Ks2', pdgid: 310 })
-    expect(r).toMatchObject({ identical: true, conjugate: false, cDefined: true })
-    // The individual K(S)0 has no C, but the identical selection rule defines the pair C.
+    expect(r).toMatchObject({ identical: true, conjugate: false, cDefined: false })
+    // "Identical" is the exchange symmetry, NOT a C value: the individual K(S)0
+    // carries no C, so the pair carries none either (a missing C is safer).
     expect(cValueOf(info(310)!)).toBeUndefined()
   })
 
@@ -244,15 +247,16 @@ describe('classifyPairPhysics: baryons', () => {
     ).toMatchObject({ conjugate: true, cDefined: true })
   })
 
-  it('two protons are identical fermions', () => {
+  it('two protons are identical fermions (and therefore have no C)', () => {
     const r = classifyPairPhysics(defaultDb, { name: 'p1', pdgid: 2212 }, { name: 'p2', pdgid: 2212 })
-    expect(r).toMatchObject({ identical: true, conjugate: false, cDefined: true })
+    // C|p p> = |pbar pbar> is a different state -> no C eigenvalue exists
+    expect(r).toMatchObject({ identical: true, conjugate: false, cDefined: false })
   })
 
   it('two Lambdas are identical fermions', () => {
     expect(
       classifyPairPhysics(defaultDb, { name: 'L1', pdgid: 3122 }, { name: 'L2', pdgid: 3122 }),
-    ).toMatchObject({ identical: true, cDefined: true })
+    ).toMatchObject({ identical: true, cDefined: false }) // no self-conjugate fermion
   })
 
   it('p eta has no identity relation (baryon + meson, no C)', () => {
@@ -268,7 +272,9 @@ describe('classifyPairPhysics: baryons', () => {
 describe('pairKind: engine truth (declared groups) vs PDGID truth', () => {
   it('PDGID-equal but NOT declared identical -> engine "distinct" (no silent symmetrisation)', () => {
     const r = pairKind({ name: 'pi01', j: 0, pdgid: 111 }, { name: 'pi02', j: 0, pdgid: 111 }, undefined, defaultDb)
-    expect(r).toEqual({ kind: 'distinct', cDefined: false })
+    // Both pions ARE C eigenstates, so the pair still has C = (+1)(+1) = +1;
+    // "distinct" only says the ENGINE will not symmetrise them.
+    expect(r).toEqual({ kind: 'distinct', cDefined: true, c: [1, 1] })
   })
 
   it('PDGID-equal AND declared identical -> identical-boson', () => {
@@ -278,30 +284,38 @@ describe('pairKind: engine truth (declared groups) vs PDGID truth', () => {
       [['pi01', 'pi02']],
       defaultDb,
     )
-    expect(r).toEqual({ kind: 'identical-boson', cDefined: true })
+    expect(r).toEqual({ kind: 'identical-boson', cDefined: true, c: [1, 1] })
   })
 
-  it('two protons declared identical -> identical-fermion', () => {
+  it('two protons declared identical -> identical-fermion, never a C eigenstate', () => {
     const r = pairKind(
       { name: 'p1', j: 0.5, pdgid: 2212 },
       { name: 'p2', j: 0.5, pdgid: 2212 },
       [['p1', 'p2']],
       defaultDb,
     )
-    expect(r).toEqual({ kind: 'identical-fermion', cDefined: true })
+    expect(r).toEqual({ kind: 'identical-fermion', cDefined: false, c: [undefined, undefined] })
   })
 
   it('PDGID conjugate pair -> pair-anti (with or without a db, legacy names)', () => {
+    // Neither kaon is a C eigenstate, yet the PAIR has C = (-1)^L: only a
+    // particle-antiparticle pair takes the orbital rule.
     expect(pairKind({ name: 'Kp', j: 0, pdgid: 321 }, { name: 'Km', j: 0, pdgid: -321 }, undefined, defaultDb)).toEqual({
       kind: 'pair-anti',
       cDefined: true,
+      c: [undefined, undefined],
     })
-    expect(pairKind({ name: 'Kp', j: 0 }, { name: 'Km', j: 0 })).toEqual({ kind: 'pair-anti', cDefined: true })
+    expect(pairKind({ name: 'Kp', j: 0 }, { name: 'Km', j: 0 })).toEqual({
+      kind: 'pair-anti',
+      cDefined: true,
+      c: [undefined, undefined],
+    })
   })
 
   it('PDGID pair with no relation -> distinct', () => {
+    // pi0 is a C eigenstate, pi+ is not -> the product cannot be formed
     expect(pairKind({ name: 'pi01', j: 0, pdgid: 111 }, { name: 'pip', j: 0, pdgid: 211 }, undefined, defaultDb)).toEqual(
-      { kind: 'distinct', cDefined: false },
+      { kind: 'distinct', cDefined: false, c: [1, undefined] },
     )
   })
 })
@@ -338,7 +352,7 @@ describe('pairJPC: C sets with PDGID', () => {
     expect(waves.map((w) => w.jpc.j)).toEqual([0, 2, 4])
   })
 
-  it('two Lambdas declared identical obey the Fermi rule (-1)^(L+S) = -1, C = -1', () => {
+  it('two Lambdas declared identical obey the Fermi rule (-1)^(L+S) = -1 and carry NO C', () => {
     const waves = pairJPC(
       { name: 'L1', j: 0.5, p: 1, pdgid: 3122 },
       { name: 'L2', j: 0.5, p: 1, pdgid: 3122 },
@@ -346,7 +360,8 @@ describe('pairJPC: C sets with PDGID', () => {
     )
     expect(waves.length).toBeGreaterThan(0)
     for (const w of waves) {
-      expect(w.jpc.c).toBe(-1)
+      // An identical FERMION pair is never a C eigenstate (C|LL> = |LbarLbar>).
+      expect(w.jpc.c).toBeUndefined()
       for (const { s, l } of w.sl) {
         const S = (s - 1) / 2 // s is 2S+1
         // identical fermions: (-1)^(L+S) = -1

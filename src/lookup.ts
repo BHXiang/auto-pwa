@@ -91,5 +91,14 @@ const PARTICLE_C: Record<string, 1 | -1> = {
 export function lookupC(db: ResonanceDb, name: string): 1 | -1 | undefined {
   const hit = lookupResonance(db, { name })[0]?.c
   if (hit !== undefined) return hit
-  return PARTICLE_C[normalizeName(name)]
+  const special = PARTICLE_C[normalizeName(name)]
+  if (special !== undefined) return special
+  // auto-pwa local names often omit the neutral charge suffix (rho770 ->
+  // rho(770)0, a0_1450 -> a(0)(1450)0).  Try the neutral PDG spelling before
+  // giving up; charged names keep their explicit +/- and are not touched.
+  if (!/[+-]$/.test(name)) {
+    const neutral = lookupResonance(db, { name: `${name}0` })[0]?.c
+    if (neutral !== undefined) return neutral
+  }
+  return undefined
 }

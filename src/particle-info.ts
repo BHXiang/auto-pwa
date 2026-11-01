@@ -8,8 +8,14 @@
  * three symmetry questions become table lookups instead of guesses:
  *
  *   - identical  : same PDGID  → identical boson/fermion (Bose/Fermi rule)
- *   - conjugate  : PDGID(B) === -PDGID(A) (or `conjugate`) → C = (-1)^(L+S)
+ *   - conjugate  : PDGID(B) === -PDGID(A) (or `conjugate`) → orbital rule:
+ *                  boson pair C = (-1)^L, fermion pair C = (-1)^(L+S)
  *   - self-conj. : `selfConjugate` (PDG cc_type 'S') → C from the PDG value
+ *
+ * Only a conjugate pair takes an L-dependent C. Any other pair (eta eta',
+ * rho0 pi0, ...) has C = C1*C2 with no (-1)^L — and only when BOTH members are
+ * C eigenstates. Identical particles are not exempt: K+ K+ is not a C
+ * eigenstate even though the two kaons are identical.
  *
  * Why this matters for configs: the config cannot use one name twice
  * (`Particles` is a map), so the same species carries distinct analysis names
@@ -177,7 +183,9 @@ export function resolveC(db: ResonanceDb, p: ParticleRef): 1 | -1 | undefined {
   if (p.c === 1 || p.c === -1) return p.c
   if (p.pdgid !== undefined) {
     const info = getParticleInfo(db, p.pdgid)
-    if (info !== undefined) return cValueOf(info)
+    // A declared PDGID is authoritative: an unknown one must NOT fall through
+    // to the name heuristic (a typo would silently donate another state's C).
+    return info === undefined ? undefined : cValueOf(info)
   }
   if (p.name !== undefined) return lookupC(db, p.name)
   return undefined
@@ -190,11 +198,25 @@ export type PairIdentitySource = 'pdgid' | 'name-table' | 'none'
 export interface PairPhysics {
   /** Same PDGID: the two daughters are the same species (Bose/Fermi applies). */
   identical: boolean
-  /** Particle-antiparticle pair: C = (-1)^(L+S) applies. */
+  /**
+   * Particle-antiparticle pair: the ORBITAL rule applies —
+   * boson pair C = (-1)^L, fermion pair C = (-1)^(L+S).
+   * Only this kind of pair may take a C that depends on L.
+   */
   conjugate: boolean
   /** Per-member self-conjugacy (from the PDG table). */
   selfConjugate: [boolean, boolean]
-  /** Whether C is defined for the pair by the identity alone. */
+  /** Per-member C eigenvalue (undefined = not a C eigenstate, so C is undefined). */
+  c: [1 | -1 | undefined, 1 | -1 | undefined]
+  /**
+   * Whether C is defined for the pair:
+   *   - conjugate pair  -> yes, from the orbital rule (independent of the members'
+   *     own C, which is undefined for e.g. K+);
+   *   - every other pair -> only when BOTH members are C eigenstates, and then
+   *     C = c1*c2 with NO (-1)^L (eta eta', rho0 pi0, ...).
+   * Identical particles are NOT automatically C eigenstates (K+ K+ has no C);
+   * identical fermions never are (no self-conjugate fermion exists).
+   */
   cDefined: boolean
   source: PairIdentitySource
 }
@@ -220,11 +242,14 @@ export function classifyPairPhysics(
         i1.selfConjugate === false &&
         i2.selfConjugate === false &&
         d1.pdgid === -d2.pdgid
+      const c1 = cValueOf(i1)
+      const c2 = cValueOf(i2)
       return {
         identical,
         conjugate: isAntiPair,
         selfConjugate: [i1.selfConjugate === true, i2.selfConjugate === true],
-        cDefined: identical || isAntiPair,
+        c: [c1, c2],
+        cDefined: isAntiPair || (c1 !== undefined && c2 !== undefined),
         source: 'pdgid',
       }
     }
@@ -237,11 +262,14 @@ export function classifyPairPhysics(
     partner !== undefined &&
     d2.name !== undefined &&
     particleKey(partner) === particleKey(d2.name)
+  const c1 = resolveC(db, d1)
+  const c2 = resolveC(db, d2)
   return {
     identical: false,
     conjugate: conj,
     selfConjugate: [false, false],
-    cDefined: conj,
+    c: [c1, c2],
+    cDefined: conj || (c1 !== undefined && c2 !== undefined),
     source: conj ? 'name-table' : 'none',
   }
 }

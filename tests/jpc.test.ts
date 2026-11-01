@@ -125,7 +125,7 @@ describe('enumerateSL vs ctpwa ComSL', () => {
 // pairJPC: decay-vertex J^PC sets
 // ---------------------------------------------------------------------------
 
-type Named = { name?: string; j: number; p: 1 | -1; c?: 1 | -1 }
+type Named = { name?: string; j: number; p: 1 | -1; c?: 1 | -1; pdgid?: number }
 const Kp: Named = { j: 0, p: -1, name: 'K+' }
 const Km: Named = { j: 0, p: -1, name: 'K-' }
 const K0: Named = { j: 0, p: -1, name: 'K0' }
@@ -188,17 +188,63 @@ describe('pairJPC decay-vertex sets', () => {
   })
 
   it('pi0 pi0 identical bosons: only L even -> {0++ 2++ 4++}', () => {
-    const waves = pairJPC(pi0, pi0b, { maxL: 4, identicalGroups: [['pi0', 'pi02']] })
+    // An identical pair only gets a C when the species IS a C eigenstate, and
+    // that needs the PDG table (pi0: C=+1). K+ K+ is identical but has no C.
+    const waves = pairJPC(
+      { ...pi0, pdgid: 111 },
+      { ...pi0b, pdgid: 111 },
+      { maxL: 4, identicalGroups: [['pi0', 'pi02']], db: defaultDb },
+    )
     expect(labels(waves)).toEqual(['0++', '2++', '4++'])
   })
 
-  it('Lambda Lambda identical fermions: (-1)^(L+S) = -1', () => {
+  it('Lambda Lambda identical fermions: (-1)^(L+S) = -1 and NO C', () => {
     const waves = pairJPC(lam, lam2, { maxL: 3, identicalGroups: [['Lambda', 'Lambda2']] })
     expect(waves.length).toBeGreaterThan(0)
     for (const w of waves) {
       for (const sl of w.sl) expect((sl.l + (sl.s - 1) / 2) % 2).toBe(1)
-      expect(w.jpc.c).toBe(-1)
+      // Two identical fermions are never a C eigenstate: C|Lambda Lambda> is
+      // |Lambdabar Lambdabar>, a different state. (-1)^(L+S) is the EXCHANGE
+      // symmetry required by the engine, not a C value.
+      expect(w.jpc.c).toBeUndefined()
     }
+  })
+
+  // A particle-antiparticle pair is the ONLY pair whose C depends on L.
+  // Every other pair multiplies the daughters' own C eigenvalues.
+  it('distinct C eigenstates multiply: eta eta-prime -> C = +1 for every L', () => {
+    const waves = pairJPC(
+      { name: 'eta', j: 0, p: -1, pdgid: 221 },
+      { name: 'etap', j: 0, p: -1, pdgid: 331 },
+      { maxL: 3, db: defaultDb },
+    )
+    expect(waves.length).toBeGreaterThan(0)
+    expect(waves.every((w) => w.jpc.c === 1)).toBe(true) // (+1)(+1), no L
+    // both parities occur with the same C -> C cannot be tracking (-1)^L
+    expect(new Set(waves.map((w) => w.jpc.p))).toEqual(new Set([1, -1]))
+  })
+
+  it('rho0 pi0: C = C(rho0)*C(pi0) = -1, independent of the orbital L', () => {
+    const waves = pairJPC(
+      { name: 'rho0', j: 1, p: -1, pdgid: 113 },
+      { name: 'pi0', j: 0, p: -1, pdgid: 111 },
+      { maxL: 3, db: defaultDb },
+    )
+    expect(waves.length).toBeGreaterThan(0)
+    expect(waves.every((w) => w.jpc.c === -1)).toBe(true)
+  })
+
+  it('K+ K+ identical but NOT a C eigenstate -> C undefined (Bose rule survives)', () => {
+    const waves = pairJPC(
+      { name: 'Kp1', j: 0, p: -1, pdgid: 321 },
+      { name: 'Kp2', j: 0, p: -1, pdgid: 321 },
+      { maxL: 3, identicalGroups: [['Kp1', 'Kp2']], db: defaultDb },
+    )
+    expect(waves.length).toBeGreaterThan(0)
+    // identical != self-conjugate: the kaon is charged, so the pair has no C
+    expect(waves.every((w) => w.jpc.c === undefined)).toBe(true)
+    // ...but the engine still needs the Bose rule: S=0 -> L even
+    for (const w of waves) for (const sl of w.sl) expect(sl.l % 2).toBe(0)
   })
 
   it('p pbar (fermion pair-anti): C = (-1)^(L+S), engine parity convention', () => {
@@ -418,5 +464,24 @@ describe('validateResonanceAddition rules 10-12', () => {
     const c = lookupC(defaultDb, 'Jpsi')
     expect(c === -1 || c === undefined).toBe(true)
     if (c !== undefined) expect(lookupC(defaultDb, 'eta')).toBe(1)
+  })
+})
+
+describe('boson-antiparticle pair C parity', () => {
+  it('uses C = (-1)^L for vector-vector pairs (not (-1)^(L+S))', () => {
+    const rhoP = { j: 1, p: -1 as const, name: 'rho770+', pdgid: 213 }
+    const rhoM = { j: 1, p: -1 as const, name: 'rho770-', pdgid: -213 }
+    const waves = pairJPC(rhoP, rhoM, { maxL: 3, db: defaultDb })
+    const oneMinus = waves.find((w) => w.jpc.j === 1 && w.jpc.p === -1)
+    const twoPlus = waves.find((w) => w.jpc.j === 2 && w.jpc.p === 1)
+    expect(oneMinus?.jpc.c).toBe(-1)
+    expect(twoPlus?.jpc.c).toBe(1)
+  })
+})
+
+describe('local-name C fallback', () => {
+  it('maps rho770 / a0_1450 to the neutral PDG C', () => {
+    expect(lookupC(defaultDb, 'rho770')).toBe(-1)
+    expect(lookupC(defaultDb, 'a0_1450')).toBe(1)
   })
 })

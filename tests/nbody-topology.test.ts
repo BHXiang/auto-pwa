@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseConfig } from '../src/config-edit.js'
-import { analyzeIntermediateJPC } from '../src/intermediate-jpc.js'
+import { analyzeIntermediateJPC, deriveIntermediateC } from '../src/intermediate-jpc.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
 import { defaultDb } from '../src/db.js'
 
@@ -61,14 +61,13 @@ describe('4 体拓扑 A -> R1 + R2', () => {
     expect(ana!.decaySteps.length).toBeGreaterThan(0)
   })
 
-  it('姊妹是中间态时，C 状态明确标为不适用（而不是看起来通过）', () => {
+  it('姊妹是中间态时，C 从共振组解析而不是静默跳过', () => {
     const cfg = parseConfig(FOUR_BODY)
     const ana = analyzeIntermediateJPC(cfg, defaultDb, 'R_KK')!
-    // R_pipi 是中间态名，其 C 取决于组内哪个共振态贡献 —— 不能猜一个 C 去"通过"。
-    expect(ana.cStatus.status).toBe('not-applicable')
-    expect(ana.cStatus.required).toBeNull()
+    // R_pipi 组内共振态的 PDG C 唯一；Jpsi C=-1 => C(R_KK) 由该 C 决定。
+    expect(ana.cStatus.status).toBe('enforced')
+    expect(ana.cStatus.required).toBe(-1)
     expect(ana.cStatus.reason).toContain('R_pipi')
-    expect(ana.cStatus.reason).toContain('不等于 C 守恒已通过')
   })
 
   it('优先选"该中间态真的在其中衰变"的链（否则波表为空）', () => {
@@ -181,5 +180,33 @@ describe("cascade C parity (J/psi -> eta' + 3pi)", () => {
       parameters: [1.23, 0.42],
     })
     expect(r.errors.map((e) => e.code)).toContain('c-unverified')
+  })
+})
+
+describe('intermediate C from the resonance group', () => {
+  const P2 = `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.957784, pdgid: 331}
+  pip: {J: 0, P: -1, mass: 0.13957, pdgid: 211}
+  pim: {J: 0, P: -1, mass: 0.13957, pdgid: -211}
+  pi0: {J: 0, P: -1, mass: 0.134977, pdgid: 111}
+DecayChains:
+  decay1:
+    Jpsi: [[etap, R_3pi]]
+    R_3pi: [[pip, R_pipi_m]]
+    R_pipi_m: [[pip, pim]]
+    intermediates:
+      R_3pi:
+        - [J: 1, P: -1]: [NR_3pi]
+      R_pipi_m:
+        - [J: 1, P: -1]: [rho770]
+Resonances:
+  NR_3pi: {model: ONE, parameters: []}
+  rho770: {model: BWR, parameters: [0.7753, 0.1474]}
+`
+  it('reads R_pipi_m C from rho770 when the sibling pi+ has no C', () => {
+    const cfg = parseConfig(P2)
+    const derived = deriveIntermediateC(cfg, defaultDb)
+    expect(derived.get('R_pipi_m')).toBe(-1)
   })
 })
