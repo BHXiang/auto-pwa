@@ -18,7 +18,7 @@
 import type { PwaConfig, ResonanceDb } from './types.js'
 import { allowedIntermediateJP } from './decay-check.js'
 import { pairJPC, pairKind, jpcLabel, type PairKind } from './jpc.js'
-import { classifyPairPhysics, resolveC } from './particle-info.js'
+import { classifyPairPhysics, getParticleInfo, resolveC } from './particle-info.js'
 import type { JP } from './types.js'
 
 export interface ProductionView {
@@ -124,6 +124,79 @@ function named(
     : { name, j: p.j, p: p.p }
 }
 
+/** Electric charge of a config particle, from its PDGID (undefined = unknown). */
+export function particleCharge(
+  config: JpcConfig,
+  db: ResonanceDb,
+  name: string,
+): number | undefined {
+  const p = config.particles[name]
+  if (p === undefined || p.pdgid === undefined) return undefined
+  return getParticleInfo(db, p.pdgid)?.charge
+}
+
+/**
+ * Charge of every intermediate, from its decay daughters: Q(R) = Q(d1) + Q(d2)
+ * (charge conservation at the decay vertex), resolved through cascades.
+ *
+ * Why C needs this: C is only a good quantum number for a NEUTRAL state. A
+ * charged intermediate such as `R_pippi0 = pi+ pi0` must never inherit a C
+ * from the neutral spelling of its group's resonance (`rho(770)0` -> C=-1):
+ * that is exactly how a charged chain used to acquire a bogus C(R)=+1
+ * requirement, and why a charged a0/a1 could not be added to an eta'pi- chain.
+ *
+ * A charge that cannot be derived stays ABSENT (never assumed 0) — the caller
+ * then keeps its conservative behaviour.
+ */
+export function deriveIntermediateCharge(
+  config: JpcConfig,
+  db: ResonanceDb,
+): Map<string, number> {
+  const out = new Map<string, number>()
+  const intNames = new Set<string>()
+  const stepsOf = new Map<string, string[][]>()
+  for (const chain of Object.values(config.decayChains ?? {})) {
+    for (const n of Object.keys(chain.intermediates)) intNames.add(n)
+  }
+  for (const chain of Object.values(config.decayChains ?? {})) {
+    for (const s of chain.steps) {
+      if (!intNames.has(s.mother)) continue
+      const list = stepsOf.get(s.mother) ?? []
+      list.push([...s.daughters])
+      stepsOf.set(s.mother, list)
+    }
+  }
+  for (let pass = 0; pass <= intNames.size; pass++) {
+    let changed = false
+    for (const name of intNames) {
+      if (out.has(name)) continue
+      const steps = stepsOf.get(name) ?? []
+      if (steps.length === 0) continue
+      const sums = new Set<number>()
+      let allKnown = true
+      for (const daughters of steps) {
+        let sum = 0
+        for (const d of daughters) {
+          const q = config.particles[d] !== undefined ? particleCharge(config, db, d) : out.get(d)
+          if (q === undefined) {
+            allKnown = false
+            break
+          }
+          sum += q
+        }
+        if (!allKnown) break
+        sums.add(sum)
+      }
+      if (allKnown && sums.size === 1) {
+        out.set(name, [...sums][0]!)
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+  return out
+}
+
 /**
  * C of every cascade intermediate that is *derivable* from its production
  * vertex: C(A) = C(R) * C(B) => C(R) = C(A) * C(B). The fixed point lets C
@@ -131,12 +204,21 @@ function named(
  *
  * A name that is not in `Particles` is treated as an intermediate; when its C
  * is not derivable it stays absent (never invented).
+ *
+ * Charge gate: only a NEUTRAL intermediate can carry a C. A charged one
+ * (pi+ pi0, eta' pi-) gets none — neither from the fixed point nor from the
+ * neutral spelling of its group's resonances.
  */
 export function deriveIntermediateC(config: JpcConfig, db: ResonanceDb): Map<string, 1 | -1> {
   const out = new Map<string, 1 | -1>()
   const intNames = new Set<string>()
+  const charges = deriveIntermediateCharge(config, db)
   for (const chain of Object.values(config.decayChains ?? {})) {
     for (const n of Object.keys(chain.intermediates)) intNames.add(n)
+  }
+  const isCharged = (name: string): boolean => {
+    const q = charges.get(name)
+    return q !== undefined && q !== 0
   }
   const cOf = (name: string | undefined): 1 | -1 | undefined => {
     if (name === undefined) return undefined
@@ -148,7 +230,9 @@ export function deriveIntermediateC(config: JpcConfig, db: ResonanceDb): Map<str
   // they carry a unique PDG C (e.g. R_pipi with rho770 => -1).  This covers
   // cascade steps whose sibling has no C (R_3pi -> pi+ + R_pipi), where the
   // production-vertex fixed point alone leaves the intermediate undefined.
+  // Only for NEUTRAL channels: rho(770)0's C says nothing about pi+ pi0.
   const resonanceC = (name: string): 1 | -1 | undefined => {
+    if (charges.get(name) !== 0) return undefined
     for (const chain of Object.values(config.decayChains ?? {})) {
       const int = chain.intermediates[name]
       if (int === undefined) continue
@@ -167,6 +251,8 @@ export function deriveIntermediateC(config: JpcConfig, db: ResonanceDb): Map<str
     let changed = false
     for (const intName of intNames) {
       if (out.has(intName)) continue
+      // A charged intermediate is not a C eigenstate — do not derive one.
+      if (isCharged(intName)) continue
       const kin = config.kinematics[intName]
       const cMother = kin === undefined ? undefined : cOf(kin.motherName)
       const cDaughter = kin === undefined ? undefined : cOf(kin.daughterName)
@@ -226,29 +312,54 @@ export function analyzeIntermediateJPC(
 
   let production: ProductionView | undefined
   let cStatus: CStatusView = { status: 'unknown', required: null, reason: 'no production kinematics' }
+  const charges = deriveIntermediateCharge(config, db)
+  const ownCharge = charges.get(intName)
+  // A CHARGED intermediate is not a C eigenstate: even when both ends of the
+  // production vertex have a C, C conservation says nothing about it. (A
+  // charged R_3pi = pi+ R_pipi used to inherit C(R) = -1 from J/psi -> eta' R.)
+  const ownCharged = ownCharge !== undefined && ownCharge !== 0
+  const whyNoC = (name: string | undefined): string => {
+    if (name === undefined) return ''
+    const q = charges.get(name)
+    return q !== undefined && q !== 0
+      ? `（带电 Q=${q > 0 ? '+' : ''}${q}：C 不是好量子数）`
+      : ''
+  }
   if (kin !== undefined) {
     const allowedJP = allowedIntermediateJP(kin.mother, kin.daughter, maxL).map((a) => a.jp)
     const motherC = cOfName(kin.motherName)
     const daughterC = cOfName(kin.daughterName)
+    const cRequired =
+      !ownCharged && motherC !== undefined && daughterC !== undefined
+        ? ((motherC * daughterC) as 1 | -1)
+        : null
     production = {
       mother: kin.motherName,
       daughter: kin.daughterName,
       threshold: kin.threshold,
       allowedJP,
-      cRequired: motherC !== undefined && daughterC !== undefined ? ((motherC * daughterC) as 1 | -1) : null,
+      cRequired,
     }
     if (motherC !== undefined) production.cMother = motherC
     if (daughterC !== undefined) production.cDaughter = daughterC
-    if (motherC !== undefined && daughterC !== undefined) {
+    if (cRequired !== null) {
       cStatus = {
         status: 'enforced',
-        required: (motherC * daughterC) as 1 | -1,
-        reason: `C(${kin.motherName}) = ${motherC > 0 ? '+' : '-'}, C(${kin.daughterName}) = ${daughterC > 0 ? '+' : '-'} => C(R) = ${motherC * daughterC > 0 ? '+' : '-'}`,
+        required: cRequired,
+        reason: `C(${kin.motherName}) = ${motherC! > 0 ? '+' : '-'}, C(${kin.daughterName}) = ${daughterC! > 0 ? '+' : '-'} => C(R) = ${cRequired > 0 ? '+' : '-'}`,
+      }
+    } else if (ownCharged) {
+      cStatus = {
+        status: 'not-applicable',
+        required: null,
+        reason:
+          `${intName} 带电（Q=${ownCharge! > 0 ? '+' : ''}${ownCharge}）：C 不是好量子数，` +
+          `本顶点的 C 守恒不适用（不是"通过"，只是无从约束）`,
       }
     } else {
       const missing: string[] = []
-      if (motherC === undefined) missing.push(`${kin.motherName} (no C)`)
-      if (daughterC === undefined) missing.push(`${kin.daughterName} (no C)`)
+      if (motherC === undefined) missing.push(`${kin.motherName} (no C)${whyNoC(kin.motherName)}`)
+      if (daughterC === undefined) missing.push(`${kin.daughterName} (no C)${whyNoC(kin.daughterName)}`)
       const siblingIsIntermediate = chainCfg.intermediates[kin.daughterName ?? ''] !== undefined
       cStatus = {
         status: 'not-applicable',

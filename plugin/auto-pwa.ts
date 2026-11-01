@@ -34,6 +34,7 @@ import { decayCheck, hasDecayTo } from '../src/decay-check.js'
 import { analyzeIntermediateJPC } from '../src/intermediate-jpc.js'
 import { explicitJp } from '../src/jpc.js'
 import { firstLevelTopologies, type TopologyCoverage } from '../src/topology.js'
+import { createMatrix, addRow, addPrune, setTopologyStatus, matrixStatus, matrixCheck, renderMatrixMarkdown, type AttemptMatrix, type MatrixRow, type MatrixPrune, type RowStatus, type PruneStatus, type TopologyStatus } from '../src/attempt-matrix.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
 import {
   parseConfig,
@@ -5720,5 +5721,185 @@ function estimateCpuCost(scriptArgs: string[] | undefined): string | undefined {
       }
     },
   }))
+
+
+  // auto_pwa_matrix（尝试矩阵；advisory，不做门禁）
+  ctx.tools.register(defineTool({
+    name: 'auto_pwa_matrix',
+    description:
+      '4 体尝试矩阵：拓扑/[J,P]/候选/删除显著性的记录与自检（advisory）。',
+    parameters: {
+      analysisDir: { type: 'string', required: true, description: '分析目录（含 config.yml 或 iterations/）绝对路径' },
+      configPath: { type: 'string', description: '可选：指定要建矩阵的 config.yml（默认取分析目录 config.yml 或最新 iter-N）' },
+      action: {
+        type: 'string',
+        required: true,
+        enum: ['init', 'add', 'prune', 'topology', 'status', 'check'],
+        description: 'init=建矩阵；add=加候选行；prune=加删除行；topology=设拓扑 included/excluded；status=汇总；check=缺项自检（不拦截）',
+      },
+      row: { type: 'object', additionalProperties: true, description: 'action=add 的行：intermediate/jp/candidate/model/status/nll/k/aic/bic/deltaNll/deltaBic/reason 等' },
+      prune: { type: 'object', additionalProperties: true, description: 'action=prune 的行：component/status/deltaNll/deltaBic/reason' },
+      topology: { type: 'object', additionalProperties: true, description: 'action=topology：id/status(included|excluded|pending)/reason' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          ok: { type: 'boolean' },
+          action: { type: 'string' },
+          matrixPath: { type: 'string' },
+          mdPath: { type: 'string' },
+          status: { type: 'object', additionalProperties: true },
+          missing: { type: 'array', items: { type: 'string' } },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value: { ok?: boolean; action?: string; matrixPath?: string; mdPath?: string; missing?: string[]; error?: string }) =>
+        text(
+          value.error !== undefined
+            ? `matrix: ${value.error}`
+            : `matrix ${value.action ?? ''}: ${value.ok ? 'ok' : 'missing'}${value.missing && value.missing.length > 0 ? ` (${value.missing.length} missing)` : ''}\n${value.mdPath ?? ''}`,
+        ),
+    },
+    async execute(args: { analysisDir: string; action: string; configPath?: string; row?: Record<string, unknown>; prune?: Record<string, unknown>; topology?: Record<string, unknown> }) {
+      const analysisDir = resolve(args.analysisDir)
+      const matrixPath = join(analysisDir, 'attempt-matrix.json')
+      const mdPath = join(analysisDir, 'ATTEMPT-MATRIX.md')
+      const findConfig = (): string => {
+        if (args.configPath !== undefined && args.configPath.trim() !== '') return resolve(args.configPath)
+        const direct = join(analysisDir, 'config.yml')
+        if (existsSync(direct)) return direct
+        const iters = join(analysisDir, 'iterations')
+        if (existsSync(iters)) {
+          const dirs = readdirSync(iters).filter((n) => /^iter-\d+$/.test(n)).sort().reverse()
+          for (const d of dirs) {
+            const p = join(iters, d, 'config.yml')
+            if (existsSync(p)) return p
+          }
+        }
+        throw new Error(`no config.yml under ${analysisDir} or ${analysisDir}/iterations/iter-*`)
+      }
+      const parse = (): { cfg: ReturnType<typeof parseConfig>; finalState: string[]; coverage: TopologyCoverage } => {
+        const cfg = parseConfig(readFileSync(findConfig(), 'utf8'))
+        const dataRaw = cfg.raw.get('Data') ?? cfg.raw.get('data')
+        const orderRaw = dataRaw instanceof Map ? dataRaw.get('order') : (dataRaw as { order?: unknown } | undefined)?.order
+        const finalState = Array.isArray(orderRaw) ? orderRaw.filter((x): x is string => typeof x === 'string') : []
+        if (finalState.length < 3) throw new Error('config Data.order missing or shorter than 3')
+        return { cfg, finalState, coverage: firstLevelTopologies(cfg, finalState) }
+      }
+      const load = (): { matrix: AttemptMatrix; cfg: ReturnType<typeof parseConfig>; coverage: TopologyCoverage } => {
+        const { cfg, finalState, coverage } = parse()
+        if (!existsSync(matrixPath)) {
+          return { matrix: createMatrix(finalState, coverage), cfg, coverage }
+        }
+        return { matrix: JSON.parse(readFileSync(matrixPath, 'utf8')) as AttemptMatrix, cfg, coverage }
+      }
+      const save = (matrix: AttemptMatrix, cfg: ReturnType<typeof parseConfig>): { check: ReturnType<typeof matrixCheck>; status: ReturnType<typeof matrixStatus> } => {
+        const check = matrixCheck(matrix, cfg)
+        const status = matrixStatus(matrix)
+        writeFileSync(matrixPath, JSON.stringify(matrix, null, 2))
+        writeFileSync(mdPath, renderMatrixMarkdown(matrix, check))
+        return { check, status }
+      }
+      const num = (v: unknown): number | undefined => {
+        if (typeof v === 'number' && Number.isFinite(v)) return v
+        if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v)
+        return undefined
+      }
+      const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v : undefined)
+      const rowStatus = (v: unknown): RowStatus => (v === 'kept' || v === 'rejected' || v === 'skipped' ? v : 'pending')
+      const pruneStatus = (v: unknown): PruneStatus => (v === 'kept' || v === 'removed' ? v : 'pending')
+      const topoStatus = (v: unknown): TopologyStatus => (v === 'included' || v === 'excluded' ? v : 'pending')
+      try {
+        if (args.action === 'init') {
+          const { cfg, finalState, coverage } = parse()
+          let matrix = createMatrix(finalState, coverage)
+          if (existsSync(matrixPath)) {
+            const old = JSON.parse(readFileSync(matrixPath, 'utf8')) as AttemptMatrix
+            matrix = {
+              ...matrix,
+              rows: old.rows ?? [],
+              prunes: old.prunes ?? [],
+              topologies: matrix.topologies.map((t) => {
+                const prev = (old.topologies ?? []).find((x) => x.id === t.id)
+                return prev !== undefined ? { ...t, status: prev.status, ...(prev.reason !== undefined ? { reason: prev.reason } : {}) } : t
+              }),
+            }
+          }
+          const out = save(matrix, cfg)
+          return { ok: true, action: args.action, matrixPath, mdPath, status: out.status, missing: out.check.missing }
+        }
+        if (args.action === 'status') {
+          const { matrix, cfg } = load()
+          const out = save(matrix, cfg)
+          return { ok: true, action: args.action, matrixPath, mdPath, status: out.status, missing: out.check.missing }
+        }
+        if (args.action === 'check') {
+          const { matrix, cfg } = load()
+          const out = save(matrix, cfg)
+          return { ok: out.check.ok, action: args.action, matrixPath, mdPath, status: out.status, missing: out.check.missing }
+        }
+        if (args.action === 'add') {
+          const { matrix, cfg } = load()
+          const r = args.row ?? {}
+          const intermediate = str(r.intermediate)
+          const jp = str(r.jp)
+          const candidate = str(r.candidate)
+          const model = str(r.model)
+          if (intermediate === undefined || jp === undefined || candidate === undefined || model === undefined) {
+            return { ok: false, action: args.action, error: 'row needs intermediate, jp, candidate, model' }
+          }
+          const row: MatrixRow = {
+            intermediate,
+            jp,
+            candidate,
+            model,
+            status: rowStatus(r.status),
+            ...(str(r.topology) !== undefined ? { topology: str(r.topology) } : {}),
+            ...(str(r.chain) !== undefined ? { chain: str(r.chain) } : {}),
+            ...(str(r.fitDir) !== undefined ? { fitDir: str(r.fitDir) } : {}),
+            ...(num(r.nll) !== undefined ? { nll: num(r.nll) } : {}),
+            ...(num(r.k) !== undefined ? { k: num(r.k) } : {}),
+            ...(num(r.aic) !== undefined ? { aic: num(r.aic) } : {}),
+            ...(num(r.bic) !== undefined ? { bic: num(r.bic) } : {}),
+            ...(num(r.deltaNll) !== undefined ? { deltaNll: num(r.deltaNll) } : {}),
+            ...(num(r.deltaBic) !== undefined ? { deltaBic: num(r.deltaBic) } : {}),
+            ...(str(r.reason) !== undefined ? { reason: str(r.reason) } : {}),
+          }
+          const out = save(addRow(matrix, row), cfg)
+          return { ok: true, action: args.action, matrixPath, mdPath, status: out.status, missing: out.check.missing }
+        }
+        if (args.action === 'prune') {
+          const { matrix, cfg } = load()
+          const p = args.prune ?? {}
+          const component = str(p.component)
+          if (component === undefined) return { ok: false, action: args.action, error: 'prune needs component' }
+          const prune: MatrixPrune = {
+            component,
+            status: pruneStatus(p.status),
+            ...(str(p.chain) !== undefined ? { chain: str(p.chain) } : {}),
+            ...(num(p.deltaNll) !== undefined ? { deltaNll: num(p.deltaNll) } : {}),
+            ...(num(p.deltaBic) !== undefined ? { deltaBic: num(p.deltaBic) } : {}),
+            ...(str(p.reason) !== undefined ? { reason: str(p.reason) } : {}),
+          }
+          const out = save(addPrune(matrix, prune), cfg)
+          return { ok: true, action: args.action, matrixPath, mdPath, status: out.status, missing: out.check.missing }
+        }
+        if (args.action === 'topology') {
+          const { matrix, cfg } = load()
+          const t = args.topology ?? {}
+          const id = str(t.id)
+          if (id === undefined) return { ok: false, action: args.action, error: 'topology needs id' }
+          const out = save(setTopologyStatus(matrix, id, topoStatus(t.status), str(t.reason)), cfg)
+          return { ok: true, action: args.action, matrixPath, mdPath, status: out.status, missing: out.check.missing }
+        }
+        return { ok: false, action: args.action, error: `unknown action ${args.action}` }
+      } catch (e) {
+        return { ok: false, action: args.action, error: (e as Error).message }
+      }
+    },
+  }))
+
 
 }

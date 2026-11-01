@@ -35,7 +35,7 @@
 import { normalizeName, resonanceConfigKey } from './lookup.js'
 import { conventionFor, conventionHint } from './lineshape.js'
 import { hasDecayTo, allowedIntermediateJP } from './decay-check.js'
-import { analyzeIntermediateJPC } from './intermediate-jpc.js'
+import { analyzeIntermediateJPC, deriveIntermediateCharge } from './intermediate-jpc.js'
 import { explicitJp } from './jpc.js'
 import type {
   ChainKinematics,
@@ -95,7 +95,7 @@ export interface ValidateOptions {
 
 /** The config surface validation reads (PwaConfig subset). */
 export interface ValidationConfig {
-  particles: Record<string, { j: number; p: 1 | -1; mass: number }>
+  particles: Record<string, { j: number; p: 1 | -1; mass: number; pdgid?: number }>
   /** Resonance specs; J/P are OPTIONAL (ctpwa: the intermediates group governs). */
   resonances: Record<string, { j?: number; p?: 1 | -1; parameters: number[] }>
   decayChains?: PwaConfig['decayChains']
@@ -528,7 +528,13 @@ export function validateResonanceAddition(
       }
       // Rule 11: C(A) = C(R)*C(B) at the production vertex, with C(R) from the pair.
       const required = ana.production?.cRequired ?? null
-      if (required !== null) {
+      // A CHARGED intermediate is not a C eigenstate, so C conservation does not
+      // apply to it at all: no c-violation and — crucially — no c-unverified.
+      // (A charged a0(1450) in eta' pi- used to be rejected only because the
+      // neutral rho(770)0 spelling had donated a C to pi+ pi0.)
+      const chainCharge = deriveIntermediateCharge(config, db).get(proposal.chain)
+      const cNotApplicable = chainCharge !== undefined && chainCharge !== 0
+      if (required !== null && !cNotApplicable) {
         const jpKey = jpLabel(proposal.jpGroup)
         const conflicts: { label: string; pair: string[]; c: 1 | -1 }[] = []
         for (const step of ana.decaySteps) {

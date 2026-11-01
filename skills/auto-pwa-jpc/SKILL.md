@@ -31,7 +31,8 @@ description: 'Use when checking quantum-number reachability before adding a reso
 - **全同**：同 pdgid ⇒ 同种粒子。config 必须给同种粒子不同分析名（`pi01`/`pi02`），所以**不能靠名字判全同**——写 pdgid 后 `auto_pwa_jpc_check` 用 `identicalDerived` 标出"同 PDGID 却未声明 `Constraints.identical`"（`identical-missing` warning），并给出该补的组。**引擎仍只认 `Constraints.identical`**：不声明就不对称化，波表还会放进 π⁰π⁰ 的奇 L 波。
 - **正反粒子对**：pdgid 变号即共轭对（`CONJUGATE_PAIRS` 名字表只作无 pdgid 时的回退）。K⁰(311)/K̄⁰(−311) 即使被命名成 `K01/K02` 也不会被误判全同。
 - **C 本征态**：`selfConjugate`（PDG `cc_type=='S'`）**且** PDG 给出确定 C 值。**不要只看 C 值**：PDG 表给带电态留了假 C（`rho(770)+ → '-'`），必须以 `selfConjugate` 为门。
-- **C 三态**：`c-enforced`（母子均 C 本征态 → C(R) 钉死）/ `c-not-applicable`（某端无 C，不施加约束）/ `c-unknown`。C 不是引擎输入，这条门禁是唯一拦 C 违例的地方。
+- **C 三态**：`c-enforced`（母子均 C 本征态 → C(R) 钉死）/ `c-not-applicable`（某端无 C，**或 R 本身带电** → 不施加约束）/ `c-unknown`。C 不是引擎输入，这条门禁是唯一拦 C 违例的地方。
+- **带电中间态没有 C**：中间态的电中性由**其衰变末态的电荷之和**判定（`R_pip_pi0 = π⁺π⁰` → Q=+1 → 带电）。带电道**不能**从组内共振态的**中性拼写**继承 C（`rho770` 是 ρ⁰ 的 C=−1，跟 π⁺π⁰ 无关）；这种链的产生顶点 `cRequired = null`、`cStatus = not-applicable`，**不是"通过"**。所以给 η′π⁻ 链加带电 a₀/a₁ 时不会报 `c-unverified` —— 那本来就是"不适用"，不是"未验证"。
 - 加新共振态前若不确定某粒子的 pdgid/自共轭/C，用 `auto_pwa_config_view` 看该粒子行（`pdgid=… = K(S)0 自共轭 C=-` 之类），或 `auto_pwa_lookup`。
 
 **教学案例（为什么会被拦）**：

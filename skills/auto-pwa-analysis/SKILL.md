@@ -74,6 +74,7 @@ description: 'Use when performing partial wave analysis (分波分析) with the 
 | 跑一轮迭代 | `auto_pwa_run_fit` → `evaluate`/`diagnose` → `note`；`loop_next` 只判收敛 | 只用手动 iter-000 + 不建 goal |
 | 并行试多个候选再裁决 | `auto_pwa_try_candidates` → `auto_pwa_compare` | 连续多轮 `run_fit` |
 | 记录本轮结论 | `auto_pwa_note` | 自己写 md |
+| 4 体拓扑/候选/剪枝的尝试矩阵 | `auto_pwa_matrix`（advisory） | 只靠记忆说“都试过了” |
 | 查历史 / 能否复现 | `auto_pwa_history`（结论）/ `auto_pwa_git_log`（配置与 commit） | — |
 
 **trans 关系工具（通用）**：`auto_pwa_trans_suggest` 接受任意 `chains`（每条链给 `mother -> d1 + d2` 的 `steps`）和 `particles`（每个态的 `I/I3/C`），按同位旋 CG 算出 target/base 的耦合比值，并给可直接粘贴的 `Constraints.trans` 条目。它不绑定 J/ψ→η′3π，也不替你猜链名；缺 I/I3 时会明确报 `missing-isospin`。C 只做逐顶点检查（`cStatus`），**不参与比值符号**；daughter 顺序/相位约定不同时，先按输出值拟合，再用 ΔNLL 检查 ±1。

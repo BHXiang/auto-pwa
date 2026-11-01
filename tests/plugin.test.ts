@@ -169,6 +169,7 @@ describe('auto-pwa plugin', () => {
       'auto_pwa_try_candidates',
       'auto_pwa_compare',
       'auto_pwa_loop_next',
+      'auto_pwa_matrix',
     ])
   })
 

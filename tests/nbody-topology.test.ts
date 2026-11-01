@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseConfig } from '../src/config-edit.js'
-import { analyzeIntermediateJPC, deriveIntermediateC } from '../src/intermediate-jpc.js'
+import { analyzeIntermediateJPC, deriveIntermediateC, deriveIntermediateCharge } from '../src/intermediate-jpc.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
 import { defaultDb } from '../src/db.js'
 
@@ -208,5 +208,111 @@ Resonances:
     const cfg = parseConfig(P2)
     const derived = deriveIntermediateC(cfg, defaultDb)
     expect(derived.get('R_pipi_m')).toBe(-1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Charged intermediate -> C is not a good quantum number (not-applicable)
+//
+// Regression: R_pippi0 = pi+ pi0 used to inherit C=-1 from the NEUTRAL
+// rho(770)0 spelling of its group's resonance, so the charged eta'pi- chain got
+// a bogus C(R)=+1 requirement and a charged a0 could never be added
+// (c-unverified). Charge is derived from the decay daughters, and only a
+// neutral channel may read a resonance's PDG C.
+// ---------------------------------------------------------------------------
+describe('charged intermediate carries no C', () => {
+  const TWO_BY_TWO = `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.9578, pdgid: 331}
+  pim: {J: 0, P: -1, mass: 0.1396, pdgid: -211}
+  pip2: {J: 0, P: -1, mass: 0.1396, pdgid: 211}
+  pi0: {J: 0, P: -1, mass: 0.1350, pdgid: 111}
+DecayChains:
+  decay1:
+    Jpsi:
+      - [R_etappim, R_pippi0]
+    R_etappim: [etap, pim]
+    R_pippi0: [pip2, pi0]
+    intermediates:
+      R_etappim:
+        - [J: 0, P: 1]: [a0_980]
+      R_pippi0:
+        - [J: 1, P: -1]: [rho770]
+Resonances:
+  a0_980: {J: 0, P: 1, model: BWR, parameters: [0.98, 0.06]}
+  rho770: {J: 1, P: -1, model: BWR, parameters: [0.7753, 0.1491]}
+`
+  const CASCADE = `Particles:
+  Jpsi: {J: 1, P: -1, mass: 3.0969, pdgid: 443}
+  etap: {J: 0, P: -1, mass: 0.9578, pdgid: 331}
+  pip: {J: 0, P: -1, mass: 0.1396, pdgid: 211}
+  pim: {J: 0, P: -1, mass: 0.1396, pdgid: -211}
+DecayChains:
+  decay1:
+    Jpsi:
+      - [etap, R_3pi]
+    R_3pi: [pip, R_pipi]
+    R_pipi: [pip, pim]
+    intermediates:
+      R_3pi:
+        - [J: 1, P: 1]: [a1_1260]
+      R_pipi:
+        - [J: 1, P: -1]: [rho770]
+Resonances:
+  a1_1260: {J: 1, P: 1, model: BWR, parameters: [1.23, 0.42]}
+  rho770: {J: 1, P: -1, model: BWR, parameters: [0.7753, 0.1491]}
+`
+
+  it('derives the charge of every intermediate from its decay daughters', () => {
+    const cfg = parseConfig(TWO_BY_TWO)
+    const q = deriveIntermediateCharge(cfg, defaultDb)
+    expect(q.get('R_etappim')).toBe(-1) // eta'(0) pi-(-1)
+    expect(q.get('R_pippi0')).toBe(1) // pi+(+1) pi0(0)
+  })
+
+  it('never gives a charged channel the neutral rho(770)0 C', () => {
+    const cfg = parseConfig(TWO_BY_TWO)
+    const derived = deriveIntermediateC(cfg, defaultDb)
+    expect(derived.has('R_pippi0')).toBe(false)
+    expect(derived.has('R_etappim')).toBe(false)
+    const ana = analyzeIntermediateJPC(cfg, defaultDb, 'R_etappim')!
+    expect(ana.production!.cRequired).toBeNull()
+    expect(ana.cStatus.status).toBe('not-applicable')
+    expect(ana.cStatus.reason).toContain('带电')
+  })
+
+  it('accepts a charged a0(1450)+ in eta-prime pi- (no c-unverified)', () => {
+    const cfg = parseConfig(TWO_BY_TWO)
+    const r = validateResonanceAddition(defaultDb, cfg, {
+      name: 'a(0)(1450)+',
+      chain: 'R_etappim',
+      jpGroup: { j: 0, p: 1 },
+      model: 'BWR',
+      parameters: [1.475, 0.265],
+    })
+    expect(r.errors.map((e) => e.code)).not.toContain('c-unverified')
+    expect(r.errors.map((e) => e.code)).not.toContain('c-violation')
+    expect(r.errors).toHaveLength(0)
+  })
+
+  it('a charged cascade intermediate (pi+ R_pipi) is not-applicable too', () => {
+    const cfg = parseConfig(CASCADE)
+    const q = deriveIntermediateCharge(cfg, defaultDb)
+    expect(q.get('R_3pi')).toBe(1) // pi+ (+1) + neutral R_pipi (0)
+    const derived = deriveIntermediateC(cfg, defaultDb)
+    expect(derived.has('R_3pi')).toBe(false) // charged -> no C
+    expect(derived.get('R_pipi')).toBe(-1) // the neutral sibling keeps its C
+    const ana = analyzeIntermediateJPC(cfg, defaultDb, 'R_3pi')!
+    expect(ana.production!.cRequired).toBeNull()
+    expect(ana.cStatus.status).toBe('not-applicable')
+    const r = validateResonanceAddition(defaultDb, cfg, {
+      name: 'a(1)(1260)+',
+      chain: 'R_3pi',
+      jpGroup: { j: 1, p: 1 },
+      model: 'BWR',
+      parameters: [1.23, 0.42],
+    })
+    expect(r.errors.map((e) => e.code)).not.toContain('c-unverified')
+    expect(r.errors).toHaveLength(0)
   })
 })

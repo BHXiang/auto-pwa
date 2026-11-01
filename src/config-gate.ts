@@ -29,7 +29,7 @@
  */
 import { createHash } from 'node:crypto'
 import { validateConfig, crossReferenceErrors } from './config-edit.js'
-import { analyzeIntermediateJPC } from './intermediate-jpc.js'
+import { analyzeIntermediateJPC, deriveIntermediateC } from './intermediate-jpc.js'
 import { lookupResonance, normalizeName } from './lookup.js'
 import { explicitJp } from './jpc.js'
 import { classifyPairPhysics, resolveC } from './particle-info.js'
@@ -151,24 +151,16 @@ function groupCFromAnalysis(
   if (fromDecay.size > 1) return undefined
   // e.g. a0/a2 -> η′ + π0: pairJPC leaves C undefined for a distinct pair, but
   // both daughters are C eigenstates; C conservation gives C(R)=C(d1)C(d2).
-  // Resolve a daughter that may be a particle OR an intermediate.  An
-  // intermediate's C is taken from its group's resonances when they carry a
-  // unique PDG C (e.g. R_pipi with rho770 => C=-1); a cascade like
-  // R_3pi -> pi0 + R_pipi then gives C(R_3pi) = C(pi0)*C(rho770) = -1.
+  // A daughter may be a particle OR an intermediate; intermediates go through
+  // deriveIntermediateC, which is charge-aware: a CHARGED channel
+  // (R_pippi0 = pi+ pi0) gets no C even though its group's resonance carries
+  // the neutral rho(770)0 value — that used to hand a charged eta' pi- chain a
+  // bogus C(R)=+1 requirement.
+  const derivedC = deriveIntermediateC(config, db)
   const cOfDaughter = (name: string): 1 | -1 | undefined => {
     const p = config.particles[name]
     if (p !== undefined) return resolveC(db, { ...p, name })
-    const chain = config.decayChains[ana.chain]
-    const int = chain?.intermediates[name]
-    if (int === undefined) return undefined
-    const cs = new Set<number>()
-    for (const g of int.groups) {
-      for (const rn of g.names) {
-        const c = resolveC(db, { name: rn })
-        if (c === 1 || c === -1) cs.add(c)
-      }
-    }
-    return cs.size === 1 ? ([...cs][0] as 1 | -1) : undefined
+    return derivedC.get(name)
   }
   const fromDaughters = new Set<number>()
   for (const step of ana.decaySteps) {
