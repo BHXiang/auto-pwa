@@ -1649,6 +1649,12 @@ export function validateConfig(
       return chain.intermediates[name]?.groups?.[0]?.jp.j
     }
     for (const step of chain.steps) {
+      // Report the entry the way the config wrote it: `ls: [L, S]` is ctpwa's
+      // current notation (S = physical spin), `sl: [S, L]` the legacy alias.
+      // The internal {2S+1, L} is shown too so a half-integer S is unambiguous.
+      const keyName = step.slKey === 'ls' ? 'ls' : 'sl'
+      const entryOf = (s: number, l: number): string =>
+        step.slKey === 'ls' ? `${keyName} [L=${l}, S=${(s - 1) / 2}]` : `${keyName} [S=${(s - 1) / 2}, L=${l}]`
       for (const [s, l] of step.sl ?? []) {
         // Internal representation is {2S+1, L} (ctpwa Amp2BD::ComSL):
         // 2S+1 is a POSITIVE INTEGER for both integer and half-integer S
@@ -1657,7 +1663,7 @@ export function validateConfig(
         if (!Number.isInteger(s) || s < 1) {
           errors.push({
             code: 'sl-invalid-multiplicity',
-            message: `step ${step.mother} -> ${step.daughters.join(' + ')}: sl multiplicity 2S+1 = ${s} must be a positive integer (S integer or half-integer)`,
+            message: `step ${step.mother} -> ${step.daughters.join(' + ')}: ${entryOf(s, l)} 的 S 必须是整数或半整数（内部 2S+1 = ${s} 不是正整数）`,
           })
         } else if (step.daughters.length >= 2) {
           const j1 = spinOf(step.daughters[0]!)
@@ -1670,7 +1676,7 @@ export function validateConfig(
             if (s < lo || s > hi || (s - lo) % 2 !== 0) {
               errors.push({
                 code: 'sl-spin-mismatch',
-                message: `step ${step.mother} -> ${step.daughters.join(' + ')}: 2S+1 = ${s} is not realizable for J(${step.daughters[0]}) = ${j1} and J(${step.daughters[1]}) = ${j2} (2S+1 in {${Array.from({ length: (hi - lo) / 2 + 1 }, (_, i) => lo + 2 * i).join(', ')}})`,
+                message: `step ${step.mother} -> ${step.daughters.join(' + ')}: ${entryOf(s, l)} 不可达：J(${step.daughters[0]}) = ${j1} 与 J(${step.daughters[1]}) = ${j2} 只能给出 2S+1 ∈ {${Array.from({ length: (hi - lo) / 2 + 1 }, (_, i) => lo + 2 * i).join(', ')}}`,
               })
             }
           }
@@ -1678,7 +1684,7 @@ export function validateConfig(
         if (!Number.isInteger(l) || l < 0) {
           errors.push({
             code: 'sl-invalid-l',
-            message: `step ${step.mother} -> ${step.daughters.join(' + ')}: sl L = ${l} must be a non-negative integer`,
+            message: `step ${step.mother} -> ${step.daughters.join(' + ')}: ${entryOf(s, l)} 的 L 必须是非负整数`,
           })
         }
       }

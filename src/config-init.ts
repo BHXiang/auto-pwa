@@ -23,6 +23,7 @@ import { isAbsolute, resolve } from 'node:path'
 import { applyResonanceAddition, crossReferenceErrors, dumpConfig, parseConfig, rebuildViews, validateConfig } from './config-edit.js'
 import { getParticleInfo } from './particle-info.js'
 import { firstLevelTopologies } from './topology.js'
+import { filterToLS } from './jpc.js'
 import { validateResonanceAddition } from './resonance-validate.js'
 import type {
   InitialConfigResult,
@@ -325,7 +326,13 @@ export function buildInitialConfig(
     for (const step of chain.steps) {
       const mode: unknown[] = [step.daughters[0], step.daughters[1]]
       const opts: YamlMap = new Map()
-      if (step.sl !== undefined) opts.set('sl', step.sl)
+      // Wave whitelist: the spec's `ls` is `[L, S_phys]` (ctpwa's current user
+      // notation) and is written through. The legacy spec `sl` is the plugin's
+      // INTERNAL `(2S+1, L)` notation — writing it out verbatim under the
+      // `sl` key would make ctpwa read 2S+1 as the physical S (S=0 -> S=1),
+      // silently swapping every wave, so it is converted to `ls` here.
+      if (step.ls !== undefined) opts.set('ls', step.ls)
+      else if (step.sl !== undefined) opts.set('ls', filterToLS(step.sl))
       if (step.pBreak !== undefined) opts.set('p_break', step.pBreak)
       if (step.hasBf !== undefined) opts.set('has_bf', step.hasBf)
       if (step.bfD !== undefined) opts.set('bf_d', step.bfD)

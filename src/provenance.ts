@@ -17,10 +17,11 @@
  *   4. the data/phsp/background samples.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { PwaConfig } from './types.js'
 import { md5, type GateResult, type GateStats } from './config-gate.js'
-import { dbIntegrity, defaultDb } from './db.js'
+import { dbIntegrity, defaultDb, pdgProvider } from './db.js'
+import { auditLocalStates, type LocalStateAudit } from './local-states.js'
 import pdgManifestJson from '../data/pdg.manifest.json' with { type: 'json' }
 import { engineFingerprint } from './git-log.js'
 import type { GitProvenance } from './git-log.js'
@@ -76,7 +77,20 @@ export interface Provenance {
    * PDG 表指纹：这次拟合的门禁判定基于哪一版 PDG 事实（可复现前提）。
    * 与 `engine` 同理——换了 PDG 版本，"质量/J^P 是否与 PDG 一致"的结论可能变。
    */
-  pdg?: { canonicalSha256: string; generatedAt?: string; entries: number; integrity: boolean }
+  pdg?: {
+    canonicalSha256: string
+    generatedAt?: string
+    entries: number
+    integrity: boolean
+    source: 'pdg-api' | 'snapshot' | 'snapshot-fallback'
+    edition?: string
+    releaseTimestamp?: string
+    sqliteSha256?: string
+    fallbackWarning?: string
+    snapshotIntegrity?: boolean
+  }
+  /** Non-PDG extensions visible to this fit, split by global vs analysis scope. */
+  localStates?: LocalStateAudit
   resonancesInclude?: ProvenanceInclude
   fitScript?: string
   fitScriptMd5?: string
@@ -212,11 +226,22 @@ export function buildProvenance(options: BuildProvenanceOptions): Provenance {
     configMd5: gate.configMd5,
     ...(engineFingerprint() !== undefined ? { engine: engineFingerprint() } : {}),
     pdg: {
-      canonicalSha256: dbIntegrity.actual,
+      canonicalSha256: pdgProvider.canonicalSha256,
       ...(pdgManifest.generatedAt !== undefined ? { generatedAt: pdgManifest.generatedAt } : {}),
       entries: defaultDb.resonances.filter((r) => r.status === 'pdg').length,
-      integrity: dbIntegrity.ok,
+      integrity: pdgProvider.source === 'pdg-api' ? true : dbIntegrity.ok,
+      source: pdgProvider.source,
+      ...(pdgProvider.edition !== undefined ? { edition: pdgProvider.edition } : {}),
+      ...(pdgProvider.releaseTimestamp !== undefined ? { releaseTimestamp: pdgProvider.releaseTimestamp } : {}),
+      ...(pdgProvider.sqliteSha256 !== undefined ? { sqliteSha256: pdgProvider.sqliteSha256 } : {}),
+      ...(pdgProvider.warning !== undefined ? { fallbackWarning: pdgProvider.warning } : {}),
+      ...(pdgProvider.source === 'pdg-api' ? { snapshotIntegrity: dbIntegrity.ok } : {}),
     },
+    localStates: auditLocalStates(
+      basename(dirname(options.iterDir)) === 'iterations'
+        ? dirname(dirname(options.iterDir))
+        : dirname(options.configPath),
+    ),
     ...(include !== undefined ? { resonancesInclude: include } : {}),
     ...(options.fitScript !== undefined ? { fitScript: options.fitScript } : {}),
     ...(fitScriptMd5 !== undefined ? { fitScriptMd5 } : {}),

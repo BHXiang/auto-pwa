@@ -23,7 +23,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { defaultDb, dbIntegrity } from '../src/db.js'
+import { defaultDb, dbIntegrity, pdgProvider } from '../src/db.js'
 import { conventionFor } from '../src/lineshape.js'
 import { dbWithLocal } from '../src/local-states.js'
 import { inferAction, reminderInjection, reminderLevelFromEnv } from '../src/reminder-set.js'
@@ -32,7 +32,7 @@ import { cValueOf, getParticleInfo } from '../src/particle-info.js'
 import { lookupResonance, lookupC } from '../src/lookup.js'
 import { decayCheck, hasDecayTo } from '../src/decay-check.js'
 import { analyzeIntermediateJPC } from '../src/intermediate-jpc.js'
-import { explicitJp } from '../src/jpc.js'
+import { explicitJp, filterToLS } from '../src/jpc.js'
 import { firstLevelTopologies, type TopologyCoverage } from '../src/topology.js'
 import { createMatrix, addRow, addPrune, setTopologyStatus, matrixStatus, matrixCheck, renderMatrixMarkdown, type AttemptMatrix, type MatrixRow, type MatrixPrune, type RowStatus, type PruneStatus, type TopologyStatus } from '../src/attempt-matrix.js'
 import { validateResonanceAddition } from '../src/resonance-validate.js'
@@ -1313,7 +1313,11 @@ export function apply(ctx: Context) {
           return ms.length > 0 ? `${base}${conv}\n    单实验测量:\n${ms.join('\n')}` : `${base}${conv}`
         })
         const integrity = dbIntegrity.ok ? '' : `⚠ ${dbIntegrity.warning}\n`
-        return text(`${integrity}PDG 命中 ${value.total} 条（[本地] = 本地登记，非 PDG）:\n${lines.join('\n')}`)
+        const source = pdgProvider.source === 'pdg-api'
+          ? `PDG API${pdgProvider.edition !== undefined ? ` ${pdgProvider.edition}` : ''}（本地 SQLite）`
+          : pdgProvider.source === 'snapshot-fallback' ? 'pdg.json 快照（API 回退）' : 'pdg.json 快照'
+        const fallback = pdgProvider.warning !== undefined ? `⚠ ${pdgProvider.warning}\n` : ''
+        return text(`${integrity}${fallback}PDG 命中 ${value.total} 条（来源: ${source}；[本地] = 本地登记，非 PDG）:\n${lines.join('\n')}`)
       },
     },
     async execute(args: { name?: string; jp?: JP; massRange?: [number, number]; decayTo?: string[] }, exec?: { agent?: { id?: string; sessionId?: string } }) {
@@ -1520,7 +1524,7 @@ export function apply(ctx: Context) {
                       identical: { type: 'boolean', description: '引擎事实：已声明 Constraints.identical（引擎会对称化）' },
                       identicalDerived: { type: 'boolean', description: '物理事实：两个 daughter 同 PDGID（同种粒子）。true 而 identical=false ⇒ 漏声明，引擎不会对称化' },
                       cDefined: { type: 'boolean' },
-                      sl: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+                      ls: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: '该步的白名单 [L, S]（S 为物理自旋）；null = 不筛波' },
                       jpc: { type: 'array', items: { type: 'string' } },
                     },
                   },
@@ -1533,7 +1537,7 @@ export function apply(ctx: Context) {
                     properties: {
                       jpc: { type: 'string' },
                       c: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
-                      sl: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+                      ls: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: '实现该 J^PC 的波 [L, S]（S 为物理自旋）' },
                       candidates: {
                         type: 'array',
                         items: {
@@ -1568,10 +1572,10 @@ export function apply(ctx: Context) {
           chain: string
           production?: { mother?: string; daughter?: string; threshold?: number; allowedJP?: string[]; cRequired?: number | null }
           cStatus?: { status?: string; required?: number | null; reason?: string }
-          decaySteps?: { daughters: string[]; identical?: boolean; identicalDerived?: boolean; cDefined?: boolean; sl?: [number, number][]; jpc?: string[] }[]
+          decaySteps?: { daughters: string[]; identical?: boolean; identicalDerived?: boolean; cDefined?: boolean; ls?: [number, number][] | null; jpc?: string[] }[]
           allowed?: {
             jpc: string
-            sl?: [number, number][]
+            ls?: [number, number][]
             candidates?: { id: string; mass: number; cMatch?: string; thresholdMargin?: number | null; decaysTo?: boolean }[]
           }[]
           cBlocked?: string[]
@@ -1610,7 +1614,7 @@ export function apply(ctx: Context) {
                 ? ' (⚠ 同 PDGID 未声明 identical — 引擎不会对称化)'
                 : ''
             lines.push(
-              `  衰变: ${st.daughters.join(' + ')}${flag}${st.sl ? ` sl=${JSON.stringify(st.sl)}` : ''} -> J^PC: ${st.jpc?.join(' ') ?? '?'}`,
+              `  衰变: ${st.daughters.join(' + ')}${flag}${st.ls ? ` ls=${JSON.stringify(st.ls)}` : ''} -> J^PC: ${st.jpc?.join(' ') ?? '?'}`,
             )
           }
           for (const a of it.allowed ?? []) {
@@ -1625,7 +1629,7 @@ export function apply(ctx: Context) {
                 return `${c.id}${marks}${margin}`
               })
               .join(', ')
-            lines.push(`  ✓ ${a.jpc} (sl ${(a.sl ?? []).map((s) => `${s[0]}/${s[1]}`).join(' ')}) 候选: ${cands}${(a.candidates ?? []).length > 10 ? ' …' : ''}`)
+            lines.push(`  ✓ ${a.jpc} (LS ${(a.ls ?? []).map(([l, s]) => `(${l},${s})`).join(' ')}) 候选: ${cands}${(a.candidates ?? []).length > 10 ? ' …' : ''}`)
           }
           if (typeof it.filteredAboveThreshold === 'number' && it.filteredAboveThreshold > 0) {
             lines.push(`  （另有 ${it.filteredAboveThreshold} 个候选因超过 on-shell 阈值未列出）`)
@@ -1684,13 +1688,13 @@ export function apply(ctx: Context) {
           identical?: boolean
           identicalDerived?: boolean
           cDefined?: boolean
-          sl?: [number, number][]
+          ls?: [number, number][] | null
           jpc?: string[]
         }[]
         allowed?: {
           jpc: string
           c: 1 | -1 | null
-          sl: [number, number][]
+          ls: [number, number][]
           candidates: { id: string; mass: number; width: number | null; cMatch: string; thresholdMargin: number | null; decaysTo: boolean }[]
         }[]
         cBlocked?: string[]
@@ -1709,7 +1713,7 @@ export function apply(ctx: Context) {
           const allowed: {
             jpc: string
             c: 1 | -1 | null
-            sl: [number, number][]
+            ls: [number, number][]
             candidates: { id: string; mass: number; width: number | null; cMatch: string; thresholdMargin: number | null; decaysTo: boolean }[]
           }[] = []
           for (const w of ana.allowed) {
@@ -1736,7 +1740,7 @@ export function apply(ctx: Context) {
               }))
               // PDG-listed decays first, then by mass ascending.
               .sort((a, b) => (a.decaysTo === b.decaysTo ? a.mass - b.mass : a.decaysTo ? -1 : 1))
-            allowed.push({ jpc: w.jpc, c: w.c, sl: w.sl, candidates })
+            allowed.push({ jpc: w.jpc, c: w.c, ls: w.ls, candidates })
           }
           // Optional fields are omitted rather than set to undefined: the tool
           // framework's lossless-JSON gate rejects own keys holding undefined,
@@ -1763,14 +1767,14 @@ export function apply(ctx: Context) {
             ...(production !== undefined ? { production } : {}),
             cStatus: { status: ana.cStatus.status, required: ana.cStatus.required, reason: ana.cStatus.reason },
             decaySteps: ana.decaySteps.map((s) => {
-              const step: { daughters: string[]; identical: boolean; identicalDerived: boolean; cDefined: boolean; sl?: [number, number][]; jpc: string[] } = {
+              const step: { daughters: string[]; identical: boolean; identicalDerived: boolean; cDefined: boolean; ls?: [number, number][]; jpc: string[] } = {
                 daughters: s.daughters,
                 identical: s.identical,
                 identicalDerived: s.identicalDerived,
                 cDefined: s.cDefined,
                 jpc: s.jpc,
               }
-              if (s.sl !== null) step.sl = s.sl
+              if (s.ls !== null) step.ls = s.ls
               return step
             }),
             allowed,
@@ -1843,7 +1847,8 @@ export function apply(ctx: Context) {
                     properties: {
                       mother: { type: 'string', required: true },
                       daughters: { type: 'array', required: true, items: { type: 'string' }, description: '恰好两个' },
-                      sl: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: '(2S+1, L) 白名单' },
+                      sl: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: '旧式内部记号 (2S+1, L) 白名单；写回时自动转成 ls: [L, S]' },
+                      ls: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: '当前标准 (L, S) 白名单（S 为物理自旋，可半整数）；与 sl 同时给出时优先' },
                       pBreak: { type: 'boolean' }, hasBf: { type: 'boolean' }, bfD: { type: 'number' },
                     },
                   },
@@ -2267,7 +2272,10 @@ export function apply(ctx: Context) {
           steps: chain.steps.map((s) => ({
             mother: s.mother,
             daughters: s.daughters,
-            sl: s.sl ?? null,
+            // User-side notation: [L, S] (config key `ls`); `slKey` says which
+            // key the file actually used (`sl` is the legacy S-first alias).
+            ls: s.sl ? filterToLS(s.sl) : null,
+            slKey: s.slKey ?? null,
             pBreak: s.pBreak ?? false,
           })),
         }))
@@ -2494,6 +2502,9 @@ export function apply(ctx: Context) {
         // 信任锚漂移 → 跑前门禁关于"PDG 依据"的判定不可信，必须让调用方看到。
         warnings.unshift({ code: 'pdg-integrity', message: dbIntegrity.warning, severity: 'warning' as const })
       }
+      if (pdgProvider.warning !== undefined) {
+        warnings.unshift({ code: 'pdg-source-fallback', message: pdgProvider.warning, severity: 'warning' as const })
+      }
       if (deep.ran && !deep.ok) {
         errors.push({ code: 'ctpwa-config-invalid', message: `ctpwa 拒绝该配置: ${deep.message ?? deep.status ?? 'DecayInfo 校验失败'}`, severity: 'error' })
       } else if (!deep.ran && (args.deep === true || gate.resonancesExternal)) {
@@ -2702,6 +2713,9 @@ export function apply(ctx: Context) {
       if (!dbIntegrity.ok && dbIntegrity.warning !== undefined) {
         // 信任锚漂移时，"PDG 依据"这条检查本身不可信 → 必须让调用方看到。
         result.warnings.unshift({ code: 'pdg-integrity', message: dbIntegrity.warning })
+      }
+      if (pdgProvider.warning !== undefined) {
+        result.warnings.unshift({ code: 'pdg-source-fallback', message: pdgProvider.warning })
       }
       const kin = cfg.kinematics[args.proposal.chain]
       const out: {

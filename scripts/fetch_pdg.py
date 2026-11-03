@@ -99,6 +99,25 @@ def property_gev(prop) -> tuple[float, float] | None:
     return float(value) * scale, float(err) * scale
 
 
+def summary_value(particle, kind: str) -> tuple[float, float] | None:
+    """Summary mass/width, including PDG entries quoted as a range."""
+    if kind == 'M':
+        direct = particle.mass
+        if direct:
+            return float(direct), float(getattr(particle, 'mass_error', None) or 0.0)
+        properties = particle.masses()
+    else:
+        direct = particle.width
+        if direct:
+            return float(direct), float(getattr(particle, 'width_error', None) or 0.0)
+        properties = particle.widths()
+    for prop in properties:
+        got = property_gev(prop)
+        if got is not None:
+            return got
+    return None
+
+
 def discover_baryons(api) -> list[dict]:
     """Seed entries for the N* / Delta* families (half-integer J).
 
@@ -328,6 +347,18 @@ def main() -> int:
     api = PdgApi(db_url)
     # **输入 = 查询名单**（不再从输出文件里读种子：那会让手改的内容自动"转正"）
     seed = json.loads(QUERY.read_text())["resonances"]
+    # Preserve existing official entries when a spelling/API lookup misses.
+    # A miss is not evidence that an already curated PDG state disappeared;
+    # dropping it would silently erase half the table on a sync.
+    existing = {}
+    if OUT.exists():
+        existing = {e["id"]: e for e in json.loads(OUT.read_text())["resonances"]}
+    # Start from the curated previous entry, not just id/aliases.  Otherwise a
+    # PDG hit without a summary width would erase a previously curated width.
+    for seed_index, e in enumerate(seed):
+        previous = existing.get(e["id"])
+        if previous is not None:
+            seed[seed_index] = {**previous, **e}
 
     # Merge the baryon sector (idempotent): the curated table is meson-only, so
     # without this every N*/Delta* proposal is rejected as 'not-on-pdg'.
@@ -343,11 +374,11 @@ def main() -> int:
         added += 1
     if added:
         print(f"[fetch_pdg] +{added} baryon seed entries (N*/Delta*, half-integer J)")
-    # Keep a stable, human-diffable order.
-    seed.sort(key=lambda e: (e.get("mass") or 0.0, e["id"]))
+    # Preserve the curated order: re-sorting the whole trust anchor creates a
+    # huge meaningless diff.  New states are appended by the query list.
 
     n_hit = n_miss = 0
-    for e in seed:
+    for seed_index, e in enumerate(seed):
         candidates = {e["id"], *e.get("aliases", [])}
         hit = None
         for c in candidates:
@@ -357,25 +388,33 @@ def main() -> int:
                 # Access mass eagerly: some entries (e.g. K(L)0) have no mass
                 # property and throw inside the API.
                 for cand in found:
-                    _ = cand.mass
-                found = [cand for cand in found if cand.mass]
+                    _ = summary_value(cand, 'M')
+                found = [cand for cand in found if summary_value(cand, 'M') is not None]
             except Exception:
                 found = []
             if found:
                 hit = found[0]
                 break
         if hit is None:
+            previous = existing.get(e["id"])
+            if previous is not None:
+                seed[seed_index] = previous
             n_miss += 1
             continue
         # Merge authoritative values; keep curated fields.
         jp = quantum_jp(hit.name)
-        e["mass"] = round(float(hit.mass), 6) if hit.mass else e["mass"]
-        if getattr(hit, "mass_error", None):
-            e["mass_error"] = round(float(hit.mass_error), 6)
-        if getattr(hit, "width", None):
-            e["width"] = round(float(hit.width), 6)
-        if getattr(hit, "width_error", None):
-            e["width_error"] = round(float(hit.width_error), 6)
+        mass_value = summary_value(hit, 'M')
+        width_value = summary_value(hit, 'G')
+        # Direct PDG values update the curated entry; range fallbacks only fill
+        # missing fields and never overwrite an existing curated value.
+        if mass_value is not None and (e.get("mass") in (None, 0.0) or hit.mass is not None):
+            e["mass"] = round(mass_value[0], 6)
+            if mass_value[1]:
+                e["mass_error"] = round(mass_value[1], 6)
+        if width_value is not None and (e.get("width") in (None, 0.0) or hit.width is not None):
+            e["width"] = round(width_value[0], 6)
+            if width_value[1]:
+                e["width_error"] = round(width_value[1], 6)
         if jp:
             e["jp"] = {"j": int(jp[0]) if float(jp[0]).is_integer() else jp[0], "p": jp[1]}
         c = quantum_c(hit.name)
@@ -398,11 +437,11 @@ def main() -> int:
     dropped = [e.get("id") for e in seed if e.get("status") != "pdg"]
     out = {
         "schemaVersion": "0.6.0",
-        "source": "pdg-2026 official package (fetch_pdg.py; pure PDG)",
+        "source": "pdg-2026 official package (pure PDG; local states live in data/local-states.json)",
         "resonances": kept,
         "particles": extract_particles(api),
     }
-    OUT_NEXT.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
+    OUT_NEXT.write_text(json.dumps(out, indent=1, ensure_ascii=False) + "\n")
     print(f"[fetch_pdg] {len(kept)} PDG entries prepared ({n_hit} enriched); "
           f"particles table: {len(out['particles'])} mcids -> {OUT_NEXT}")
     if dropped:

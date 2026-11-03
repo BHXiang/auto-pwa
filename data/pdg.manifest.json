@@ -1,13 +1,13 @@
 {
   "schemaVersion": "1.0.0",
   "pdgFile": "pdg.json",
-  "canonicalSha256": "931e571e8a11d9b9b6f8e0a8cd962ac93ed7e58a07bfe747681b0a524dbf2a51",
-  "fileSha256": "8206da8366dd543e1b44292446732261af9e6589d35e11f526e85d3cd4d591e7",
-  "generatedAt": "2026-10-17T07:27:17.563Z",
+  "canonicalSha256": "313f65f9bbfa8ffbcd3b9133e099e1cd389b9f6607372d28cea7032360d61099",
+  "fileSha256": "d603c47d6954dfcce4f0da61fd1157f940bf1e3a5f313ed3bae867f78cfdd367",
+  "generatedAt": "2026-11-02T18:01:01.456Z",
   "source": "pdg-2026 official package (pure PDG; local states live in data/local-states.json)",
   "counts": {
-    "total": 294,
-    "pdg": 294,
+    "total": 300,
+    "pdg": 300,
     "seed": 0
   }
 }

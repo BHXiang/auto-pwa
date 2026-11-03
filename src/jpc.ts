@@ -4,7 +4,7 @@
  *
  *   - `enumerateSL`      == Amp2BD::ComSL (src/AmpGen.cu) — (S, L) waves of
  *                         one step, with identical selection rule, maxL and
- *                         the (2S+1, L) sl whitelist.
+ *                         the per-step wave whitelist (internal 2S+1, L).
  *   - identical detection == src/Analysis.cu: two daughters are "identical"
  *                         iff both belong to the same Constraints.identical
  *                         group; selection rule (-1)^(L+S) = +1 (boson) / -1
@@ -150,7 +150,7 @@ export interface EnumerateSLOptions {
   isBoson?: boolean
   /** Skip the parity condition (weak decays, ctpwa p_break). */
   pBreak?: boolean
-  /** (2S+1, L) whitelist; empty/undefined = no filter. */
+  /** Internal (2S+1, L) whitelist (`ls`/`sl` already parsed); empty/undefined = no filter. */
   slFilter?: readonly (readonly [number, number])[]
 }
 
@@ -201,12 +201,36 @@ export function enumerateSL(
   return out
 }
 
+/**
+ * ctpwa's USER-SIDE wave notation is `(L, S)` with the PHYSICAL spin: the
+ * config key is `ls: [L, S]` (ConfigParser::parseSLFilter) and `DecayInfo`
+ * prints `LS(L,S)` / amplitude names `<step>_LS(L,S)`.
+ *
+ * The plugin keeps ctpwa's INTERNAL 2S+1 multiplicity inside {@link SL}
+ * (Amp2BD::ComSL works in doubled spins and divides by two). Anything that
+ * leaves the plugin — tool output, gate messages, generated config — must go
+ * through these helpers; never print `w.s` directly.
+ */
+export function physicalSpin(twoSPlusOne: number): number {
+  return (twoSPlusOne - 1) / 2
+}
+
+/** Internal wave `(2S+1, L)` -> user-facing `[L, S_phys]`. */
+export function toLS(w: SL): [number, number] {
+  return [w.l, physicalSpin(w.s)]
+}
+
+/** Internal whitelist `(2S+1, L)[]` -> user-facing `[L, S_phys][]`. */
+export function filterToLS(rows: readonly (readonly [number, number])[]): [number, number][] {
+  return rows.map(([mult, l]) => [l, physicalSpin(mult)])
+}
+
 export interface PairJPCOptions {
   /** Orbital-momentum cap (default 4). */
   maxL?: number
   /** Constraints.identical groups (raw names) for identical-particle detection. */
   identicalGroups?: readonly (readonly string[])[]
-  /** (2S+1, L) whitelist of this decay step (per-step `sl` opts). */
+  /** Internal (2S+1, L) whitelist of this decay step (per-step `ls`/`sl` opts). */
   slFilter?: readonly (readonly [number, number])[]
   /** PDG particle table: enables PDGID-based conjugate-pair detection. */
   db?: ResonanceDb

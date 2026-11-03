@@ -9,6 +9,12 @@
  *   PWA_CTPWA_PYTHON    ctpwa env python (with torch/ctpwa/uproot).
  *                       Default: `python` resolved through PATH — a
  *                       conda-activated ctpwa env needs no explicit path.
+ *   PWA_PDG_SOURCE      api (default outside tests) | snapshot. api reads the
+ *                       official PDG package's local SQLite once per process;
+ *                       failure falls back to pdg.json with a warning.
+ *   PWA_PDG_PYTHON      Python containing the official pdg package; defaults to
+ *                       PWA_CTPWA_PYTHON, then PATH.
+ *   PWA_PDG_API_TIMEOUT_MS  one-time PDG API build timeout (default 60000).
  *   PWA_LD_LIBRARY_PATH  libs for importing ctpwa (ROOT/CUDA/torch).
  *                       Default: empty — nothing is injected and the child
  *                       inherits the ambient environment (conda supplies

@@ -17,7 +17,7 @@
  */
 import type { PwaConfig, ResonanceDb } from './types.js'
 import { allowedIntermediateJP } from './decay-check.js'
-import { pairJPC, pairKind, jpcLabel, type PairKind } from './jpc.js'
+import { pairJPC, pairKind, jpcLabel, filterToLS, toLS, type PairKind } from './jpc.js'
 import { classifyPairPhysics, getParticleInfo, resolveC } from './particle-info.js'
 import type { JP } from './types.js'
 
@@ -62,7 +62,11 @@ export interface StepView {
    */
   identicalDerived: boolean
   cDefined: boolean
-  sl: [number, number][] | null
+  /**
+   * The step's wave whitelist in ctpwa's user-side notation `[L, S_phys]`
+   * (config key `ls: [L, S]`); null = the step does not filter waves.
+   */
+  ls: [number, number][] | null
   /** J^PC labels of this step's waves (C appended when defined). */
   jpc: string[]
   /** J^P-only labels (C-independent membership). */
@@ -75,7 +79,8 @@ export interface MergedWave {
   j: number
   p: 1 | -1
   c: 1 | -1 | null
-  sl: [number, number][]
+  /** Realizing waves in ctpwa's user-side notation `[L, S_phys]` (not 2S+1). */
+  ls: [number, number][]
   jpc: string
   jpKey: string
 }
@@ -395,7 +400,7 @@ export function analyzeIntermediateJPC(
         identical: false,
         identicalDerived: derivedIdentical,
         cDefined: false,
-        sl: step.sl ?? null,
+        ls: step.sl ? filterToLS(step.sl) : null,
         jpc: [],
         jp: [],
         cOf: {},
@@ -420,8 +425,8 @@ export function analyzeIntermediateJPC(
       }
       jpUnion.add(jpKey)
       // C-aware key: same J^P with different C stays a separate wave.
-      const e = byKey.get(key) ?? { j: w.jpc.j, p: w.jpc.p, c: w.jpc.c ?? null, sl: [], jpc: label, jpKey }
-      for (const x of w.sl) e.sl.push([x.s, x.l] as [number, number])
+      const e = byKey.get(key) ?? { j: w.jpc.j, p: w.jpc.p, c: w.jpc.c ?? null, ls: [], jpc: label, jpKey }
+      for (const x of w.sl) e.ls.push(toLS(x))
       byKey.set(key, e)
     }
     decaySteps.push({
@@ -430,7 +435,7 @@ export function analyzeIntermediateJPC(
       identical: kind.kind.startsWith('identical'),
       identicalDerived: derivedIdentical,
       cDefined: kind.cDefined,
-      sl: step.sl ?? null,
+      ls: step.sl ? filterToLS(step.sl) : null,
       jpc: jpcLabels,
       jp: jpLabels,
       cOf,

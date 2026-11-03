@@ -615,6 +615,36 @@
    ]
   },
   {
+   "id": "phi(2170)",
+   "aliases": [
+    "phi2170",
+    "phi_2170"
+   ]
+  },
+  {
+   "id": "K_2(2250)+",
+   "aliases": [
+    "K2_2250",
+    "K(2)(2250)+"
+   ]
+  },
+  {
+   "id": "Lambda(1520)0",
+   "aliases": ["Lambda1520", "Lambda(1520)"]
+  },
+  {
+   "id": "Lambda(1600)0",
+   "aliases": ["Lambda1600", "Lambda(1600)"]
+  },
+  {
+   "id": "Lambda(1670)0",
+   "aliases": ["Lambda1670", "Lambda(1670)"]
+  },
+  {
+   "id": "Lambda(1820)0",
+   "aliases": ["Lambda1820", "Lambda(1820)"]
+  },
+  {
    "id": "N(1680)+",
    "aliases": []
   },

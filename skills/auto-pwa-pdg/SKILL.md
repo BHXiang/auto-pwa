@@ -17,11 +17,11 @@ description: 'Use when deciding whether a resonance may be added and which line 
 
 ## 官方事实 vs 本地登记（`[PDG]` / `[本地]`）
 
-- `data/pdg.json` = **官方事实**（294 条，全部 `status:"pdg"`），由 `data/pdg.manifest.json` 校验和钉住；**模型不允许改它**（guard deny write/edit 与 bash 重定向）。
-- `data/local-states.json` = 跨分析本地登记；`<analysis>/local-states.json` = 本分析自己的追加登记。
-- `auto_pwa_lookup` 每个命中前缀标 **`[PDG]`** 或 **`[本地]`** —— 只有 `[PDG]` 才算"有 PDG 依据"。
-  命中本地登记 → `validate_add` 给 **`local-not-pdg` warning**（不阻塞），提示补 `reference` 或改用 `model: ONE`。
-- 表内容与 manifest 不符 → `pdg-integrity` 警告；修法 `npm run check:pdg`。
+- **运行时默认走官方 PDG API**：读取 PDG 包自带的本地 SQLite（不联网），一次性构建本进程的候选表；`pdg-query-names.json` 不再限制“哪些态存在”。API 不可用才回退 `data/pdg.json`，并显式给 `pdg-source-fallback` 警告。可用 `PWA_PDG_SOURCE=snapshot` 强制离线快照；`PWA_PDG_PYTHON` 指定含官方 `pdg` 包的 Python。
+- `data/pdg.json` = **版本化离线快照 + 别名/衰变模式策展层**，由 `data/pdg.manifest.json` 校验和钉住；不是候选全集的唯一来源。拟合 provenance 记录 `pdg.source`、PDG edition/release、SQLite 或快照哈希。
+- **当前 `data/local-states.json` 只保留格式示例，`states: []`，不含任何实际态**；单个工作的新态写 **`<analysis>/local-states.json`**。只有经过评审且确需跨分析复用时才加入全局表，避免一个项目污染另一个项目的候选集合。两种作用域都会写入 provenance。
+- `auto_pwa_lookup` 标出来源（PDG API/快照），每个命中前缀标 **`[PDG]`** 或 **`[本地]`** —— 只有 `[PDG]` 才算"有 PDG 依据"。命中本地登记 → `validate_add` 给 **`local-not-pdg` warning**（不阻塞），提示补 `reference` 或改用 `model: ONE`。
+- 快照与 manifest 不符 → `pdg-integrity` 警告；修法 `npm run check:pdg`。
 
 ## 名称、别名与 pdgid
 

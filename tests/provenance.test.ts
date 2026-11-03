@@ -103,6 +103,9 @@ describe('provenance record (B1)', () => {
       expect(back.scriptArgs).toEqual(['--runs', '1'])
       expect(back.stats.resonances).toBe(1)
       expect(back.data.data).toEqual(['dat', '/pwa/data.dat'])
+      expect(back.pdg?.source).toBe('snapshot')
+      expect(back.pdg?.canonicalSha256).toMatch(/^[0-9a-f]{64}$/)
+      expect(back.localStates?.global.states).toEqual([])
     })
   })
 

@@ -274,11 +274,14 @@ Resonances:
     await withConfig(async (configPath) => {
       const out = (await execute('auto_pwa_jpc_check', { configPath } as never)) as {
         maxL: number
-        intermediates: { name: string; allowed: { jpc: string }[]; cBlocked: string[] }[]
+        intermediates: { name: string; allowed: { jpc: string; ls: [number, number][] }[]; cBlocked: string[] }[]
       }
       expect(out.maxL).toBe(3) // from Constraints.maxL
       const rkk = out.intermediates.find((i) => i.name === 'R_KK')!
       expect(rkk.allowed.map((a) => a.jpc)).toEqual(['1--', '3--'])
+      // Wave tables use ctpwa's user-side (L, S) notation — the same as the
+      // config key `ls: [L, S]` — never the internal 2S+1 multiplicity.
+      expect(rkk.allowed.map((a) => a.ls)).toEqual([[[1, 0]], [[3, 0]]])
       expect(rkk.cBlocked).toEqual(['2++'])
       const rk = out.intermediates.find((i) => i.name === 'R_Keta')!
       expect(rk.allowed.map((a) => a.jpc)).toEqual(['1-', '2+', '3-'])
@@ -590,7 +593,7 @@ Resonances: {}
     expect(dbIntegrity.expected).toBe(dbIntegrity.actual)
   })
 
-  it('本地登记（非 PDG）的态：给 local-not-pdg warning，而不是 not-on-pdg error', async () => {
+  it('全局 local-states 为空：未在本分析登记的态不得跨分析泄漏', async () => {
     await withConfig(async (configPath) => {
       const out = (await execute('auto_pwa_validate_add', {
         configPath,
@@ -602,9 +605,8 @@ Resonances: {}
           parameters: [2.1, 0.3],
         },
       } as never)) as { errors: { code: string }[]; warnings: { code: string }[] }
-      // 关键：名字在表里（seed）≠ 有 PDG 依据 —— 不能再报 not-on-pdg，也不能静默通过
-      expect(out.errors.map((e) => e.code)).not.toContain('not-on-pdg')
-      expect(out.warnings.map((w) => w.code)).toContain('local-not-pdg')
+      expect(out.errors.map((e) => e.code)).toContain('not-on-pdg')
+      expect(out.warnings.map((w) => w.code)).not.toContain('local-not-pdg')
     })
   })
 
@@ -615,7 +617,7 @@ Resonances: {}
       output?: { render?: (a: unknown, v: unknown) => unknown }
     }
     const pdgHit = await def.execute({ name: 'f2_1270' }, {})
-    const localHit = await def.execute({ name: 'K1_2100' }, {})
+    const localHit = { hits: [{ id: 'X(9999)', jp: { j: 1, p: -1 }, mass: 9.999, width: 0.1, status: 'local' }], total: 1 }
     const rt = JSON.stringify(def.output?.render?.({ name: 'x' }, pdgHit) ?? '')
     const rl = JSON.stringify(def.output?.render?.({ name: 'x' }, localHit) ?? '')
     expect(rt).toContain('[PDG]')

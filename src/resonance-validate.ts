@@ -513,7 +513,7 @@ export function validateResonanceAddition(
     if (ana !== undefined) {
       const pairSummaries = ana.decaySteps
         .filter((s) => s.jpc.length > 0)
-        .map((s) => `${s.daughters.join('+')}${s.cDefined ? ` (${s.kind})` : ''}${s.sl ? ` sl=${JSON.stringify(s.sl)}` : ''}`)
+        .map((s) => `${s.daughters.join('+')}${s.cDefined ? ` (${s.kind})` : ''}${s.ls ? ` ls=${JSON.stringify(s.ls)}` : ''}`)
       // Rule 10: the J^P must be realizable by some wave at the decay vertex
       // (any C; C is enforced separately by rule 11).
       if (ana.jpUnion.length > 0 && !ana.jpUnion.includes(jpLabel(proposal.jpGroup))) {

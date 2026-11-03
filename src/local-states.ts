@@ -3,14 +3,17 @@
  *
  * 设计（P1）：`data/pdg.json` 只放 PDG 官方事实（由 fetch 脚本生成、有 manifest 校验和）；
  * "分析需要但 PDG 没有"的态放进本地登记表，并在两处生效：
- *   1. `data/local-states.json` —— 跨分析共享的策展表（带 reason，人工提交评审）；
- *   2. `<analysis>/local-states.json` —— **每个分析自己的**追加表（默认没有）。
+ *   1. `data/local-states.json` —— 跨分析共享的策展表；默认 `states: []`，
+ *      只保留格式示例，避免一个项目的试探态污染其他分析；
+ *   2. `<analysis>/local-states.json` —— **每个分析自己的**追加表，是新态的默认位置。
  *
  * 语义：这些态**不参与"PDG 依据"判定**，门禁只给 `local-not-pdg` warning（不阻塞）。
  */
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ResonanceDb, ResonanceEntry } from './types.js'
+import { localStates } from './db.js'
 
 interface LocalStateFile {
   schemaVersion?: string
@@ -36,4 +39,35 @@ export function dbWithLocal(base: ResonanceDb, analysisRoot?: string): Resonance
   const extra = localStatesFor(analysisRoot)
   if (extra.length === 0) return base
   return { ...base, resonances: [...base.resonances, ...extra] }
+}
+
+export interface LocalStateAudit {
+  /** Reviewed cross-analysis registry, hashed by content. */
+  global: { states: string[]; canonicalSha256: string }
+  /** The current analysis's own extension, when present. */
+  analysis?: { path: string; sha256: string; states: string[] }
+}
+
+/**
+ * Record which non-PDG extensions were visible to a fit.  A work-specific state
+ * belongs in <analysis>/local-states.json; the global file is reserved for
+ * reviewed states deliberately shared across analyses.
+ */
+export function auditLocalStates(analysisRoot?: string): LocalStateAudit {
+  const global = {
+    states: localStates.map((s) => s.id),
+    canonicalSha256: createHash('sha256').update(JSON.stringify(localStates)).digest('hex'),
+  }
+  if (analysisRoot === undefined) return { global }
+  const path = join(analysisRoot, 'local-states.json')
+  if (!existsSync(path)) return { global }
+  const text = readFileSync(path, 'utf8')
+  return {
+    global,
+    analysis: {
+      path,
+      sha256: createHash('sha256').update(text).digest('hex'),
+      states: localStatesFor(analysisRoot).map((s) => s.id),
+    },
+  }
 }

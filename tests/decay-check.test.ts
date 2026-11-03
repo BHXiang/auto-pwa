@@ -90,7 +90,7 @@ describe('decayCheck candidates', () => {
     const omega: Particle = { j: 1, p: -1, mass: 0.78265 }
     const { candidates } = decayCheck(jpsi, omega, defaultDb, { decayTo: ['Ks', 'Ks'] })
     // Threshold 3.0969 - 0.78265 = 2.314 GeV.
-    expect(flagged(candidates, 0, 1)).toEqual(['f(0)(980)', 'f(0)(1370)', 'f(0)(1500)', 'f(0)(1710)', 'f0(1770)'])
+    expect(flagged(candidates, 0, 1)).toEqual(['f(0)(980)', 'f(0)(1370)', 'f(0)(1500)', 'f(0)(1710)'])
     // Flagged first (f2 family), then unflagged by mass (a2/K2* family).
     expect(flagged(candidates, 2, 1)).toEqual(['f(2)(1270)', "f(2)'(1525)", 'f(2)(2150)'])
     const t2 = candidates.find((c) => c.jp.j === 2 && c.jp.p === 1)!

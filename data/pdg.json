@@ -852,7 +852,82 @@
    "width": 0.45,
    "status": "pdg",
    "tex": "f_{0}(500)",
-   "decayModes": []
+   "decayModes": [],
+   "c": 1,
+   "measurements": [
+    {
+     "year": 2002,
+     "publication": "PRL 89 251802",
+     "doi": "10.1103/PhysRevLett.89.251802",
+     "inspireId": "591237",
+     "technique": "CLEO",
+     "comment": "e+ e- ~~ 10 GeV",
+     "value": 0.513,
+     "errorPositive": 0.032,
+     "errorNegative": 0.032,
+     "usedInAverage": false
+    },
+    {
+     "year": 2001,
+     "publication": "PRL 86 770",
+     "doi": "10.1103/PhysRevLett.86.770",
+     "inspireId": "530320",
+     "technique": "E791",
+     "comment": "D+ --> pi- pi+ pi+",
+     "value": 0.478,
+     "errorPositive": 0.029411,
+     "errorNegative": 0.028601,
+     "statError": 0.024,
+     "systError": 0.017,
+     "usedInAverage": false
+    },
+    {
+     "year": 2001,
+     "publication": "PL B518 47",
+     "doi": "10.1016/S0370-2693(01)01055-3",
+     "inspireId": "565034",
+     "comment": "Upsilon(3S) --> Upsilon pi pi",
+     "value": 0.563,
+     "errorPositive": 0.058,
+     "errorNegative": 0.029,
+     "usedInAverage": false
+    },
+    {
+     "year": 2000,
+     "publication": "PTP 104 203",
+     "doi": "10.1143/PTP.104.203",
+     "inspireId": "527843",
+     "comment": "p pbar --> pi0 pi0 pi0",
+     "value": 0.54,
+     "errorPositive": 0.036,
+     "errorNegative": 0.036,
+     "usedInAverage": false
+    },
+    {
+     "year": 1999,
+     "publication": "NP B541 3",
+     "doi": "10.1016/S0550-3213(98)00796-2",
+     "inspireId": "467455",
+     "technique": "SPEC",
+     "comment": "1.78 pi- p(polar) --> pi- pi+ n",
+     "value": 0.75,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": false
+    },
+    {
+     "year": 1998,
+     "publication": "PAN 61 174",
+     "doi": "10.1016/S0550-3213(98)00796-2",
+     "inspireId": "467455",
+     "technique": "SPEC",
+     "comment": "1.78 pi- p(polar) --> pi- pi+ n",
+     "value": 0.744,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "rho(770)+",
@@ -2795,7 +2870,81 @@
    "width": 0.117,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.002
+   "mass_error": 0.002,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.23,
+     "errorPositive": 0.001,
+     "errorNegative": 0.001,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.2308,
+     "errorPositive": 0.0004,
+     "errorNegative": 0.0004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.2334,
+     "errorPositive": 0.0004,
+     "errorNegative": 0.0004,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.232,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.233,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "EPJ A48 15",
+     "doi": "10.1140/epja/i2012-12015-8",
+     "inspireId": "1082451",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.228,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1232)0",
@@ -2808,7 +2957,81 @@
    "width": 0.117,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.002
+   "mass_error": 0.002,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.23,
+     "errorPositive": 0.001,
+     "errorNegative": 0.001,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.2308,
+     "errorPositive": 0.0004,
+     "errorNegative": 0.0004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.2334,
+     "errorPositive": 0.0004,
+     "errorNegative": 0.0004,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.232,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.233,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "EPJ A48 15",
+     "doi": "10.1140/epja/i2012-12015-8",
+     "inspireId": "1082451",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.228,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "K(1)(1270)~0",
@@ -3996,7 +4219,8 @@
      ],
      "partial": true
     }
-   ]
+   ],
+   "c": 1
   },
   {
    "id": "K(1)(1400)+",
@@ -5920,7 +6144,81 @@
    "width": 0.35,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.03
+   "mass_error": 0.03,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.41,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.417,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.515,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.485,
+     "errorPositive": 0.0012,
+     "errorNegative": 0.0012,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.44,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.41,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1440)0",
@@ -5933,7 +6231,81 @@
    "width": 0.35,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.03
+   "mass_error": 0.03,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.41,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.417,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.515,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.485,
+     "errorPositive": 0.0012,
+     "errorNegative": 0.0012,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.44,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.41,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "rho(1450)+",
@@ -6088,7 +6460,81 @@
    "width": 0.11,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.005
+   "mass_error": 0.005,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.515,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.512,
+     "errorPositive": 0.0015,
+     "errorNegative": 0.0015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.505,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.5145,
+     "errorPositive": 0.0002,
+     "errorNegative": 0.0002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.525,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.519,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1520)0",
@@ -6101,7 +6547,81 @@
    "width": 0.11,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.005
+   "mass_error": 0.005,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.515,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.512,
+     "errorPositive": 0.0015,
+     "errorNegative": 0.0015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.505,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.5145,
+     "errorPositive": 0.0002,
+     "errorNegative": 0.0002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.525,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.519,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "f(2)'(1525)",
@@ -6266,7 +6786,81 @@
    "width": 0.15,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.015
+   "mass_error": 0.015,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.517,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.525,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2017,
+     "publication": "PRL 118 212001",
+     "doi": "10.1103/PhysRevLett.118.212001",
+     "inspireId": "1509373",
+     "technique": "DPWA",
+     "comment": "gamma p --> eta p, eta^' p",
+     "value": 1.528,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.517,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.526,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.547,
+     "errorPositive": 0.0007,
+     "errorNegative": 0.0007,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1535)0",
@@ -6279,7 +6873,81 @@
    "width": 0.15,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.015
+   "mass_error": 0.015,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.517,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.525,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2017,
+     "publication": "PRL 118 212001",
+     "doi": "10.1103/PhysRevLett.118.212001",
+     "inspireId": "1509373",
+     "technique": "DPWA",
+     "comment": "gamma p --> eta p, eta^' p",
+     "value": 1.528,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.517,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.526,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.547,
+     "errorPositive": 0.0007,
+     "errorNegative": 0.0007,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "Delta(1600)-",
@@ -6292,7 +6960,81 @@
    "width": 0.25,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.07
+   "mass_error": 0.07,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.575,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.664,
+     "errorPositive": 0.016,
+     "errorNegative": 0.016,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.6,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.522,
+     "errorPositive": 0.013,
+     "errorNegative": 0.013,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.52,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.626,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1600)0",
@@ -6305,7 +7047,81 @@
    "width": 0.25,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.07
+   "mass_error": 0.07,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.575,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.664,
+     "errorPositive": 0.016,
+     "errorNegative": 0.016,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.6,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.522,
+     "errorPositive": 0.013,
+     "errorNegative": 0.013,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.52,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.626,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "f(2)(1565)",
@@ -6412,7 +7228,81 @@
    "width": 0.13,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.02
+   "mass_error": 0.02,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.6,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.635,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.589,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.6152,
+     "errorPositive": 0.0004,
+     "errorNegative": 0.0004,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.62,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.61,
+     "errorPositive": 0.007,
+     "errorNegative": 0.007,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "Delta(1620)0",
@@ -6425,7 +7315,81 @@
    "width": 0.13,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.02
+   "mass_error": 0.02,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.6,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.635,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.589,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.6152,
+     "errorPositive": 0.0004,
+     "errorNegative": 0.0004,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.62,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.61,
+     "errorPositive": 0.007,
+     "errorNegative": 0.007,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "eta(2)(1645)",
@@ -7032,7 +7996,81 @@
    "width": 0.125,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.015
+   "mass_error": 0.015,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.67,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.657,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.666,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2017,
+     "publication": "PRL 118 212001",
+     "doi": "10.1103/PhysRevLett.118.212001",
+     "inspireId": "1509373",
+     "technique": "DPWA",
+     "comment": "gamma p --> eta p, eta^' p",
+     "value": 1.634,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.665,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.6347,
+     "errorPositive": 0.0011,
+     "errorNegative": 0.0011,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1650)0",
@@ -7045,7 +8083,81 @@
    "width": 0.125,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.015
+   "mass_error": 0.015,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.67,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.657,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.666,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2017,
+     "publication": "PRL 118 212001",
+     "doi": "10.1103/PhysRevLett.118.212001",
+     "inspireId": "1509373",
+     "technique": "DPWA",
+     "comment": "gamma p --> eta p, eta^' p",
+     "value": 1.634,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.665,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.6347,
+     "errorPositive": 0.0011,
+     "errorNegative": 0.0011,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "a(1)(1640)+",
@@ -7810,7 +8922,81 @@
    "width": 0.145,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.01
+   "mass_error": 0.01,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.668,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.669,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.666,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.6741,
+     "errorPositive": 0.0002,
+     "errorNegative": 0.0002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.675,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.679,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1675)0",
@@ -7823,7 +9009,81 @@
    "width": 0.145,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.01
+   "mass_error": 0.01,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.668,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.669,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.666,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.6741,
+     "errorPositive": 0.0002,
+     "errorNegative": 0.0002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.675,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.679,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "phi(1680)",
@@ -7934,6 +9194,564 @@
    ]
   },
   {
+   "id": "phi(2170)",
+   "aliases": [
+    "phi2170",
+    "phi_2170"
+   ],
+   "mass": 2.16381,
+   "mass_error": 0.005113,
+   "width": 0.08843,
+   "jp": {
+    "j": 1,
+    "p": -1
+   },
+   "c": -1,
+   "measurements": [
+    {
+     "year": 2024,
+     "publication": "JHEP 2401 180",
+     "doi": "10.1007/JHEP01(2024)180",
+     "inspireId": "2702520",
+     "technique": "BES3",
+     "comment": "e+ e- --> KS KL pi0",
+     "value": 2.1647,
+     "errorPositive": 0.009614,
+     "errorNegative": 0.009614,
+     "statError": 0.0091,
+     "systError": 0.0031,
+     "usedInAverage": true
+    },
+    {
+     "year": 2023,
+     "publication": "PR D108 032011",
+     "doi": "10.1103/PhysRevD.108.032011",
+     "inspireId": "2688408",
+     "technique": "BES3",
+     "comment": "e+ e- --> phi pi+ pi-",
+     "value": 2.178,
+     "errorPositive": 0.020616,
+     "errorNegative": 0.020616,
+     "statError": 0.02,
+     "systError": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2022,
+     "publication": "JHEP 2207 045",
+     "doi": "10.1007/JHEP07(2022)045",
+     "inspireId": "2033007",
+     "technique": "BES3",
+     "comment": "2.0 -- 3.08  e+ e- --> K+ K- pi0",
+     "value": 2.19,
+     "errorPositive": 0.041593,
+     "errorNegative": 0.041593,
+     "statError": 0.019,
+     "systError": 0.037,
+     "usedInAverage": true
+    },
+    {
+     "year": 2021,
+     "publication": "PR D104 032007",
+     "doi": "10.1103/PhysRevD.104.032007",
+     "inspireId": "1857930",
+     "technique": "BES3",
+     "comment": "e+ e- --> phi eta",
+     "value": 2.1635,
+     "errorPositive": 0.006888,
+     "errorNegative": 0.006888,
+     "statError": 0.0062,
+     "systError": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2020,
+     "publication": "PR D102 012008",
+     "doi": "10.1103/PhysRevD.102.012008",
+     "inspireId": "1788734",
+     "technique": "BES3",
+     "comment": "e+ e- --> eta^' phi",
+     "value": 2.1775,
+     "errorPositive": 0.020082,
+     "errorNegative": 0.020082,
+     "statError": 0.0048,
+     "systError": 0.0195,
+     "usedInAverage": true
+    },
+    {
+     "year": 2020,
+     "publication": "PRL 124 112001",
+     "doi": "10.1103/PhysRevLett.124.112001",
+     "inspireId": "1775344",
+     "technique": "BES3",
+     "comment": "e+ e- --> K+ K-  pi0 pi0",
+     "value": 2.1265,
+     "errorPositive": 0.020881,
+     "errorNegative": 0.020881,
+     "statError": 0.0168,
+     "systError": 0.0124,
+     "usedInAverage": true
+    }
+   ],
+   "status": "pdg"
+  },
+  {
+   "id": "K_2(2250)+",
+   "aliases": [
+    "K2_2250",
+    "K(2)(2250)+"
+   ],
+   "mass": 2.246525,
+   "mass_error": 0.016843,
+   "width": 0.18,
+   "width_error": 0.03,
+   "jp": {
+    "j": 2,
+    "p": -1
+   },
+   "measurements": [
+    {
+     "year": 1983,
+     "publication": "NP B227 365",
+     "doi": "10.1016/0550-3213(83)90564-3",
+     "inspireId": "191867",
+     "technique": "OMEG",
+     "comment": "18 K- p --> Lambda pbar X",
+     "value": 2.2,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": true
+    },
+    {
+     "year": 1981,
+     "publication": "NP B183 1",
+     "doi": "10.1016/0550-3213(81)90543-5",
+     "inspireId": "156260",
+     "technique": "HBC",
+     "comment": "8 K- p --> Lambda pbar X",
+     "value": 2.235,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1981,
+     "publication": "NP B184 1",
+     "doi": "10.1016/0550-3213(81)90206-6",
+     "inspireId": "153481",
+     "technique": "SPEC",
+     "comment": "50 K+ p --> Lambda pbar X",
+     "value": 2.26,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2003,
+     "publication": "PAN 66 828",
+     "doi": "10.1134/1.1576456",
+     "inspireId": "624572",
+     "technique": "SPEC",
+     "comment": "40.0 pi-  ^C --> KS KS KL X",
+     "value": 2.28,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 1979,
+     "publication": "NP B158 253",
+     "doi": "10.1016/0550-3213(79)90164-0",
+     "inspireId": "141731",
+     "technique": "HBC",
+     "comment": "32 K+ p --> Lambdabar p X",
+     "value": 2.147,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": false
+    },
+    {
+     "year": 1970,
+     "publication": "NP B18 491",
+     "doi": "10.1016/0550-3213(70)90131-8",
+     "inspireId": "62606",
+     "technique": "HBC",
+     "comment": "9 K+ p",
+     "value": 2.24,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    }
+   ],
+   "status": "pdg"
+  },
+  {
+   "id": "Lambda(1520)0",
+   "aliases": [
+    "Lambda1520",
+    "Lambda(1520)"
+   ],
+   "mass": 1.519,
+   "mass_error": 0.001,
+   "width": 0.016,
+   "jp": {
+    "j": 1.5,
+    "p": -1
+   },
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "JHEP 2502 212",
+     "doi": "10.1007/JHEP02(2025)212",
+     "inspireId": "2813757",
+     "technique": "BES3",
+     "comment": "psi(3686) --> Lambda Sigmabar0 pi0 + c.c. (PWA)",
+     "value": 1.5199,
+     "errorPositive": 0.00506,
+     "errorNegative": 0.00506,
+     "statError": 0.0016,
+     "systError": 0.0048,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "EPJ A55 180",
+     "doi": "10.1140/epja/i2019-12880-5",
+     "inspireId": "1747226",
+     "technique": "DPWA",
+     "comment": "Kbar N multichannel",
+     "value": 1.5185,
+     "errorPositive": 0.0005,
+     "errorNegative": 0.0005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C88 035205",
+     "doi": "10.1103/PhysRevC.88.035205",
+     "inspireId": "1234264",
+     "technique": "DPWA",
+     "comment": "Kbar N multichannel",
+     "value": 1.5196,
+     "errorPositive": 0.0005,
+     "errorNegative": 0.0005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2010,
+     "publication": "PL B694 123",
+     "doi": "10.1016/j.physletb.2010.09.052",
+     "inspireId": "850204",
+     "technique": "SPEC",
+     "comment": "e p --> e^' K+ X (fit to X)",
+     "value": 1.5204,
+     "errorPositive": 0.001616,
+     "errorNegative": 0.001616,
+     "statError": 0.0006,
+     "systError": 0.0015,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "ZPHY C7 17",
+     "doi": "10.1007/BF01577315",
+     "inspireId": "153887",
+     "technique": "SPEC",
+     "comment": "gamma p --> Lambda(1520) K+",
+     "value": 1.5173,
+     "errorPositive": 0.0015,
+     "errorNegative": 0.0015,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "NP B149 220",
+     "doi": "10.1016/0550-3213(79)90238-4",
+     "inspireId": "130106",
+     "technique": "HBC",
+     "comment": "K- p 4.2 GeV/c",
+     "value": 1.5178,
+     "errorPositive": 0.0012,
+     "errorNegative": 0.0012,
+     "usedInAverage": true
+    }
+   ],
+   "status": "pdg"
+  },
+  {
+   "id": "Lambda(1600)0",
+   "aliases": [
+    "Lambda1600",
+    "Lambda(1600)"
+   ],
+   "mass": 1.6,
+   "mass_error": 0.03,
+   "width": 0.2,
+   "jp": {
+    "j": 0.5,
+    "p": 1
+   },
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "JHEP 2502 212",
+     "doi": "10.1007/JHEP02(2025)212",
+     "inspireId": "2813757",
+     "technique": "BES3",
+     "comment": "psi(3686) --> Lambda Sigmabar0 pi0 + c.c. (PWA)",
+     "value": 1.5705,
+     "errorPositive": 0.012945,
+     "errorNegative": 0.012945,
+     "statError": 0.0046,
+     "systError": 0.0121,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "EPJ A55 180",
+     "doi": "10.1140/epja/i2019-12880-5",
+     "inspireId": "1747226",
+     "technique": "DPWA",
+     "comment": "Kbar N multichannel",
+     "value": 1.605,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C88 035205",
+     "doi": "10.1103/PhysRevC.88.035205",
+     "inspireId": "1234264",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.592,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 159",
+     "doi": "",
+     "inspireId": "154799",
+     "technique": "DPWA",
+     "comment": "Kbar N --> Kbar N",
+     "value": 1.568,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 1978,
+     "publication": "PR D18 182",
+     "doi": "10.1103/PhysRevD.18.182",
+     "inspireId": "122544",
+     "technique": "DPWA",
+     "comment": "Kbar N --> Kbar N",
+     "value": 1.703,
+     "errorPositive": 0.1,
+     "errorNegative": 0.1,
+     "usedInAverage": true
+    },
+    {
+     "year": 1977,
+     "publication": "NP B119 362",
+     "doi": "10.1016/0550-3213(77)90002-5",
+     "inspireId": "109788",
+     "technique": "DPWA",
+     "comment": "Kbar N multichannel",
+     "value": 1.573,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    }
+   ],
+   "status": "pdg"
+  },
+  {
+   "id": "Lambda(1670)0",
+   "aliases": [
+    "Lambda1670",
+    "Lambda(1670)"
+   ],
+   "mass": 1.674,
+   "mass_error": 0.004,
+   "width": 0.03,
+   "jp": {
+    "j": 0.5,
+    "p": -1
+   },
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "JHEP 2502 212",
+     "doi": "10.1007/JHEP02(2025)212",
+     "inspireId": "2813757",
+     "technique": "BES3",
+     "comment": "psi(3686) --> Lambda Sigmabar0 pi0 + c.c. (PWA)",
+     "value": 1.6675,
+     "errorPositive": 0.004272,
+     "errorNegative": 0.004272,
+     "statError": 0.0023,
+     "systError": 0.0036,
+     "usedInAverage": true
+    },
+    {
+     "year": 2021,
+     "publication": "PR D103 052005",
+     "doi": "10.1103/PhysRevD.103.052005",
+     "inspireId": "1813380",
+     "technique": "BELL",
+     "comment": "Lambda_c()+ --> Lambda(1670) pi+",
+     "value": 1.6743,
+     "errorPositive": 0.004965,
+     "errorNegative": 0.004965,
+     "statError": 0.0008,
+     "systError": 0.0049,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "EPJ A55 180",
+     "doi": "10.1140/epja/i2019-12880-5",
+     "inspireId": "1747226",
+     "technique": "DPWA",
+     "comment": "Kbar N multichannel",
+     "value": 1.677,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C88 035205",
+     "doi": "10.1103/PhysRevC.88.035205",
+     "inspireId": "1234264",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.672,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 1985,
+     "publication": "NP A433 619",
+     "doi": "10.1016/0375-9474(85)90021-1",
+     "inspireId": "15359",
+     "technique": "DPWA",
+     "comment": "K- p --> Sigma pi",
+     "value": 1.6708,
+     "errorPositive": 0.0017,
+     "errorNegative": 0.0017,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 159",
+     "doi": "",
+     "inspireId": "154799",
+     "technique": "DPWA",
+     "comment": "Kbar N --> Kbar N",
+     "value": 1.667,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    }
+   ],
+   "status": "pdg"
+  },
+  {
+   "id": "Lambda(1820)0",
+   "aliases": [
+    "Lambda1820",
+    "Lambda(1820)"
+   ],
+   "mass": 1.82,
+   "mass_error": 0.005,
+   "width": 0.08,
+   "jp": {
+    "j": 2.5,
+    "p": 1
+   },
+   "measurements": [
+    {
+     "year": 2019,
+     "publication": "EPJ A55 180",
+     "doi": "10.1140/epja/i2019-12880-5",
+     "inspireId": "1747226",
+     "technique": "DPWA",
+     "comment": "Kbar N multichannel",
+     "value": 1.822,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C88 035205",
+     "doi": "10.1103/PhysRevC.88.035205",
+     "inspireId": "1234264",
+     "technique": "DPWA",
+     "comment": "Kbar N multichannel",
+     "value": 1.8235,
+     "errorPositive": 0.0008,
+     "errorNegative": 0.0008,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 159",
+     "doi": "",
+     "inspireId": "154799",
+     "technique": "DPWA",
+     "comment": "Kbar N --> Kbar N",
+     "value": 1.823,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 1978,
+     "publication": "PR D18 182",
+     "doi": "10.1103/PhysRevD.18.182",
+     "inspireId": "122544",
+     "technique": "DPWA",
+     "comment": "Kbar N --> Kbar N",
+     "value": 1.819,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1974,
+     "publication": "LBL-2452",
+     "doi": "",
+     "inspireId": "",
+     "technique": "DPWA",
+     "comment": "K- p --> Sigma pi",
+     "value": 1.821,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1977,
+     "publication": "NP B119 362",
+     "doi": "10.1016/0550-3213(77)90002-5",
+     "inspireId": "109788",
+     "technique": "DPWA",
+     "comment": "Kbar N multichannel",
+     "value": 1.822,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": false
+    }
+   ],
+   "status": "pdg"
+  },
+  {
    "id": "N(1680)+",
    "aliases": [],
    "jp": {
@@ -7944,7 +9762,81 @@
    "width": 0.12,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.005
+   "mass_error": 0.005,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.689,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.686,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.681,
+     "errorPositive": 0.0001,
+     "errorNegative": 0.0001,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.676,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.6801,
+     "errorPositive": 0.0002,
+     "errorNegative": 0.0002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.68,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1680)0",
@@ -7957,7 +9849,81 @@
    "width": 0.12,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.005
+   "mass_error": 0.005,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.689,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.686,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.681,
+     "errorPositive": 0.0001,
+     "errorNegative": 0.0001,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.676,
+     "errorPositive": 0.002,
+     "errorNegative": 0.002,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.6801,
+     "errorPositive": 0.0002,
+     "errorNegative": 0.0002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.68,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "rho(3)(1690)+",
@@ -8521,7 +10487,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.02
+   "mass_error": 0.02,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.69,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.704,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.72,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.695,
+     "errorPositive": 0.0013,
+     "errorNegative": 0.0013,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.71,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.68,
+     "errorPositive": 0.07,
+     "errorNegative": 0.07,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "Delta(1700)0",
@@ -8534,7 +10574,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.02
+   "mass_error": 0.02,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.69,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.704,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.72,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.695,
+     "errorPositive": 0.0013,
+     "errorNegative": 0.0013,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.71,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.68,
+     "errorPositive": 0.07,
+     "errorNegative": 0.07,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1710)+",
@@ -8547,7 +10661,81 @@
    "width": 0.14,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.03
+   "mass_error": 0.03,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.71,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.648,
+     "errorPositive": 0.016,
+     "errorNegative": 0.016,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.737,
+     "errorPositive": 0.017,
+     "errorNegative": 0.017,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.7,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.723,
+     "errorPositive": 0.009,
+     "errorNegative": 0.009,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.715,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1710)0",
@@ -8560,7 +10748,81 @@
    "width": 0.14,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.03
+   "mass_error": 0.03,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.71,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.648,
+     "errorPositive": 0.016,
+     "errorNegative": 0.016,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.737,
+     "errorPositive": 0.017,
+     "errorNegative": 0.017,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.7,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.723,
+     "errorPositive": 0.009,
+     "errorNegative": 0.009,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.715,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "K*(1680)+",
@@ -8848,7 +11110,81 @@
    "width": 0.2,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.08
+   "mass_error": 0.08,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.77,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.653,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.675,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.731,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.8,
+     "errorPositive": 0.035,
+     "errorNegative": 0.035,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.665,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1700)0",
@@ -8861,7 +11197,81 @@
    "width": 0.2,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.08
+   "mass_error": 0.08,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.77,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.653,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.675,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.731,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.8,
+     "errorPositive": 0.035,
+     "errorNegative": 0.035,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.665,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1720)+",
@@ -8874,7 +11284,81 @@
    "width": 0.25,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.04
+   "mass_error": 0.04,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.716,
+     "errorPositive": 0.018,
+     "errorNegative": 0.018,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.745,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.711,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.7,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.7638,
+     "errorPositive": 0.0046,
+     "errorNegative": 0.0046,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.7,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1720)0",
@@ -8887,7 +11371,81 @@
    "width": 0.25,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.04
+   "mass_error": 0.04,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.716,
+     "errorPositive": 0.018,
+     "errorNegative": 0.018,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.745,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.711,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.7,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.7638,
+     "errorPositive": 0.0046,
+     "errorNegative": 0.0046,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.7,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "rho(1700)+",
@@ -10339,7 +12897,81 @@
    "width": 0.25,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.06
+   "mass_error": 0.06,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.825,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.989,
+     "errorPositive": 0.022,
+     "errorNegative": 0.022,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.89,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.908,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.84,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.84,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1900)0",
@@ -10352,7 +12984,81 @@
    "width": 0.25,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.06
+   "mass_error": 0.06,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.825,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.989,
+     "errorPositive": 0.022,
+     "errorNegative": 0.022,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.89,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.908,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.84,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.84,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "D~0",
@@ -10672,7 +13378,81 @@
    "width": 0.2,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.045
+   "mass_error": 0.045,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.885,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.005,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.934,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.88,
+     "errorPositive": 0.1,
+     "errorNegative": 0.1,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.875,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.951,
+     "errorPositive": 0.027,
+     "errorNegative": 0.027,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1875)0",
@@ -10685,7 +13465,81 @@
    "width": 0.2,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.045
+   "mass_error": 0.045,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.885,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.005,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.934,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.88,
+     "errorPositive": 0.1,
+     "errorNegative": 0.1,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.875,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.951,
+     "errorPositive": 0.027,
+     "errorNegative": 0.027,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1905)-",
@@ -10698,7 +13552,81 @@
    "width": 0.33,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.03
+   "mass_error": 0.03,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.845,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.883,
+     "errorPositive": 0.019,
+     "errorNegative": 0.019,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.866,
+     "errorPositive": 0.009,
+     "errorNegative": 0.009,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.8578,
+     "errorPositive": 0.0016,
+     "errorNegative": 0.0016,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.91,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.905,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "Delta(1905)0",
@@ -10711,7 +13639,81 @@
    "width": 0.33,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.03
+   "mass_error": 0.03,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.845,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.883,
+     "errorPositive": 0.019,
+     "errorNegative": 0.019,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.866,
+     "errorPositive": 0.009,
+     "errorNegative": 0.009,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.8578,
+     "errorPositive": 0.0016,
+     "errorNegative": 0.0016,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.91,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.905,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(1880)+",
@@ -10724,7 +13726,69 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.865,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.967,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.875,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.875,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.9,
+     "errorPositive": 0.036,
+     "errorNegative": 0.036,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1880)0",
@@ -10737,7 +13801,69 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.865,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.967,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.875,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.875,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.9,
+     "errorPositive": 0.036,
+     "errorNegative": 0.036,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1895)+",
@@ -10750,7 +13876,81 @@
    "width": 0.12,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.025
+   "mass_error": 0.025,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.907,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.0,
+     "errorPositive": 0.029,
+     "errorNegative": 0.029,
+     "usedInAverage": true
+    },
+    {
+     "year": 2017,
+     "publication": "PRL 118 212001",
+     "doi": "10.1103/PhysRevLett.118.212001",
+     "inspireId": "1509373",
+     "technique": "DPWA",
+     "comment": "gamma p --> eta p, eta^' p",
+     "value": 1.89,
+     "errorPositive": 0.009,
+     "errorNegative": 0.023,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.88,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.905,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.91,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1895)0",
@@ -10763,7 +13963,81 @@
    "width": 0.12,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.025
+   "mass_error": 0.025,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.907,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.0,
+     "errorPositive": 0.029,
+     "errorNegative": 0.029,
+     "usedInAverage": true
+    },
+    {
+     "year": 2017,
+     "publication": "PRL 118 212001",
+     "doi": "10.1103/PhysRevLett.118.212001",
+     "inspireId": "1509373",
+     "technique": "DPWA",
+     "comment": "gamma p --> eta p, eta^' p",
+     "value": 1.89,
+     "errorPositive": 0.009,
+     "errorNegative": 0.023,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.88,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.905,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.91,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1910)-",
@@ -10776,7 +14050,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.89,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.846,
+     "errorPositive": 0.018,
+     "errorNegative": 0.018,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.0679,
+     "errorPositive": 0.0017,
+     "errorNegative": 0.0017,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.91,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.888,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.845,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1910)0",
@@ -10789,7 +14137,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.89,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.846,
+     "errorPositive": 0.018,
+     "errorNegative": 0.018,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.0679,
+     "errorPositive": 0.0017,
+     "errorNegative": 0.0017,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.91,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.888,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.845,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1920)-",
@@ -10802,7 +14224,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.89,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.976,
+     "errorPositive": 0.049,
+     "errorNegative": 0.049,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.146,
+     "errorPositive": 0.032,
+     "errorNegative": 0.032,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.92,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.868,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.88,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1920)0",
@@ -10815,7 +14311,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.89,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.976,
+     "errorPositive": 0.049,
+     "errorNegative": 0.049,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.146,
+     "errorPositive": 0.032,
+     "errorNegative": 0.032,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.92,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.868,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.88,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1900)+",
@@ -10828,7 +14398,81 @@
    "width": 0.2,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.03
+   "mass_error": 0.03,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.93,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.911,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.998,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.91,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.91,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.9,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1900)0",
@@ -10841,7 +14485,81 @@
    "width": 0.2,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.03
+   "mass_error": 0.03,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.93,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.911,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 2013,
+     "publication": "PR C87 015201",
+     "doi": "10.1103/PhysRevC.87.015201",
+     "inspireId": "1119581",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.998,
+     "errorPositive": 0.003,
+     "errorNegative": 0.003,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.91,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.91,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.9,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1950)-",
@@ -10854,7 +14572,81 @@
    "width": 0.285,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.02
+   "mass_error": 0.02,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.919,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.943,
+     "errorPositive": 0.018,
+     "errorNegative": 0.018,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.913,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.9213,
+     "errorPositive": 0.0002,
+     "errorNegative": 0.0002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.95,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.913,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "Delta(1950)0",
@@ -10867,7 +14659,81 @@
    "width": 0.285,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.02
+   "mass_error": 0.02,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.919,
+     "errorPositive": 0.005,
+     "errorNegative": 0.005,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PL B788 371",
+     "doi": "10.1016/j.physletb.2018.10.013",
+     "inspireId": "1676470",
+     "technique": "DPWA",
+     "comment": "gamma p --> pi+ pi- p",
+     "value": 1.943,
+     "errorPositive": 0.018,
+     "errorNegative": 0.018,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.913,
+     "errorPositive": 0.004,
+     "errorNegative": 0.004,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 1.9213,
+     "errorPositive": 0.0002,
+     "errorNegative": 0.0002,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.95,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.913,
+     "errorPositive": 0.008,
+     "errorNegative": 0.008,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "f(2)(1950)",
@@ -10970,7 +14836,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.834,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.988,
+     "errorPositive": 0.032,
+     "errorNegative": 0.032,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.233,
+     "errorPositive": 0.053,
+     "errorNegative": 0.053,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.94,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.901,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.93,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1930)0",
@@ -10983,7 +14923,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.834,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.988,
+     "errorPositive": 0.032,
+     "errorNegative": 0.032,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.233,
+     "errorPositive": 0.053,
+     "errorNegative": 0.053,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.94,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.901,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.93,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "K(0)*(1950)~0",
@@ -11948,7 +15962,69 @@
    "width": 0.4,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.06
+   "mass_error": 0.06,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.06,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.137,
+     "errorPositive": 0.013,
+     "errorNegative": 0.013,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.94,
+     "errorPositive": 0.1,
+     "errorNegative": 0.1,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.05,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.05,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(1940)0",
@@ -11961,7 +16037,69 @@
    "width": 0.4,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.06
+   "mass_error": 0.06,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.06,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.137,
+     "errorPositive": 0.013,
+     "errorNegative": 0.013,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.94,
+     "errorPositive": 0.1,
+     "errorNegative": 0.1,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.05,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.05,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "D*(2007)0",
@@ -12278,7 +16416,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.08
+   "mass_error": 0.08,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.02,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.028,
+     "errorPositive": 0.019,
+     "errorNegative": 0.019,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.97,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.005,
+     "errorPositive": 0.15,
+     "errorNegative": 0.15,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "EPJ A48 15",
+     "doi": "10.1140/epja/i2012-12015-8",
+     "inspireId": "1082451",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.06,
+     "errorPositive": 0.065,
+     "errorNegative": 0.065,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.99,
+     "errorPositive": 0.045,
+     "errorNegative": 0.045,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(1990)0",
@@ -12291,7 +16503,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.08
+   "mass_error": 0.08,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.02,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.028,
+     "errorPositive": 0.019,
+     "errorNegative": 0.019,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 1.97,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.005,
+     "errorPositive": 0.15,
+     "errorNegative": 0.15,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "EPJ A48 15",
+     "doi": "10.1140/epja/i2012-12015-8",
+     "inspireId": "1082451",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.06,
+     "errorPositive": 0.065,
+     "errorNegative": 0.065,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 1.99,
+     "errorPositive": 0.045,
+     "errorNegative": 0.045,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "K(4)*(2045)~0",
@@ -12590,7 +16876,81 @@
    "width": 0.4,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.1
+   "mass_error": 0.1,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.04,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.111,
+     "errorPositive": 0.017,
+     "errorNegative": 0.017,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.18,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.228,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.045,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.116,
+     "errorPositive": 0.021,
+     "errorNegative": 0.021,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(2060)0",
@@ -12603,7 +16963,81 @@
    "width": 0.4,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.1
+   "mass_error": 0.1,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.04,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.111,
+     "errorPositive": 0.017,
+     "errorNegative": 0.017,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.18,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.228,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.045,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": false
+    },
+    {
+     "year": 2012,
+     "publication": "PR C86 055203",
+     "doi": "10.1103/PhysRevC.86.055203",
+     "inspireId": "1127496",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.116,
+     "errorPositive": 0.021,
+     "errorNegative": 0.021,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(2100)+",
@@ -12616,7 +17050,81 @@
    "width": 0.26,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.07,
+     "errorPositive": 0.035,
+     "errorNegative": 0.035,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.221,
+     "errorPositive": 0.092,
+     "errorNegative": 0.092,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.125,
+     "errorPositive": 0.075,
+     "errorNegative": 0.075,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.05,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.115,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 2010,
+     "publication": "PR C82 038203",
+     "doi": "10.1103/PhysRevC.82.038203",
+     "inspireId": "871922",
+     "technique": "DPWA",
+     "comment": "pi N --> N pi, N eta",
+     "value": 2.157,
+     "errorPositive": 0.042,
+     "errorNegative": 0.042,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(2100)0",
@@ -12629,7 +17137,81 @@
    "width": 0.26,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.07,
+     "errorPositive": 0.035,
+     "errorNegative": 0.035,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.221,
+     "errorPositive": 0.092,
+     "errorNegative": 0.092,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.125,
+     "errorPositive": 0.075,
+     "errorNegative": 0.075,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.05,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.115,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": false
+    },
+    {
+     "year": 2010,
+     "publication": "PR C82 038203",
+     "doi": "10.1103/PhysRevC.82.038203",
+     "inspireId": "871922",
+     "technique": "DPWA",
+     "comment": "pi N --> N pi, N eta",
+     "value": 2.157,
+     "errorPositive": 0.042,
+     "errorNegative": 0.042,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "D(s)*+",
@@ -12668,7 +17250,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.06
+   "mass_error": 0.06,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.14,
+     "errorPositive": 0.035,
+     "errorNegative": 0.035,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.353,
+     "errorPositive": 0.029,
+     "errorNegative": 0.029,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.06,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.081,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.12,
+     "errorPositive": 0.045,
+     "errorNegative": 0.045,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.12,
+     "errorPositive": 0.035,
+     "errorNegative": 0.035,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(2120)0",
@@ -12681,7 +17337,81 @@
    "width": 0.3,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.06
+   "mass_error": 0.06,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.14,
+     "errorPositive": 0.035,
+     "errorNegative": 0.035,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.353,
+     "errorPositive": 0.029,
+     "errorNegative": 0.029,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.06,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.081,
+     "errorPositive": 0.02,
+     "errorNegative": 0.02,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.12,
+     "errorPositive": 0.045,
+     "errorNegative": 0.045,
+     "usedInAverage": false
+    },
+    {
+     "year": 2014,
+     "publication": "EPJ A50 74",
+     "doi": "10.1140/epja/i2014-14074-1",
+     "inspireId": "1281716",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.12,
+     "errorPositive": 0.035,
+     "errorNegative": 0.035,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "f(2)(2150)",
@@ -12793,7 +17523,81 @@
    "width": 0.4,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.04
+   "mass_error": 0.04,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.17,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.222,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.1524,
+     "errorPositive": 0.0014,
+     "errorNegative": 0.0014,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.2,
+     "errorPositive": 0.07,
+     "errorNegative": 0.07,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.14,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.205,
+     "errorPositive": 0.018,
+     "errorNegative": 0.018,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(2190)0",
@@ -12806,7 +17610,81 @@
    "width": 0.4,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.04
+   "mass_error": 0.04,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.17,
+     "errorPositive": 0.025,
+     "errorNegative": 0.025,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.222,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.1524,
+     "errorPositive": 0.0014,
+     "errorNegative": 0.0014,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.2,
+     "errorPositive": 0.07,
+     "errorNegative": 0.07,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.14,
+     "errorPositive": 0.012,
+     "errorNegative": 0.012,
+     "usedInAverage": true
+    },
+    {
+     "year": 2015,
+     "publication": "EPJ A51 95",
+     "doi": "10.1140/epja/i2015-15095-x",
+     "inspireId": "1382191",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.205,
+     "errorPositive": 0.018,
+     "errorNegative": 0.018,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "omega(2220)",
@@ -12921,7 +17799,57 @@
    "width": 0.35,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.18,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.2,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.215,
+     "errorPositive": 0.06,
+     "errorNegative": 0.06,
+     "usedInAverage": true
+    },
+    {
+     "year": 2017,
+     "publication": "PL B766 357",
+     "doi": "10.1016/j.physletb.2016.12.014",
+     "inspireId": "1353566",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.176,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "Delta(2200)0",
@@ -12934,7 +17862,57 @@
    "width": 0.35,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.18,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.2,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.215,
+     "errorPositive": 0.06,
+     "errorNegative": 0.06,
+     "usedInAverage": true
+    },
+    {
+     "year": 2017,
+     "publication": "PL B766 357",
+     "doi": "10.1016/j.physletb.2016.12.014",
+     "inspireId": "1353566",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.176,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(2220)+",
@@ -12947,7 +17925,57 @@
    "width": 0.4,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.23,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.3163,
+     "errorPositive": 0.0029,
+     "errorNegative": 0.0029,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.23,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.205,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(2220)0",
@@ -12960,7 +17988,57 @@
    "width": 0.4,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.05
+   "mass_error": 0.05,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.23,
+     "errorPositive": 0.03,
+     "errorNegative": 0.03,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.3163,
+     "errorPositive": 0.0029,
+     "errorNegative": 0.0029,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.23,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.205,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(2250)+",
@@ -12973,7 +18051,81 @@
    "width": 0.5,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.04
+   "mass_error": 0.04,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.31,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.2,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.302,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.25,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.268,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "EPJ A48 15",
+     "doi": "10.1140/epja/i2012-12015-8",
+     "inspireId": "1082451",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.28,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "N(2250)0",
@@ -12986,7 +18138,81 @@
    "width": 0.5,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.04
+   "mass_error": 0.04,
+   "measurements": [
+    {
+     "year": 2025,
+     "publication": "PR C112 015202",
+     "doi": "10.1103/qfpf-tcs3",
+     "inspireId": "2902769",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.31,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": true
+    },
+    {
+     "year": 2019,
+     "publication": "PR C99 055205",
+     "doi": "10.1103/PhysRevC.99.055205",
+     "inspireId": "1701161",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.2,
+     "errorPositive": 0.01,
+     "errorNegative": 0.01,
+     "usedInAverage": true
+    },
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.302,
+     "errorPositive": 0.006,
+     "errorNegative": 0.006,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.25,
+     "errorPositive": 0.08,
+     "errorNegative": 0.08,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.268,
+     "errorPositive": 0.015,
+     "errorNegative": 0.015,
+     "usedInAverage": true
+    },
+    {
+     "year": 2012,
+     "publication": "EPJ A48 15",
+     "doi": "10.1140/epja/i2012-12015-8",
+     "inspireId": "1082451",
+     "technique": "DPWA",
+     "comment": "Multichannel",
+     "value": 2.28,
+     "errorPositive": 0.04,
+     "errorNegative": 0.04,
+     "usedInAverage": false
+    }
+   ]
   },
   {
    "id": "f(2)(2300)",
@@ -13915,7 +19141,45 @@
    "width": 0.5,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.15
+   "mass_error": 0.15,
+   "measurements": [
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.633,
+     "errorPositive": 0.029,
+     "errorNegative": 0.029,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.4,
+     "errorPositive": 0.125,
+     "errorNegative": 0.125,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.416,
+     "errorPositive": 0.017,
+     "errorNegative": 0.017,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "Delta(2420)0",
@@ -13928,7 +19192,45 @@
    "width": 0.5,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.15
+   "mass_error": 0.15,
+   "measurements": [
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.633,
+     "errorPositive": 0.029,
+     "errorNegative": 0.029,
+     "usedInAverage": true
+    },
+    {
+     "year": 1980,
+     "publication": "Toronto Conf. 19",
+     "doi": "",
+     "inspireId": "154488",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.4,
+     "errorPositive": 0.125,
+     "errorNegative": 0.125,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.416,
+     "errorPositive": 0.017,
+     "errorNegative": 0.017,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "D(s1)(2460)+",
@@ -14335,7 +19637,33 @@
    "width": 0.65,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.15
+   "mass_error": 0.15,
+   "measurements": [
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.623,
+     "errorPositive": 0.197,
+     "errorNegative": 0.197,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.577,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "N(2600)0",
@@ -14348,7 +19676,33 @@
    "width": 0.65,
    "status": "pdg",
    "decayModes": [],
-   "mass_error": 0.15
+   "mass_error": 0.15,
+   "measurements": [
+    {
+     "year": 2006,
+     "publication": "PR C74 045205",
+     "doi": "10.1103/PhysRevC.74.045205",
+     "inspireId": "718071",
+     "technique": "DPWA",
+     "comment": "pi N --> pi N, eta N",
+     "value": 2.623,
+     "errorPositive": 0.197,
+     "errorNegative": 0.197,
+     "usedInAverage": true
+    },
+    {
+     "year": 1979,
+     "publication": "PDAT 12-1",
+     "doi": "",
+     "inspireId": "146165",
+     "technique": "IPWA",
+     "comment": "pi N --> pi N",
+     "value": 2.577,
+     "errorPositive": 0.05,
+     "errorNegative": 0.05,
+     "usedInAverage": true
+    }
+   ]
   },
   {
    "id": "eta(c)(1S)",

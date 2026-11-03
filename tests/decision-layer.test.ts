@@ -80,6 +80,28 @@ describe('analyzeIntermediateJPC (shared view/gate analysis)', () => {
     expect(ana.allowed.map((w) => w.jpc)).toEqual(['1--', '3--'])
     expect(ana.cBlocked).toEqual(['2++'])
     expect(ana.production?.cRequired).toBe(-1) // C(J/psi) * C(eta) = (-1)(+1)
+    // Wave tables leave the plugin in ctpwa's user-side (L, S) notation, never
+    // in the internal 2S+1 multiplicity: K+K- has S=0, L=1/3.
+    expect(ana.allowed.map((w) => w.ls)).toEqual([[[1, 0]], [[3, 0]]])
+  })
+
+  it('echoes a per-step whitelist as [L, S] (same for either key) and filters waves', () => {
+    const lsAna = analyzeIntermediateJPC(
+      parseConfig(CONFIG.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {ls: [1, 0]}]')),
+      defaultDb,
+      'R_KK',
+    )!
+    const lsStep = lsAna.decaySteps.find((s) => s.daughters.join() === 'Kp,Km')!
+    expect(lsStep.ls).toEqual([[1, 0]]) // L=1, S=0 (not the internal 2S+1 = 1)
+    expect(lsAna.allowed.map((w) => w.jpc)).toEqual(['1--'])
+
+    // The legacy S-first key means the same wave: sl [S=0, L=1].
+    const slAna = analyzeIntermediateJPC(
+      parseConfig(CONFIG.replace('R_KK: [Kp, Km]', 'R_KK: [Kp, Km, {sl: [0, 1]}]')),
+      defaultDb,
+      'R_KK',
+    )!
+    expect(slAna.decaySteps.find((s) => s.daughters.join() === 'Kp,Km')!.ls).toEqual([[1, 0]])
   })
 
   it('unknown intermediate -> undefined', () => {

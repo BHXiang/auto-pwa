@@ -553,8 +553,15 @@ export interface InitialDecayStepSpec {
   /** Mother: a Particles name (production) or an intermediate name (cascade). */
   mother: string
   daughters: [string, string]
-  /** (2S+1, L) whitelist, ctpwa internal notation. */
+  /**
+   * Legacy `(2S+1, L)` whitelist (the plugin's internal multiplicity
+   * notation). Converted to `ls: [L, S_phys]` when the config is written —
+   * ctpwa reads its `sl` key's S as the PHYSICAL spin, so passing these
+   * numbers through verbatim would shift every wave (2S+1 -> S).
+   */
   sl?: [number, number][]
+  /** Current `(L, S)` whitelist (S = physical spin), written as `ls`. */
+  ls?: [number, number][]
   /** Weak-decay parity breaking (ctpwa p_break). */
   pBreak?: boolean
   /** Barrier-factor switch / range (ctpwa has_bf / bf_d). */

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildInitialConfig } from '../src/config-init.js'
+import { filterToLS, toLS } from '../src/jpc.js'
 import { defaultDb } from '../src/db.js'
 import { applyResonanceAddition, crossReferenceErrors, dumpConfig, parseConfig, validateConfig } from '../src/config-edit.js'
 import type { InitialConfigSpec } from '../src/types.js'
@@ -533,5 +534,45 @@ describe('buildInitialConfig: 4-body first-level topology gate', () => {
     expect(r.errors).toEqual([])
     expect(r.warnings.map((w) => w.code)).toContain('topology-excluded')
     expect(r.text).toBeDefined()
+  })
+})
+
+describe('buildInitialConfig: wave whitelist notation (`ls` is written, legacy `sl` converted)', () => {
+  const withStepOpts = (opts: { sl?: [number, number][]; ls?: [number, number][] }): InitialConfigSpec => {
+    const s = minimal()
+    s.chains[0]!.steps = [
+      { mother: 'Jpsi', daughters: ['eta', 'R_KK'] },
+      { mother: 'R_KK', daughters: ['Kp', 'Km'], ...opts },
+    ]
+    return s
+  }
+  const stepOf = (text: string) =>
+    parseConfig(text).decayChains['decay1']!.steps.find((s) => s.mother === 'R_KK')!
+
+  it('writes `ls: [L, S]` verbatim', () => {
+    const r = buildInitialConfig(withStepOpts({ ls: [[1, 0]] }), defaultDb)
+    expect(r.errors).toEqual([])
+    expect(r.text).toContain('ls:')
+    expect(r.text).not.toContain('sl:')
+    expect(stepOf(r.text!)).toMatchObject({ slKey: 'ls', sl: [[1, 1]] }) // L=1, S=0 -> 2S+1 = 1
+  })
+
+  it('converts the legacy spec `sl` (2S+1, L) instead of writing it verbatim', () => {
+    // 2S+1 = 1 means S = 0. Written verbatim under ctpwa's `sl` key, ctpwa
+    // would read S = 1 (2S+1 = 3) and silently pick a different wave.
+    const r = buildInitialConfig(withStepOpts({ sl: [[1, 1]] }), defaultDb)
+    expect(r.errors).toEqual([])
+    expect(r.text).not.toContain('sl:')
+    expect(r.text).toContain('ls:')
+    expect(stepOf(r.text!)).toMatchObject({ slKey: 'ls', sl: [[1, 1]] })
+  })
+
+  it('handles a half-integer spin: 2S+1 = 2 -> S = 0.5 (helper level)', () => {
+    // Two spin-1/2 daughters only give S = 0/1, so a valid S = 1/2 step needs an
+    // odd number of half-integer constituents (p + eta). The conversion itself
+    // is what matters here; the full baryon chain is exercised in
+    // half-integer.test.ts.
+    expect(filterToLS([[2, 1]])).toEqual([[1, 0.5]])
+    expect(toLS({ s: 2, l: 1 })).toEqual([1, 0.5])
   })
 })
