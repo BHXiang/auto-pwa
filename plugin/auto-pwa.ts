@@ -5737,9 +5737,9 @@ function estimateCpuCost(scriptArgs: string[] | undefined): string | undefined {
   }))
 
 
-  // auto_pwa_matrix（尝试矩阵；advisory，不做门禁）
+  // auto_pwa_chain_matrix（尝试矩阵；advisory，不做门禁）
   ctx.tools.register(defineTool({
-    name: 'auto_pwa_matrix',
+    name: 'auto_pwa_chain_matrix',
     description:
       '4 体尝试矩阵：拓扑/[J,P]/候选/删除显著性的记录与自检（advisory）。',
     parameters: {
@@ -5772,8 +5772,8 @@ function estimateCpuCost(scriptArgs: string[] | undefined): string | undefined {
       render: (_args, value: { ok?: boolean; action?: string; matrixPath?: string; mdPath?: string; missing?: string[]; error?: string }) =>
         text(
           value.error !== undefined
-            ? `matrix: ${value.error}`
-            : `matrix ${value.action ?? ''}: ${value.ok ? 'ok' : 'missing'}${value.missing && value.missing.length > 0 ? ` (${value.missing.length} missing)` : ''}\n${value.mdPath ?? ''}`,
+            ? `chain_matrix: ${value.error}`
+            : `chain_matrix ${value.action ?? ''}: ${value.ok ? 'ok' : 'missing'}${value.missing && value.missing.length > 0 ? ` (${value.missing.length} missing)` : ''}\n${value.mdPath ?? ''}`,
         ),
     },
     async execute(args: { analysisDir: string; action: string; configPath?: string; row?: Record<string, unknown>; prune?: Record<string, unknown>; topology?: Record<string, unknown> }) {

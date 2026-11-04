@@ -1,6 +1,6 @@
 ---
 name: auto-pwa-4body
-description: Use when building a 4-body partial-wave model from scratch: enumerate all first-level topologies, record every [J,P]/PDG/NR attempt in auto_pwa_matrix, scan subsystem mass spectra, prune insignificant components, combine 2+2 and 1+3, and only complete when converged. Pairs with the goal template.
+description: Use when building a 4-body partial-wave model from scratch: enumerate all first-level topologies, record every [J,P]/PDG/NR attempt in auto_pwa_chain_matrix, scan subsystem mass spectra, prune insignificant components, combine 2+2 and 1+3, and only complete when converged. Pairs with the goal template.
 ---
 
 # 4 体分波：拓扑、尝试矩阵、剪枝、组合
@@ -11,7 +11,7 @@ description: Use when building a 4-body partial-wave model from scratch: enumera
 
 - **goal 模板**：`references/goal-template.md`（复制到 `create_goal` 的 objective）
 - **矩阵格式/用法**：`references/matrix.md`
-- **工具**：`auto_pwa_matrix`（记录/自检，**advisory，不做门禁**）
+- **工具**：`auto_pwa_chain_matrix`（记录/自检，**advisory，不做门禁**）
 
 ## 0. 先建 goal（不是先建链）
 
@@ -33,7 +33,7 @@ description: Use when building a 4-body partial-wave model from scratch: enumera
 - **excluded**：写数据理由（例如该 side 的质量谱无增强、C/J^P 禁戒、阈值不允许）；
 - **不要**只写“没试”。
 
-`auto_pwa_matrix init` 会按当前 config 自动建 7 行；`present` 的拓扑初始 `included`，其余 `pending`；用 `action=topology` 把 excluded 的理由补上。
+`auto_pwa_chain_matrix init` 会按当前 config 自动建 7 行；`present` 的拓扑初始 `included`，其余 `pending`；用 `action=topology` 把 excluded 的理由补上。
 
 ## 2. [J,P] × 候选：矩阵的主体
 
@@ -52,7 +52,7 @@ reason
 
 4. 没试的候选写 `status=skipped` + 原因（阈值、C 禁戒、已被其他态吸收、预算），**不能留空**。
 
-`auto_pwa_matrix add` 一行；`auto_pwa_matrix check` 会列出缺的 `(intermediate, jp)` 和缺 prune 的成分。
+`auto_pwa_chain_matrix add` 一行；`auto_pwa_chain_matrix check` 会列出缺的 `(intermediate, jp)` 和缺 prune 的成分。
 
 ## 3. 分子系统质量谱 / 数据特征
 
@@ -67,7 +67,7 @@ reason
 
 - **ΔNLL < 3** 或 **BIC 改善** → 删除；
 - 删除后重拟合，确认 NLL 不显著变差；
-- 每个删除写 `auto_pwa_matrix prune`：component / ΔNLL / ΔBIC / status(kept|removed) / reason；
+- 每个删除写 `auto_pwa_chain_matrix prune`：component / ΔNLL / ΔBIC / status(kept|removed) / reason；
 - 最终模型不允许保留不显著成分。
 
 注意：1+3 的 `NR_3π`、额外 `ρ(1450)` 常在这里被删；不要因为“加了更多态”就保留。
@@ -90,7 +90,7 @@ reason
 - max|pull| < 5；
 - Hessian 正定；
 - 无显著剩余候选；
-- `auto_pwa_matrix check` 无 missing（**自检，不是门禁**——工具只报告，不阻止）；
+- `auto_pwa_chain_matrix check` 无 missing（**自检，不是门禁**——工具只报告，不阻止）；
 - 未收敛：如实写 `REPORT-nonconverged.md`，不 complete、不 forceConverge。
 
 ## 7. 常见坑

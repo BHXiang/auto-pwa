@@ -8,7 +8,7 @@
 
 1. 枚举全部一级拓扑（4 体共 7 种：4 个 1+3 + 3 个 2+2）；每个写 included/excluded + 数据理由；不许漏。
 
-2. 建立并填完尝试矩阵（auto_pwa_matrix）：
+2. 建立并填完尝试矩阵（auto_pwa_chain_matrix）：
    - 每个 included 拓扑的每个中间态，用 auto_pwa_jpc_check 列出所有可达 [J,P]；
    - 每个 [J,P] 用 auto_pwa_lookup/auto_pwa_suggest 列出 PDG 候选 + NR，并实际拟合；
    - 每个候选记录 NLL/k/AIC/BIC/ΔNLL/ΔBIC/status；未试的写 skipped + 原因；
@@ -20,7 +20,7 @@
 
 5. 分别拟合 2+2-only、1+3-only、组合；比较全局 NLL/AIC/BIC。1+3 是否保留按组合模型相对 2+2-only 的增量判断，不用 1+3-only 的 NLL 单独否决。
 
-6. 收敛判据：所有分布 χ²/ndf≤2、max|pull|<5、Hessian 正定、无显著剩余候选；auto_pwa_matrix check 无 missing（advisory，不是门禁）。
+6. 收敛判据：所有分布 χ²/ndf≤2、max|pull|<5、Hessian 正定、无显著剩余候选；auto_pwa_chain_matrix check 无 missing（advisory，不是门禁）。
 
 7. 未收敛如实报告（REPORT-nonconverged.md）；不许 complete/forceConverge。
 ```
@@ -29,7 +29,7 @@
 
 1. 在第一次拟合前调用 `create_goal`，objective 用上面的全文；
 2. 提交 fit 后等 job 完成通知，不要在 job 运行期间结束会话；
-3. 每轮用 `auto_pwa_matrix add/prune/topology` 记录；结束前 `check`；
+3. 每轮用 `auto_pwa_chain_matrix add/prune/topology` 记录；结束前 `check`；
 4. `check` 只是自检：它列出缺的拓扑/[J,P]/prune，不会阻止 fit；是否 complete 由 goal 的收敛判据决定。
 
 ## 为什么需要这几条

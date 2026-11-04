@@ -1,4 +1,4 @@
-# 尝试矩阵：`auto_pwa_matrix`
+# 尝试矩阵：`auto_pwa_chain_matrix`
 
 **advisory**：记录和自检，不拦截 fit、不拦截 complete。门禁是后续 loop/guard 的事。
 

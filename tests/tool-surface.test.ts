@@ -59,7 +59,7 @@ const EXPECTED_TOOLS = [
   'auto_pwa_try_candidates',
   'auto_pwa_compare',
   'auto_pwa_loop_next',
-  'auto_pwa_matrix',
+  'auto_pwa_chain_matrix',
 ]
 
 /** 已弃用工具：描述必须以 [已弃用 开头并给出替代者。 */
